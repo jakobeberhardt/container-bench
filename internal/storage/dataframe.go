@@ -1,6 +1,11 @@
 package storage
 
 import (
+	"encoding/csv"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -298,4 +303,177 @@ func (bdf *BenchmarkDataFrames) ConvertToStorableMetrics() []*BenchmarkMetrics {
 	}).Info("Converted DataFrames to storable metrics")
 
 	return metrics
+}
+
+// ExportToCSV exports the benchmark DataFrames to CSV files
+func (bdf *BenchmarkDataFrames) ExportToCSV(exportPath string, benchmarkName string) error {
+	bdf.mutex.RLock()
+	defer bdf.mutex.RUnlock()
+
+	// Create export directory if it doesn't exist
+	if err := os.MkdirAll(exportPath, 0755); err != nil {
+		return fmt.Errorf("failed to create export directory: %w", err)
+	}
+
+	// Create a timestamp for the file names
+	timestamp := bdf.BenchmarkStarted.Format("20060102_150405")
+	
+	// Export benchmark metadata
+	metadataFile := filepath.Join(exportPath, fmt.Sprintf("%s_%s_metadata.csv", benchmarkName, timestamp))
+	if err := bdf.exportMetadata(metadataFile); err != nil {
+		return fmt.Errorf("failed to export metadata: %w", err)
+	}
+
+	// Export data for each container
+	for containerName, containerDF := range bdf.Containers {
+		filename := filepath.Join(exportPath, fmt.Sprintf("%s_%s_%s.csv", benchmarkName, timestamp, containerName))
+		if err := containerDF.ExportToCSV(filename); err != nil {
+			return fmt.Errorf("failed to export container %s: %w", containerName, err)
+		}
+		
+		log.WithFields(log.Fields{
+			"container": containerName,
+			"filename":  filename,
+			"entries":   len(containerDF.Entries),
+		}).Info("Exported container DataFrame to CSV")
+	}
+
+	log.WithFields(log.Fields{
+		"export_path":    exportPath,
+		"benchmark_name": benchmarkName,
+		"containers":     len(bdf.Containers),
+	}).Info("Successfully exported all DataFrames to CSV")
+
+	return nil
+}
+
+// exportMetadata exports benchmark metadata to a CSV file
+func (bdf *BenchmarkDataFrames) exportMetadata(filename string) error {
+	file, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// Write header
+	if err := writer.Write([]string{"Property", "Value"}); err != nil {
+		return err
+	}
+
+	// Write metadata
+	metadata := [][]string{
+		{"benchmark_id", strconv.FormatInt(bdf.BenchmarkID, 10)},
+		{"benchmark_started", bdf.BenchmarkStarted.Format(time.RFC3339)},
+		{"benchmark_finished", bdf.BenchmarkFinished.Format(time.RFC3339)},
+		{"sampling_frequency_ms", strconv.Itoa(bdf.SamplingFrequency)},
+		{"used_scheduler", bdf.UsedScheduler},
+		{"container_count", strconv.Itoa(len(bdf.Containers))},
+	}
+
+	for _, row := range metadata {
+		if err := writer.Write(row); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// ExportToCSV exports a single container's DataFrame to CSV
+func (cdf *ContainerDataFrame) ExportToCSV(filename string) error {
+	cdf.mutex.RLock()
+	defer cdf.mutex.RUnlock()
+
+	file, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// Write header
+	header := []string{
+		"container_name", "container_index", "container_image", "container_core",
+		"sampling_step", "utc_timestamp", "relative_time_ms", "cpu_executed_on",
+		// Perf metrics
+		"perf_cpu_cycles", "perf_instructions", "perf_cache_references", "perf_cache_misses",
+		"perf_branch_instructions", "perf_branch_misses", "perf_ipc", "perf_cache_miss_rate",
+		// Docker metrics  
+		"docker_cpu_usage_percent", "docker_memory_usage", "docker_memory_limit",
+		"docker_network_rx_bytes", "docker_network_tx_bytes", "docker_disk_read_bytes", "docker_disk_write_bytes",
+		// RDT metrics
+		"rdt_llc_occupancy", "rdt_local_mem_bw", "rdt_remote_mem_bw", "rdt_total_mem_bw",
+	}
+
+	if err := writer.Write(header); err != nil {
+		return err
+	}
+
+	// Write data rows
+	for _, entry := range cdf.Entries {
+		row := []string{
+			cdf.ContainerName,
+			strconv.Itoa(cdf.ContainerIndex),
+			cdf.ContainerImage,
+			strconv.Itoa(cdf.ContainerCore),
+			strconv.FormatInt(entry.SamplingStep, 10),
+			entry.UTCTimestamp.Format(time.RFC3339Nano),
+			strconv.FormatInt(entry.RelativeTime, 10),
+			strconv.Itoa(entry.CPUExecutedOn),
+		}
+
+		// Add Perf metrics
+		if entry.PerfMetrics != nil {
+			row = append(row, []string{
+				strconv.FormatUint(entry.PerfMetrics.CPUCycles, 10),
+				strconv.FormatUint(entry.PerfMetrics.Instructions, 10),
+				strconv.FormatUint(entry.PerfMetrics.CacheReferences, 10),
+				strconv.FormatUint(entry.PerfMetrics.CacheMisses, 10),
+				strconv.FormatUint(entry.PerfMetrics.BranchInstructions, 10),
+				strconv.FormatUint(entry.PerfMetrics.BranchMisses, 10),
+				strconv.FormatFloat(entry.PerfMetrics.IPC, 'f', 6, 64),
+				strconv.FormatFloat(entry.PerfMetrics.CacheMissRate, 'f', 6, 64),
+			}...)
+		} else {
+			row = append(row, []string{"", "", "", "", "", "", "", ""}...)
+		}
+
+		// Add Docker metrics
+		if entry.DockerMetrics != nil {
+			row = append(row, []string{
+				strconv.FormatFloat(entry.DockerMetrics.CPUUsagePercent, 'f', 6, 64),
+				strconv.FormatUint(entry.DockerMetrics.MemoryUsage, 10),
+				strconv.FormatUint(entry.DockerMetrics.MemoryLimit, 10),
+				strconv.FormatUint(entry.DockerMetrics.NetworkRxBytes, 10),
+				strconv.FormatUint(entry.DockerMetrics.NetworkTxBytes, 10),
+				strconv.FormatUint(entry.DockerMetrics.DiskReadBytes, 10),
+				strconv.FormatUint(entry.DockerMetrics.DiskWriteBytes, 10),
+			}...)
+		} else {
+			row = append(row, []string{"", "", "", "", "", "", ""}...)
+		}
+
+		// Add RDT metrics
+		if entry.RDTMetrics != nil {
+			row = append(row, []string{
+				strconv.FormatUint(entry.RDTMetrics.LLCOccupancy, 10),
+				strconv.FormatFloat(entry.RDTMetrics.LocalMemBW, 'f', 6, 64),
+				strconv.FormatFloat(entry.RDTMetrics.RemoteMemBW, 'f', 6, 64),
+				strconv.FormatFloat(entry.RDTMetrics.TotalMemBW, 'f', 6, 64),
+			}...)
+		} else {
+			row = append(row, []string{"", "", "", ""}...)
+		}
+
+		if err := writer.Write(row); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

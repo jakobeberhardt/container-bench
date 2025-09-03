@@ -42,14 +42,15 @@ type Runner struct {
 	// Metadata collection
 	configFilePath string
 	printMetaData  bool
+	csvExportPath  string
 	metadata       *storage.BenchmarkMetadata
 }
 
 func NewRunner(cfg *config.Config) (*Runner, error) {
-	return NewRunnerWithOptions(cfg, "", false)
+	return NewRunnerWithOptions(cfg, "", false, "")
 }
 
-func NewRunnerWithOptions(cfg *config.Config, configFilePath string, printMetaData bool) (*Runner, error) {
+func NewRunnerWithOptions(cfg *config.Config, configFilePath string, printMetaData bool, csvExportPath string) (*Runner, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	
 	benchmarkID := fmt.Sprintf("%s_%d", cfg.Benchmark.Name, time.Now().Unix())
@@ -141,6 +142,7 @@ func NewRunnerWithOptions(cfg *config.Config, configFilePath string, printMetaDa
 		cancel:         cancel,
 		configFilePath: configFilePath,
 		printMetaData:  printMetaData,
+		csvExportPath:  csvExportPath,
 		metadata:       metadata,
 	}, nil
 }
@@ -342,6 +344,15 @@ func (r *Runner) cleanup() error {
 	if err := r.dataFrameMgr.WriteDataFramesToDatabase(r.ctx); err != nil {
 		log.WithError(err).Error("Failed to write DataFrames to database")
 		errors = append(errors, fmt.Errorf("failed to write DataFrames to database: %w", err))
+	}
+
+	// Export DataFrames to CSV if requested
+	if r.csvExportPath != "" {
+		log.WithField("export_path", r.csvExportPath).Info("Exporting DataFrames to CSV")
+		if err := r.dataFrameMgr.ExportDataFramesToCSV(r.csvExportPath, r.config.Benchmark.Name); err != nil {
+			log.WithError(err).Error("Failed to export DataFrames to CSV")
+			errors = append(errors, fmt.Errorf("failed to export DataFrames to CSV: %w", err))
+		}
 	}
 
 	if err := r.containerMgr.StopAndCleanup(r.ctx); err != nil {

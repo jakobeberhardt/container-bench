@@ -808,3 +808,17 @@ func (pm *DataFrameProfilerManager) WriteDataFramesToDatabase(ctx context.Contex
 func (pm *DataFrameProfilerManager) LogDataFramesSummary() {
 	pm.dataFrames.LogDataFramesSummary()
 }
+
+// ExportDataFramesToCSV exports the collected DataFrames to CSV files
+func (pm *DataFrameProfilerManager) ExportDataFramesToCSV(exportPath string, benchmarkName string) error {
+	if pm.dataFrames == nil {
+		return fmt.Errorf("no DataFrames available for export")
+	}
+	
+	// Finalize benchmark timestamp if not already set
+	if pm.dataFrames.BenchmarkFinished.IsZero() {
+		pm.dataFrames.BenchmarkFinished = time.Now()
+	}
+	
+	return pm.dataFrames.ExportToCSV(exportPath, benchmarkName)
+}
