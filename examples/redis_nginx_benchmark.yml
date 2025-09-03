@@ -1,0 +1,56 @@
+benchmark:
+  name: redis_nginx_benchmark
+  max_t: 300  # Run for 5 minutes
+  log_level: info
+  scheduler:
+    implementation: adaptive  # Use adaptive scheduler
+    rdt: true  # Enable Intel RDT support
+  data:
+    profilefrequency: 100  
+    db:
+      host: ${INFLUXDB_HOST}  
+      name: ${INFLUXDB_BUCKET}      
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+    rdt: true         
+    perf: true        
+    dockerstats: true 
+  docker:
+    auth:
+      registry: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+# Container definitions
+container0:
+  index: 0
+  image: registry.jakob-eberhardt.de/redis:7
+  port: "6379:6379"
+  start: 0    
+  stop: -1    
+  core: 1     
+  env:
+    REDIS_MAXMEMORY: "256mb"
+    REDIS_MAXMEMORY_POLICY: "allkeys-lru"
+
+container1:
+  index: 1
+  image: registry.jakob-eberhardt.de/redis:7
+  port: "6379:6380"
+  start: 15   
+  stop: -1    
+  core: 2     
+  env:
+    REDIS_MAXMEMORY: "256mb"
+    REDIS_MAXMEMORY_POLICY: "allkeys-lru"
+
+container2:
+  index: 2
+  image: registry.jakob-eberhardt.de/nginx:latest
+  port: "80:8080"
+  start: 30   
+  stop: 270   
+  core: 3     
+  env:
+    NGINX_WORKER_PROCESSES: "1"
+    NGINX_WORKER_CONNECTIONS: "1024"
