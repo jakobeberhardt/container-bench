@@ -1,0 +1,62 @@
+benchmark:
+  name: memory_intensive_benchmark
+  max_t: 180  # 3 minutes
+  log_level: info
+  scheduler:
+    implementation: rdt  # Use RDT scheduler for resource isolation
+    rdt: true
+  data:
+    profilefrequency: 50   # High frequency profiling (50ms)
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+    rdt: true
+    perf: true
+    dockerstats: true
+  docker:
+    auth:
+      registry: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+# Memory-intensive workloads to study busy neighbor effects
+container0:
+  index: 0
+  image: registry.jakob-eberhardt.de/matmul:latest
+  start: 0
+  stop: -1
+  core: 0
+  env:
+    MATRIX_SIZE: "2048"
+    ITERATIONS: "100"
+
+container1:
+  index: 1
+  image: registry.jakob-eberhardt.de/matmul:latest
+  start: 10
+  stop: -1
+  core: 2
+  env:
+    MATRIX_SIZE: "2048"
+    ITERATIONS: "100"
+
+container2:
+  index: 2
+  image: registry.jakob-eberhardt.de/tealeaf:latest
+  start: 20
+  stop: -1
+  core: 4
+  env:
+    PROBLEM_SIZE: "large"
+    
+container3:
+  index: 3
+  image: redis:7-alpine
+  port: "6379:6379"
+  start: 30
+  stop: -1
+  core: 6
+  env:
+    REDIS_MAXMEMORY: "512mb"
