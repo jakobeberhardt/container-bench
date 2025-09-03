@@ -33,6 +33,14 @@ type ProfilerManager interface {
 	Stop() error
 }
 
+// DataFrameProfilerManager interface extends ProfilerManager with DataFrame-specific methods
+type DataFrameProfilerManagerInterface interface {
+	ProfilerManager
+	GetDataFrames() *storage.BenchmarkDataFrames
+	WriteDataFramesToDatabase(ctx context.Context) error
+	LogDataFramesSummary()
+}
+
 // Collector defines the interface for different profiling collectors
 type Collector interface {
 	Initialize(ctx context.Context) error
@@ -104,6 +112,27 @@ func NewManager(config *config.DataConfig, benchmarkID string, benchmarkIDNum in
 
 	log.WithField("collectors", len(pm.collectors)).Info("Profiler manager initialized")
 	return pm, nil
+}
+
+// NewDataFrameManager creates a new DataFrame-based profiler manager
+func NewDataFrameManager(
+	config *config.DataConfig,
+	benchmarkID string,
+	benchmarkIDNum int64,
+	startTime time.Time,
+	storageMgr *storage.Manager,
+	containerConfigs map[string]*config.ContainerConfig,
+	schedulerType string,
+) (*DataFrameProfilerManager, error) {
+	return NewDataFrameProfilerManager(
+		config,
+		benchmarkID,
+		benchmarkIDNum,
+		startTime,
+		storageMgr,
+		containerConfigs,
+		schedulerType,
+	)
 }
 
 // Initialize initializes all collectors
