@@ -1,7 +1,7 @@
 benchmark:
   name: Test
   description: A simple test benchmark which starts three containers in a sequence.
-  max_t: 20
+  max_t: 60
   log_level: info
   scheduler:
     implementation: default

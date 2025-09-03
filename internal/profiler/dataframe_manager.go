@@ -272,14 +272,36 @@ func (pm *DataFrameProfilerManager) collectContainerMetrics(ctx context.Context,
 			continue
 		}
 
+		log.WithFields(log.Fields{
+			"collector":     collector.Name(),
+			"container":     containerName,
+			"measurements":  len(measurements),
+			"sampling_step": currentStep,
+		}).Debug("Collected measurements from collector")
+
 		// Parse measurements based on collector type
 		switch collector.Name() {
-		case "docker":
+		case "docker_stats":
 			dockerData = pm.parseDockerMeasurements(measurements, containerName)
+			log.WithFields(log.Fields{
+				"container":    containerName,
+				"docker_data":  dockerData != nil,
+				"measurements": len(measurements),
+			}).Debug("Parsed Docker measurements")
 		case "perf":
 			perfData = pm.parsePerfMeasurements(measurements, containerName)
+			log.WithFields(log.Fields{
+				"container":    containerName,
+				"perf_data":    perfData != nil,
+				"measurements": len(measurements),
+			}).Debug("Parsed Perf measurements")
 		case "rdt":
 			rdtData = pm.parseRDTMeasurements(measurements, containerName)
+			log.WithFields(log.Fields{
+				"container":    containerName,
+				"rdt_data":     rdtData != nil,
+				"measurements": len(measurements),
+			}).Debug("Parsed RDT measurements")
 		}
 	}
 
@@ -315,13 +337,32 @@ func (pm *DataFrameProfilerManager) parseDockerMeasurements(measurements []stora
 	dockerData := &storage.DockerData{}
 	found := false
 
-	for _, measurement := range measurements {
+	log.WithFields(log.Fields{
+		"container":           containerName,
+		"total_measurements":  len(measurements),
+	}).Debug("Starting Docker measurements parsing")
+
+	for i, measurement := range measurements {
 		// Check if this measurement is for our container
 		containerID := measurement.Tags["container_id"]
 		measurementContainerName := measurement.Tags["container_name"]
 		
+		log.WithFields(log.Fields{
+			"container":                     containerName,
+			"measurement_index":             i,
+			"measurement_name":              measurement.Name,
+			"measurement_container_id":      containerID,
+			"measurement_container_name":    measurementContainerName,
+			"fields":                        measurement.Fields,
+		}).Debug("Processing Docker measurement")
+		
 		// Match by container name or container ID (allow partial ID matching)
 		if measurementContainerName != containerName && !strings.Contains(containerID, containerName) {
+			log.WithFields(log.Fields{
+				"container":                  containerName,
+				"measurement_container_name": measurementContainerName,
+				"measurement_container_id":   containerID,
+			}).Debug("Skipping measurement - container name/ID mismatch")
 			continue
 		}
 
@@ -331,11 +372,21 @@ func (pm *DataFrameProfilerManager) parseDockerMeasurements(measurements []stora
 			if val, ok := measurement.Fields["value"].(float64); ok {
 				dockerData.CPUUsagePercent = val
 				found = true
+				log.WithFields(log.Fields{
+					"container": containerName,
+					"metric":    "cpu_usage_percent",
+					"value":     val,
+				}).Debug("Parsed Docker CPU usage percent")
 			}
 		case "cpu_usage_total":
 			if val, ok := measurement.Fields["value"].(float64); ok {
 				dockerData.CPUUsageTotal = uint64(val)
 				found = true
+				log.WithFields(log.Fields{
+					"container": containerName,
+					"metric":    "cpu_usage_total",
+					"value":     val,
+				}).Debug("Parsed Docker CPU usage total")
 			}
 		case "cpu_usage_kernel":
 			if val, ok := measurement.Fields["value"].(float64); ok {
@@ -424,6 +475,14 @@ func (pm *DataFrameProfilerManager) parseDockerMeasurements(measurements []stora
 			}
 		}
 	}
+
+	log.WithFields(log.Fields{
+		"container":                containerName,
+		"found_docker_data":        found,
+		"cpu_usage_percent":        dockerData.CPUUsagePercent,
+		"memory_usage":            dockerData.MemoryUsage,
+		"memory_usage_percent":    dockerData.MemoryUsagePercent,
+	}).Debug("Docker measurements parsing completed")
 
 	if found {
 		return dockerData

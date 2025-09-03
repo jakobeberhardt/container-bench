@@ -1,7 +1,7 @@
 benchmark:
   name: DebugTest
   description: Debug test for perf collection
-  max_t: 5
+  max_t: 10
   log_level: debug
   scheduler:
     implementation: default
