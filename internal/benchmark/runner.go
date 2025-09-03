@@ -27,6 +27,7 @@ type Runner struct {
 	config         *config.Config
 	containerMgr   *container.Manager
 	profilerMgr    profiler.ProfilerManager
+	dataFrameMgr   *profiler.DataFrameProfilerManager // New DataFrame-based profiler
 	schedulerMgr   scheduler.Scheduler
 	storageMgr     *storage.Manager
 	benchmarkID    string
@@ -78,6 +79,22 @@ func NewRunnerWithOptions(cfg *config.Config, configFilePath string, printMetaDa
 		"benchmark_id_number": benchmarkIDNum,
 	}).Info("Benchmark IDs assigned")
 
+	// Initialize DataFrame-based profiler manager
+	dataFrameMgr, err := profiler.NewDataFrameManager(
+		&cfg.Benchmark.Data,
+		benchmarkID,
+		benchmarkIDNum,
+		time.Now(), // Will be updated when benchmark actually starts
+		storageMgr,
+		convertContainerConfigs(cfg.Container),
+		cfg.Benchmark.Scheduler.Implementation,
+	)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to create DataFrame profiler manager: %w", err)
+	}
+
+	// Keep the old comprehensive profiler manager for backward compatibility if needed
 	// Initialize comprehensive profiler manager with container configs and scheduler info
 	profilerMgr, err := profiler.NewComprehensiveManager(
 		&cfg.Benchmark.Data,
@@ -114,6 +131,7 @@ func NewRunnerWithOptions(cfg *config.Config, configFilePath string, printMetaDa
 		config:         cfg,
 		containerMgr:   containerMgr,
 		profilerMgr:    profilerMgr,
+		dataFrameMgr:   dataFrameMgr,
 		schedulerMgr:   schedulerMgr,
 		storageMgr:     storageMgr,
 		benchmarkID:    benchmarkID,
@@ -174,9 +192,9 @@ func (r *Runner) prepare() error {
 		return fmt.Errorf("failed to initialize scheduler: %w", err)
 	}
 
-	// Initialize profiler
-	if err := r.profilerMgr.Initialize(r.ctx, r.containerMgr.GetContainerIDs()); err != nil {
-		return fmt.Errorf("failed to initialize profiler: %w", err)
+	// Initialize DataFrame profiler (new implementation)
+	if err := r.dataFrameMgr.Initialize(r.ctx, r.containerMgr.GetContainerIDs()); err != nil {
+		return fmt.Errorf("failed to initialize DataFrame profiler: %w", err)
 	}
 
 	log.Info("Preparation phase completed successfully")
@@ -186,12 +204,12 @@ func (r *Runner) prepare() error {
 func (r *Runner) execute() error {
 	log.Info("Entering execution phase")
 
-	// Start profiling
+	// Start DataFrame profiling (new implementation)
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
-		if err := r.profilerMgr.StartProfiling(r.ctx, r.containerMgr.GetContainerIDs()); err != nil {
-			log.WithError(err).Error("Profiling failed")
+		if err := r.dataFrameMgr.StartProfiling(r.ctx, r.containerMgr.GetContainerIDs()); err != nil {
+			log.WithError(err).Error("DataFrame profiling failed")
 		}
 	}()
 
@@ -311,9 +329,19 @@ func (r *Runner) cleanup() error {
 
 	var errors []error
 
-	if err := r.profilerMgr.Stop(); err != nil {
-		log.WithError(err).Warn("Failed to stop profiler cleanly")
-		errors = append(errors, fmt.Errorf("failed to stop profiler: %w", err))
+	// Stop DataFrame profiler and write data to database
+	if err := r.dataFrameMgr.Stop(); err != nil {
+		log.WithError(err).Warn("Failed to stop DataFrame profiler cleanly")
+		errors = append(errors, fmt.Errorf("failed to stop DataFrame profiler: %w", err))
+	}
+
+	// Log DataFrames summary
+	r.dataFrameMgr.LogDataFramesSummary()
+
+	// Write DataFrames to database
+	if err := r.dataFrameMgr.WriteDataFramesToDatabase(r.ctx); err != nil {
+		log.WithError(err).Error("Failed to write DataFrames to database")
+		errors = append(errors, fmt.Errorf("failed to write DataFrames to database: %w", err))
 	}
 
 	if err := r.containerMgr.StopAndCleanup(r.ctx); err != nil {
