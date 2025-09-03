@@ -15,6 +15,7 @@ var (
 	configFile    string
 	verbose       bool
 	printMetaData bool
+	csvExport     string
 )
 
 var rootCmd = &cobra.Command{
@@ -36,6 +37,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "", "Path to benchmark configuration file (required)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging")
 	rootCmd.PersistentFlags().BoolVarP(&printMetaData, "print-meta-data", "m", false, "Print benchmark metadata at the end")
+	rootCmd.PersistentFlags().StringVar(&csvExport, "csv", "", "Export DataFrames to CSV files in specified directory (e.g., ./csv/)")
 	// Don't mark config as required globally, handle it per command
 }
 
@@ -76,7 +78,7 @@ func runBenchmark(cmd *cobra.Command, args []string) {
 	log.WithField("config", configFile).Info("Configuration loaded successfully")
 
 	// Create and run benchmark
-	benchmarkRunner, err := benchmark.NewRunnerWithOptions(cfg, configFile, printMetaData)
+	benchmarkRunner, err := benchmark.NewRunnerWithOptions(cfg, configFile, printMetaData, csvExport)
 	if err != nil {
 		log.WithError(err).Fatal("Failed to create benchmark runner")
 		os.Exit(1)
