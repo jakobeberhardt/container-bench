@@ -2,7 +2,7 @@ benchmark:
   name: Test
   description: A simple test benchmark which starts three containers in a sequence.
   max_t: 20
-  log_level: debug
+  log_level: info
   scheduler:
     implementation: default
     rdt: false  
@@ -15,7 +15,7 @@ benchmark:
       password: ${INFLUXDB_TOKEN}
       org: ${INFLUXDB_ORG}  
     rdt: false
-    perf: false
+    perf: true
     dockerstats: true
 
 
@@ -24,13 +24,13 @@ container0:
   image: nginx:alpine
   start: 0
   core: 0
-  command: "sleep 20 && while :; do dd if=/dev/zero of=/dev/null bs=1M count=100 2>/dev/null; done"
+  command: "while :; do dd if=/dev/zero of=/dev/null bs=1M count=100 2>/dev/null; done"
 container1:
   index: 1
   image: nginx:alpine
   start: 0
   core: 2
-  command: "sleep 20 && while :; do dd if=/dev/zero of=/dev/null bs=1M count=100 2>/dev/null; done"
+  command: "sleep 3 && while :; do dd if=/dev/zero of=/dev/null bs=1M count=100 2>/dev/null; done"
 container2:
   index: 2
   image: nginx:alpine
