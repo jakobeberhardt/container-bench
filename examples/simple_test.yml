@@ -30,10 +30,11 @@ container1:
   image: nginx:alpine
   start: 0
   core: 2
-  command: "sleep 3 && while :; do dd if=/dev/zero of=/dev/null bs=1M count=100 2>/dev/null; done"
+  command: "apk add --no-cache firefox chromium libreoffice gimp inkscape blender thunderbird nodejs rust llvm17 texlive-full"
 container2:
   index: 2
   image: nginx:alpine
   start: 0
   core: 4
-  command: "timeout 40 apk add --no-cache firefox chromium libreoffice gimp inkscape blender thunderbird nodejs rust llvm17 texlive-full"
+  command: "sleep 15 && apk add --no-cache firefox chromium libreoffice gimp inkscape blender thunderbird nodejs rust llvm17 texlive-full"
+
