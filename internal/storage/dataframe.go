@@ -89,10 +89,9 @@ func (bdf *BenchmarkDataFrames) AddContainer(containerName string, containerInde
 	bdf.Containers[containerName] = NewContainerDataFrame(containerName, containerIndex, containerImage, containerCore)
 	
 	log.WithFields(log.Fields{
-		"container_name":  containerName,
-		"container_index": containerIndex,
-		"container_image": containerImage,
-		"container_core":  containerCore,
+		"container": containerName,
+		"index":     containerIndex,
+		"core":      containerCore,
 	}).Debug("Added container DataFrame")
 }
 

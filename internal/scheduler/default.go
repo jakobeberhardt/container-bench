@@ -37,10 +37,12 @@ func (ds *DefaultScheduler) Initialize(ctx context.Context) error {
 
 // ScheduleContainer applies scheduling policies to a container
 func (ds *DefaultScheduler) ScheduleContainer(ctx context.Context, containerID string, cfg config.ContainerConfig) error {
-	log.WithFields(log.Fields{
-		"container_id": containerID[:12],
-		"core":         cfg.Core,
-	}).Debug("Applying default scheduling policy")
+	if cfg.Core >= 0 {
+		log.WithFields(log.Fields{
+			"container_id": containerID[:12],
+			"core":         cfg.Core,
+		}).Debug("Applying default scheduling policy with CPU pinning")
+	}
 
 	// Apply CPU pinning if specified
 	if cfg.Core >= 0 {
