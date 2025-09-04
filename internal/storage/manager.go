@@ -48,8 +48,7 @@ func NewManager(config config.DBConfig) (*Manager, error) {
 		"host":   config.Host,
 		"bucket": config.Name,
 		"org":    org,
-		"token":  "***", 
-	}).Debug("Creating InfluxDB client with values")
+	}).Debug("Creating InfluxDB client")
 	
 	client := influxdb2.NewClient(config.Host, token)
 	
@@ -166,10 +165,10 @@ func (sm *Manager) WriteMeasurements(ctx context.Context, measurements []Measure
 
 	atomic.AddInt64(&sm.totalBytesWritten, totalSize)
 
-	log.WithFields(log.Fields{
-		"count":      len(measurements),
-		"bytes_size": totalSize,
-	}).Debug("Measurements written to storage")
+	// Only log for batches of measurements to reduce verbosity
+	if len(measurements) > 1 {
+		log.Debugf("Measurements written to storage: %d measurements, %d bytes", len(measurements), totalSize)
+	}
 	return nil
 }
 

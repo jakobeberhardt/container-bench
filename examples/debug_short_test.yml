@@ -1,0 +1,27 @@
+benchmark:
+  name: DebugTest
+  description: A short test to see debug output
+  max_t: 5
+  log_level: debug
+  scheduler:
+    implementation: default
+    rdt: false  
+  data:
+    profilefrequency: 100  
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}  
+    rdt: false
+    perf: true
+    dockerstats: true
+
+
+container0:
+  index: 0
+  image: nginx:alpine
+  start: 0
+  core: 0
+  command: "sleep 10"

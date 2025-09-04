@@ -80,13 +80,6 @@ func (p *PerfCollector) Initialize(ctx context.Context) error {
 	
 	log.WithFields(log.Fields{
 		"config_containers": len(config.ContainerMetadata),
-		"config_keys": func() []string {
-			keys := make([]string, 0, len(config.ContainerMetadata))
-			for k := range config.ContainerMetadata {
-				keys = append(keys, k)
-			}
-			return keys
-		}(),
 	}).Debug("Perf collector initializing with container metadata")
 	
 	// Initialize buffers for each container
@@ -96,19 +89,24 @@ func (p *PerfCollector) Initialize(ctx context.Context) error {
 			containerName: containerName,
 			data:         make(map[string]uint64),
 		}
-		log.WithField("container", containerName).Debug("Initialized perf buffer for container")
 	}
 	p.bufferMutex.Unlock()
+	
+	log.WithField("containers", len(config.ContainerMetadata)).Debug("Initialized perf buffers for all containers")
 
 	// Start interval-based collection for each container
 	p.running = true
+	
+	// Start collection goroutines for each container
 	for containerName := range config.ContainerMetadata {
-		log.WithField("container", containerName).Debug("Starting perf collection goroutine for container")
 		p.wg.Add(1)
 		go p.startContainerCollection(ctx, containerName)
 	}
 
-	log.WithField("sampling_rate_ms", config.SamplingRate).Info("Perf collector initialized with interval-based collection per container")
+	log.WithFields(log.Fields{
+		"containers":      len(config.ContainerMetadata),
+		"sampling_rate_ms": config.SamplingRate,
+	}).Info("Perf collector initialized with interval-based collection per container")
 	return nil
 }
 
@@ -140,40 +138,22 @@ waitLoop:
 		case <-ticker.C:
 			// Force a metadata refresh on each check to get latest container status
 			if err := p.metadataProvider.RefreshContainerMetadata(); err != nil {
-				log.WithFields(log.Fields{
-					"container": containerName,
-					"error": err,
-				}).Debug("Failed to refresh metadata while waiting for container")
+				log.WithError(err).Debug("Failed to refresh metadata while waiting for container")
 			}
 			
 			var err error
 			metadata, err = p.metadataProvider.GetContainerMetadata(containerName)
 			if err != nil {
-				log.WithFields(log.Fields{
-					"container": containerName,
-					"error": err,
-				}).Debug("Failed to get container metadata")
 				continue
 			}
-			
-			log.WithFields(log.Fields{
-				"container": containerName,
-				"pid": metadata.PID,
-				"cgroup": metadata.Cgroup,
-				"has_pid": metadata.PID > 0,
-				"has_cgroup": metadata.Cgroup != "",
-			}).Debug("Container metadata debug info")
 			
 			if metadata.PID > 0 && metadata.Cgroup != "" {
 				log.WithFields(log.Fields{
 					"container": containerName,
 					"pid": metadata.PID,
-					"cgroup": metadata.Cgroup,
 				}).Debug("Container is now running, starting perf collection")
 				break waitLoop
 			}
-			
-			log.WithField("container", containerName).Debug("Waiting for container to start (PID=0 or empty cgroup)")
 		}
 	}
 	
@@ -281,11 +261,13 @@ waitLoop:
 		default:
 			line := scanner.Text()
 			lineCount++
-			log.WithFields(log.Fields{
-				"container": containerName,
-				"line_count": lineCount,
-				"line": line,
-			}).Debug("Received perf output line")
+			// Only log every 100 lines to reduce verbosity
+			if lineCount%100 == 0 {
+				log.WithFields(log.Fields{
+					"container": containerName,
+					"lines_processed": lineCount,
+				}).Debug("Processing perf output lines")
+			}
 			p.parseIntervalLine(line, containerName)
 		}
 	}
@@ -305,37 +287,22 @@ waitLoop:
 // parseIntervalLine parses a single line of perf stat interval output
 func (p *PerfCollector) parseIntervalLine(line string, containerName string) {
 	line = strings.TrimSpace(line)
-	log.WithFields(log.Fields{
-		"container": containerName,
-		"raw_line": line,
-	}).Debug("Parsing perf interval line")
 	
 	if line == "" || strings.HasPrefix(line, "#") {
-		log.WithField("container", containerName).Debug("Skipping comment or empty line")
 		return
 	}
 
 	// Parse interval output format:
 	// timestamp count unit event cgroup_path
 	parts := strings.Fields(line)
-	log.WithFields(log.Fields{
-		"container": containerName,
-		"parts_count": len(parts),
-		"parts": parts,
-	}).Debug("Split perf line into parts")
 	
 	if len(parts) < 4 {
-		log.WithField("container", containerName).Debug("Line has insufficient parts")
 		return
 	}
 
 	// Extract count (remove commas)
 	countStr := strings.ReplaceAll(parts[1], ",", "")
 	if countStr == "<not" || countStr == "" {
-		log.WithFields(log.Fields{
-			"container": containerName,
-			"count_str": countStr,
-		}).Debug("Skipping line with invalid count")
 		return
 	}
 
@@ -345,11 +312,6 @@ func (p *PerfCollector) parseIntervalLine(line string, containerName string) {
 		// For floating point values like task-clock, convert to milliseconds or appropriate unit
 		floatVal, err := strconv.ParseFloat(countStr, 64)
 		if err != nil {
-			log.WithFields(log.Fields{
-				"container": containerName,
-				"count_str": countStr,
-				"error": err,
-			}).Debug("Failed to parse float count")
 			return
 		}
 		count = uint64(floatVal * 1000) // Convert to microseconds for task-clock
@@ -357,11 +319,6 @@ func (p *PerfCollector) parseIntervalLine(line string, containerName string) {
 		var err error
 		count, err = strconv.ParseUint(countStr, 10, 64)
 		if err != nil {
-			log.WithFields(log.Fields{
-				"container": containerName,
-				"count_str": countStr,
-				"error": err,
-			}).Debug("Failed to parse count")
 			return
 		}
 	}
@@ -378,20 +335,12 @@ func (p *PerfCollector) parseIntervalLine(line string, containerName string) {
 	}
 	
 	if eventName == "" {
-		log.WithFields(log.Fields{
-			"container": containerName,
-			"parts": parts,
-		}).Debug("Could not find valid event name, skipping")
 		return
 	}
 	
 	// Map event name to our standard format
 	standardName := mapEventName(eventName)
 	if standardName == "" {
-		log.WithFields(log.Fields{
-			"container": containerName,
-			"event_name": eventName,
-		}).Debug("Unknown event name, skipping")
 		return // Skip unknown events
 	}
 
@@ -402,14 +351,6 @@ func (p *PerfCollector) parseIntervalLine(line string, containerName string) {
 		buffer.data[standardName] = count
 		buffer.timestamp = time.Now()
 		buffer.mutex.Unlock()
-		
-		log.WithFields(log.Fields{
-			"container": containerName,
-			"metric": standardName,
-			"value": count,
-		}).Debug("Updated perf metric")
-	} else {
-		log.WithField("container", containerName).Warn("Buffer does not exist for container")
 	}
 	p.bufferMutex.Unlock()
 }
