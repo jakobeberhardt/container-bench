@@ -98,6 +98,7 @@ func (idb *InfluxDBClient) WriteDataFrames(benchmarkID int, benchmarkConfig *con
 		}
 
 		steps := containerDF.GetAllSteps()
+		fmt.Printf("📊 Container %d: Collected %d data points\n", containerIndex, len(steps))
 		for stepNumber, step := range steps {
 			if step == nil {
 				continue

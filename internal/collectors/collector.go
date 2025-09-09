@@ -2,6 +2,7 @@ package collectors
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"container-bench/internal/dataframe"
@@ -17,6 +18,7 @@ type ContainerCollector struct {
 	ContainerID    string
 	containerPID   int
 	cgroupPath     string
+	cpuCore        int
 	config         CollectorConfig
 	dataFrame      *dataframe.ContainerDataFrame
 	
@@ -25,6 +27,7 @@ type ContainerCollector struct {
 	rdtCollector    *RDTCollector
 	
 	stopChan chan struct{}
+	stopped  bool
 }
 
 type CollectorConfig struct {
@@ -44,9 +47,10 @@ func NewContainerCollector(containerIndex int, containerID string, config Collec
 	}
 }
 
-func (cc *ContainerCollector) SetContainerInfo(pid int, cgroupPath string) {
+func (cc *ContainerCollector) SetContainerInfo(pid int, cgroupPath string, cpuCore int) {
 	cc.containerPID = pid
 	cc.cgroupPath = cgroupPath
+	cc.cpuCore = cpuCore
 }
 
 func (cc *ContainerCollector) Start(ctx context.Context) error {
@@ -54,9 +58,12 @@ func (cc *ContainerCollector) Start(ctx context.Context) error {
 	var err error
 	
 	if cc.config.EnablePerf {
-		cc.perfCollector, err = NewPerfCollector(cc.containerPID, cc.cgroupPath)
+		cc.perfCollector, err = NewPerfCollector(cc.containerPID, cc.cgroupPath, cc.cpuCore)
 		if err != nil {
-			return err
+			// Log warning but don't fail the entire collector
+			fmt.Printf("⚠️  Warning: Failed to enable perf monitoring for container %d: %v\n", cc.containerIndex, err)
+			fmt.Printf("   Continuing without perf metrics...\n")
+			cc.perfCollector = nil
 		}
 	}
 	
@@ -70,7 +77,10 @@ func (cc *ContainerCollector) Start(ctx context.Context) error {
 	if cc.config.EnableRDT {
 		cc.rdtCollector, err = NewRDTCollector(cc.containerPID)
 		if err != nil {
-			return err
+			// Log warning but don't fail the entire collector
+			fmt.Printf("⚠️  Warning: Failed to enable RDT monitoring for container %d: %v\n", cc.containerIndex, err)
+			fmt.Printf("   Continuing without RDT metrics...\n")
+			cc.rdtCollector = nil
 		}
 	}
 	
@@ -118,7 +128,10 @@ func (cc *ContainerCollector) collect(ctx context.Context) {
 }
 
 func (cc *ContainerCollector) Stop() error {
-	close(cc.stopChan)
+	if !cc.stopped {
+		close(cc.stopChan)
+		cc.stopped = true
+	}
 	
 	if cc.perfCollector != nil {
 		cc.perfCollector.Close()
