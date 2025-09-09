@@ -110,6 +110,31 @@ func (cdf *ContainerDataFrame) AddStep(stepNumber int, step *SamplingStep) {
 	cdf.steps[stepNumber] = step
 }
 
+func (cdf *ContainerDataFrame) AddOrMergeStep(stepNumber int, step *SamplingStep) {
+	cdf.mutex.Lock()
+	defer cdf.mutex.Unlock()
+	
+	if existing, exists := cdf.steps[stepNumber]; exists {
+		// Merge the new step data into the existing step
+		if step.Perf != nil {
+			existing.Perf = step.Perf
+		}
+		if step.Docker != nil {
+			existing.Docker = step.Docker
+		}
+		if step.RDT != nil {
+			existing.RDT = step.RDT
+		}
+		// Update timestamp to the latest
+		if step.Timestamp.After(existing.Timestamp) {
+			existing.Timestamp = step.Timestamp
+		}
+	} else {
+		// Create new step
+		cdf.steps[stepNumber] = step
+	}
+}
+
 func (cdf *ContainerDataFrame) GetStep(stepNumber int) *SamplingStep {
 	cdf.mutex.RLock()
 	defer cdf.mutex.RUnlock()
