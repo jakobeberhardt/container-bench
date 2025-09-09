@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
+	"sync"
 
 	"container-bench/internal/dataframe"
 	"github.com/docker/docker/api/types"
@@ -12,8 +12,13 @@ import (
 )
 
 type DockerCollector struct {
-	client      *client.Client
-	containerID string
+	client         *client.Client
+	containerID    string
+	latestMetrics  *dataframe.DockerMetrics
+	metricsMutex   sync.RWMutex
+	streamCtx      context.Context
+	streamCancel   context.CancelFunc
+	streamStarted  bool
 }
 
 func NewDockerCollector(containerID string) (*DockerCollector, error) {
@@ -22,29 +27,159 @@ func NewDockerCollector(containerID string) (*DockerCollector, error) {
 		return nil, fmt.Errorf("failed to create Docker client: %w", err)
 	}
 
-	return &DockerCollector{
-		client:      cli,
-		containerID: containerID,
-	}, nil
+	ctx, cancel := context.WithCancel(context.Background())
+
+	collector := &DockerCollector{
+		client:       cli,
+		containerID:  containerID,
+		streamCtx:    ctx,
+		streamCancel: cancel,
+	}
+
+	// Start streaming stats in background goroutine
+	go collector.streamStats()
+
+	return collector, nil
 }
 
-func (dc *DockerCollector) Collect() *dataframe.DockerMetrics {
-	// Use a timeout context to prevent blocking
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	defer cancel()
-	
-	stats, err := dc.client.ContainerStats(ctx, dc.containerID, false)
+func (dc *DockerCollector) streamStats() {
+	stats, err := dc.client.ContainerStats(dc.streamCtx, dc.containerID, true) // stream=true
 	if err != nil {
-		// Return nil if we can't get stats (including timeout)
-		return nil
+		return
 	}
 	defer stats.Body.Close()
 
-	var dockerStats types.StatsJSON
-	if err := json.NewDecoder(stats.Body).Decode(&dockerStats); err != nil {
+	decoder := json.NewDecoder(stats.Body)
+	for {
+		select {
+		case <-dc.streamCtx.Done():
+			return
+		default:
+			var dockerStats types.StatsJSON
+			if err := decoder.Decode(&dockerStats); err != nil {
+				return
+			}
+
+			// Parse and store the latest metrics
+			metrics := dc.parseDockerStats(&dockerStats)
+			
+			dc.metricsMutex.Lock()
+			dc.latestMetrics = metrics
+			dc.streamStarted = true
+			dc.metricsMutex.Unlock()
+		}
+	}
+}
+
+func (dc *DockerCollector) Collect() *dataframe.DockerMetrics {
+	dc.metricsMutex.RLock()
+	defer dc.metricsMutex.RUnlock()
+	
+	if !dc.streamStarted {
+		fmt.Printf("⏳ Docker stats stream not ready for %s\n", dc.containerID[:12])
 		return nil
 	}
+	
+	if dc.latestMetrics == nil {
+		fmt.Printf("� No Docker stats available for %s\n", dc.containerID[:12])
+		return nil
+	}
+	
+	fmt.Printf("✅ Docker stats collected from stream for %s\n", dc.containerID[:12])
+	
+	// Return a copy of the latest metrics
+	return dc.copyMetrics(dc.latestMetrics)
+}
 
+func (dc *DockerCollector) copyMetrics(original *dataframe.DockerMetrics) *dataframe.DockerMetrics {
+	if original == nil {
+		return nil
+	}
+	
+	// Create a copy to avoid race conditions
+	copy := &dataframe.DockerMetrics{}
+	
+	if original.CPUUsageTotal != nil {
+		val := *original.CPUUsageTotal
+		copy.CPUUsageTotal = &val
+	}
+	if original.CPUUsageKernel != nil {
+		val := *original.CPUUsageKernel
+		copy.CPUUsageKernel = &val
+	}
+	if original.CPUUsageUser != nil {
+		val := *original.CPUUsageUser
+		copy.CPUUsageUser = &val
+	}
+	if original.CPUUsagePercent != nil {
+		val := *original.CPUUsagePercent
+		copy.CPUUsagePercent = &val
+	}
+	if original.CPUThrottling != nil {
+		val := *original.CPUThrottling
+		copy.CPUThrottling = &val
+	}
+	if original.MemoryUsage != nil {
+		val := *original.MemoryUsage
+		copy.MemoryUsage = &val
+	}
+	if original.MemoryLimit != nil {
+		val := *original.MemoryLimit
+		copy.MemoryLimit = &val
+	}
+	if original.MemoryCache != nil {
+		val := *original.MemoryCache
+		copy.MemoryCache = &val
+	}
+	if original.MemoryRSS != nil {
+		val := *original.MemoryRSS
+		copy.MemoryRSS = &val
+	}
+	if original.MemorySwap != nil {
+		val := *original.MemorySwap
+		copy.MemorySwap = &val
+	}
+	if original.MemoryUsagePercent != nil {
+		val := *original.MemoryUsagePercent
+		copy.MemoryUsagePercent = &val
+	}
+	if original.NetworkRxBytes != nil {
+		val := *original.NetworkRxBytes
+		copy.NetworkRxBytes = &val
+	}
+	if original.NetworkTxBytes != nil {
+		val := *original.NetworkTxBytes
+		copy.NetworkTxBytes = &val
+	}
+	if original.NetworkRxPackets != nil {
+		val := *original.NetworkRxPackets
+		copy.NetworkRxPackets = &val
+	}
+	if original.NetworkTxPackets != nil {
+		val := *original.NetworkTxPackets
+		copy.NetworkTxPackets = &val
+	}
+	if original.DiskReadBytes != nil {
+		val := *original.DiskReadBytes
+		copy.DiskReadBytes = &val
+	}
+	if original.DiskWriteBytes != nil {
+		val := *original.DiskWriteBytes
+		copy.DiskWriteBytes = &val
+	}
+	if original.DiskReadOps != nil {
+		val := *original.DiskReadOps
+		copy.DiskReadOps = &val
+	}
+	if original.DiskWriteOps != nil {
+		val := *original.DiskWriteOps
+		copy.DiskWriteOps = &val
+	}
+	
+	return copy
+}
+
+func (dc *DockerCollector) parseDockerStats(dockerStats *types.StatsJSON) *dataframe.DockerMetrics {
 	metrics := &dataframe.DockerMetrics{}
 
 	// CPU metrics
@@ -157,6 +292,9 @@ func (dc *DockerCollector) Collect() *dataframe.DockerMetrics {
 }
 
 func (dc *DockerCollector) Close() {
+	if dc.streamCancel != nil {
+		dc.streamCancel()
+	}
 	if dc.client != nil {
 		dc.client.Close()
 	}
