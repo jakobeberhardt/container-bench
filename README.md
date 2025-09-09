@@ -40,15 +40,18 @@ make install
 
 ### Environment Variables
 
-Create a `.env` file with your InfluxDB configuration:
+The application automatically loads environment variables from a `.env` file in the current directory or the application directory. Create a `.env` file with your InfluxDB configuration:
 
 ```bash
+# .env file
 INFLUXDB_HOST=https://your-influxdb-host
 INFLUXDB_USER=your-username
 INFLUXDB_TOKEN=your-token
 INFLUXDB_ORG=your-org
 INFLUXDB_BUCKET=benchmarks
 ```
+
+**Note**: The application will automatically detect and load this file - no need to manually export variables.
 
 ### Benchmark Configuration
 
@@ -88,6 +91,7 @@ container0:
 ### Run a Benchmark
 
 ```bash
+# The application automatically loads .env file
 ./container-bench run -c examples/simple_test.yml
 ```
 

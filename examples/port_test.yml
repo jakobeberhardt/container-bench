@@ -1,0 +1,27 @@
+benchmark:
+  name: Port Test
+  description: Test port binding functionality
+  max_t: 10
+  log_level: info
+  scheduler:
+    implementation: default
+    rdt: false
+  data:
+    db:
+      host: https://data.jakob-eberhardt.de
+      name: benchmarks
+      user: jeberhardt
+      password: sdkjnfkdsjnksdlnclksanclsacnm
+      org: rdt4nn
+
+container0:
+  index: 0
+  image: nginx:alpine
+  port: 8080:80
+  core: 0
+  command: "echo 'Port test' && sleep 5"
+  data:
+    frequency: 1000
+    perf: false
+    docker: true
+    rdt: false

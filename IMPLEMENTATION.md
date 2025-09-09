@@ -164,14 +164,23 @@ container0:
 
 ### Basic Usage
 ```bash
-# Build the application
+```bash
+# Build and validate
 make build
-
-# Validate configuration
 ./container-bench validate -c examples/simple_test.yml
 
-# Run benchmark
+# Create .env file with your InfluxDB settings (automatically loaded)
+cat > .env << EOF
+INFLUXDB_HOST=https://your-host
+INFLUXDB_TOKEN=your-token
+INFLUXDB_ORG=your-org
+INFLUXDB_USER=your-username
+INFLUXDB_BUCKET=benchmarks
+EOF
+
+# Run benchmark (environment automatically loaded)
 ./container-bench run -c examples/simple_test.yml
+```
 ```
 
 ### Environment Setup
