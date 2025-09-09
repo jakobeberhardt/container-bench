@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -21,6 +23,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
+	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
 
@@ -36,7 +39,58 @@ type ContainerBench struct {
 	endTime      time.Time
 }
 
+func loadEnvironment() {
+	// Try to load .env file from current directory
+	envFile := ".env"
+	if _, err := os.Stat(envFile); err == nil {
+		if err := godotenv.Load(envFile); err != nil {
+			fmt.Printf("Warning: Error loading .env file: %v\n", err)
+		} else {
+			fmt.Printf("✅ Loaded environment variables from %s\n", envFile)
+		}
+	} else {
+		// Try to load from the application directory
+		if execPath, err := os.Executable(); err == nil {
+			appDir := filepath.Dir(execPath)
+			envFile = filepath.Join(appDir, ".env")
+			if _, err := os.Stat(envFile); err == nil {
+				if err := godotenv.Load(envFile); err != nil {
+					fmt.Printf("Warning: Error loading .env file: %v\n", err)
+				} else {
+					fmt.Printf("✅ Loaded environment variables from %s\n", envFile)
+				}
+			}
+		}
+	}
+}
+
+func validateEnvironment() error {
+	requiredVars := []string{
+		"INFLUXDB_HOST",
+		"INFLUXDB_USER", 
+		"INFLUXDB_TOKEN",
+		"INFLUXDB_ORG",
+		"INFLUXDB_BUCKET",
+	}
+	
+	var missing []string
+	for _, varName := range requiredVars {
+		if os.Getenv(varName) == "" {
+			missing = append(missing, varName)
+		}
+	}
+	
+	if len(missing) > 0 {
+		return fmt.Errorf("missing required environment variables: %v. Please ensure your .env file contains these variables", missing)
+	}
+	
+	return nil
+}
+
 func main() {
+	// Load environment variables from .env file if it exists
+	loadEnvironment()
+
 	var configFile string
 
 	rootCmd := &cobra.Command{
@@ -49,6 +103,10 @@ func main() {
 		Use:   "run",
 		Short: "Run a benchmark",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Validate environment variables
+			if err := validateEnvironment(); err != nil {
+				return err
+			}
 			return runBenchmark(configFile)
 		},
 	}
@@ -162,10 +220,20 @@ func (cb *ContainerBench) setupContainers() error {
 
 		// Pull image
 		ctx := context.Background()
-		_, err := cb.dockerClient.ImagePull(ctx, containerConfig.Image, types.ImagePullOptions{})
+		fmt.Printf("Pulling image %s...\n", containerConfig.Image)
+		
+		pullResp, err := cb.dockerClient.ImagePull(ctx, containerConfig.Image, types.ImagePullOptions{})
 		if err != nil {
 			return fmt.Errorf("failed to pull image %s: %w", containerConfig.Image, err)
 		}
+		defer pullResp.Close()
+		
+		// Read the pull response to completion (required for pull to finish)
+		_, err = io.Copy(io.Discard, pullResp)
+		if err != nil {
+			return fmt.Errorf("failed to complete image pull for %s: %w", containerConfig.Image, err)
+		}
+		fmt.Printf("✅ Image %s pulled successfully\n", containerConfig.Image)
 
 		// Create container
 		containerName := fmt.Sprintf("bench-%d-container-%d", cb.benchmarkID, containerConfig.Index)
@@ -181,10 +249,35 @@ func (cb *ContainerBench) setupContainers() error {
 		hostConfig := &container.HostConfig{}
 
 		if containerConfig.Port != "" {
-			// Parse port mapping (simplified)
-			hostConfig.PortBindings = map[nat.Port][]nat.PortBinding{
-				nat.Port(containerConfig.Port): {{HostPort: containerConfig.Port}},
+			// Parse port mapping (format: host:container, e.g., "8080:80" or "8080:8080")
+			parts := strings.Split(containerConfig.Port, ":")
+			if len(parts) != 2 {
+				return fmt.Errorf("invalid port format %s, expected format: host:container", containerConfig.Port)
 			}
+			
+			hostPort := parts[0]
+			containerPort := parts[1]
+			
+			// Create port binding
+			port, err := nat.NewPort("tcp", containerPort)
+			if err != nil {
+				return fmt.Errorf("invalid container port %s: %w", containerPort, err)
+			}
+			
+			hostConfig.PortBindings = nat.PortMap{
+				port: []nat.PortBinding{
+					{
+						HostIP:   "0.0.0.0",
+						HostPort: hostPort,
+					},
+				},
+			}
+			
+			// Also expose the port
+			if config.ExposedPorts == nil {
+				config.ExposedPorts = make(nat.PortSet)
+			}
+			config.ExposedPorts[port] = struct{}{}
 		}
 
 		// Set CPU affinity

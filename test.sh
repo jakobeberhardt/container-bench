@@ -42,12 +42,7 @@ echo -e "\nValidating configuration..."
 echo "✅ Configuration validation successful"
 
 echo -e "\nValidating environment expansion configuration..."
-export INFLUXDB_HOST=https://data.jakob-eberhardt.de
-export INFLUXDB_USER=jeberhardt
-export INFLUXDB_TOKEN=sdkjnfkdsjnksdlnclksanclsacnm
-export INFLUXDB_ORG=rdt4nn
-export INFLUXDB_BUCKET=benchmarks
-
+# Environment variables are automatically loaded from .env file
 ./container-bench validate -c examples/simple_test.yml
 echo "✅ Environment expansion validation successful"
 

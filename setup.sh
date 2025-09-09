@@ -4,19 +4,23 @@
 
 echo "Setting up container-bench environment..."
 
-# Load environment variables from .env file if it exists
+# Check if .env file exists
 if [ -f .env ]; then
-    echo "Loading environment variables from .env file..."
-    export $(grep -v '^#' .env | xargs)
-    echo "✅ Environment variables loaded"
+    echo "✅ .env file found - environment variables will be loaded automatically"
+    echo "Environment variables in .env file:"
+    grep -v '^#' .env | grep -v '^$' | cut -d= -f1 | sed 's/^/  - /'
 else
     echo "⚠️  No .env file found. Please create one with your InfluxDB configuration."
     echo "Example .env file:"
-    echo "INFLUXDB_HOST=https://your-influxdb-host"
-    echo "INFLUXDB_USER=your-username"
-    echo "INFLUXDB_TOKEN=your-token"
-    echo "INFLUXDB_ORG=your-org"
-    echo "INFLUXDB_BUCKET=benchmarks"
+    cat << EOF
+INFLUXDB_HOST=https://your-influxdb-host
+INFLUXDB_USER=your-username
+INFLUXDB_TOKEN=your-token
+INFLUXDB_ORG=your-org
+INFLUXDB_BUCKET=benchmarks
+EOF
+    echo ""
+    echo "The application will automatically load variables from .env file."
 fi
 
 # Verify Docker is running
@@ -40,5 +44,4 @@ echo "Available commands:"
 echo "  ./container-bench validate -c examples/simple_test.yml"
 echo "  ./container-bench run -c examples/simple_test.yml"
 echo ""
-echo "Environment variables:"
-env | grep INFLUXDB | head -5
+echo "Note: Environment variables are automatically loaded from .env file"
