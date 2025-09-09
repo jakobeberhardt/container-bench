@@ -1,0 +1,160 @@
+package collectors
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"container-bench/internal/dataframe"
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/client"
+)
+
+type DockerCollector struct {
+	client      *client.Client
+	containerID string
+}
+
+func NewDockerCollector(containerID string) (*DockerCollector, error) {
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Docker client: %w", err)
+	}
+
+	return &DockerCollector{
+		client:      cli,
+		containerID: containerID,
+	}, nil
+}
+
+func (dc *DockerCollector) Collect() *dataframe.DockerMetrics {
+	ctx := context.Background()
+	
+	stats, err := dc.client.ContainerStats(ctx, dc.containerID, false)
+	if err != nil {
+		// Return nil if we can't get stats
+		return nil
+	}
+	defer stats.Body.Close()
+
+	var dockerStats types.StatsJSON
+	if err := json.NewDecoder(stats.Body).Decode(&dockerStats); err != nil {
+		return nil
+	}
+
+	metrics := &dataframe.DockerMetrics{}
+
+	// CPU metrics
+	if dockerStats.CPUStats.CPUUsage.TotalUsage > 0 {
+		totalUsage := dockerStats.CPUStats.CPUUsage.TotalUsage
+		metrics.CPUUsageTotal = &totalUsage
+	}
+
+	if dockerStats.CPUStats.CPUUsage.UsageInKernelmode > 0 {
+		kernelUsage := dockerStats.CPUStats.CPUUsage.UsageInKernelmode
+		metrics.CPUUsageKernel = &kernelUsage
+	}
+
+	if dockerStats.CPUStats.CPUUsage.UsageInUsermode > 0 {
+		userUsage := dockerStats.CPUStats.CPUUsage.UsageInUsermode
+		metrics.CPUUsageUser = &userUsage
+	}
+
+	// CPU percentage calculation
+	if dockerStats.CPUStats.CPUUsage.TotalUsage > 0 && dockerStats.PreCPUStats.CPUUsage.TotalUsage > 0 {
+		cpuDelta := float64(dockerStats.CPUStats.CPUUsage.TotalUsage - dockerStats.PreCPUStats.CPUUsage.TotalUsage)
+		systemDelta := float64(dockerStats.CPUStats.SystemUsage - dockerStats.PreCPUStats.SystemUsage)
+		
+		if systemDelta > 0 {
+			cpuPercent := (cpuDelta / systemDelta) * float64(dockerStats.CPUStats.OnlineCPUs) * 100.0
+			metrics.CPUUsagePercent = &cpuPercent
+		}
+	}
+
+	// CPU throttling
+	if dockerStats.CPUStats.ThrottlingData.ThrottledTime > 0 {
+		throttling := dockerStats.CPUStats.ThrottlingData.ThrottledTime
+		metrics.CPUThrottling = &throttling
+	}
+
+	// Memory metrics
+	if dockerStats.MemoryStats.Usage > 0 {
+		memUsage := dockerStats.MemoryStats.Usage
+		metrics.MemoryUsage = &memUsage
+	}
+
+	if dockerStats.MemoryStats.Limit > 0 {
+		memLimit := dockerStats.MemoryStats.Limit
+		metrics.MemoryLimit = &memLimit
+	}
+
+	if cache, ok := dockerStats.MemoryStats.Stats["cache"]; ok {
+		metrics.MemoryCache = &cache
+	}
+
+	if rss, ok := dockerStats.MemoryStats.Stats["rss"]; ok {
+		metrics.MemoryRSS = &rss
+	}
+
+	if swap, ok := dockerStats.MemoryStats.Stats["swap"]; ok {
+		metrics.MemorySwap = &swap
+	}
+
+	// Memory percentage
+	if dockerStats.MemoryStats.Usage > 0 && dockerStats.MemoryStats.Limit > 0 {
+		memPercent := float64(dockerStats.MemoryStats.Usage) / float64(dockerStats.MemoryStats.Limit) * 100.0
+		metrics.MemoryUsagePercent = &memPercent
+	}
+
+	// Network metrics
+	for _, netStats := range dockerStats.Networks {
+		if netStats.RxBytes > 0 {
+			rxBytes := netStats.RxBytes
+			metrics.NetworkRxBytes = &rxBytes
+		}
+		if netStats.TxBytes > 0 {
+			txBytes := netStats.TxBytes
+			metrics.NetworkTxBytes = &txBytes
+		}
+		if netStats.RxPackets > 0 {
+			rxPackets := netStats.RxPackets
+			metrics.NetworkRxPackets = &rxPackets
+		}
+		if netStats.TxPackets > 0 {
+			txPackets := netStats.TxPackets
+			metrics.NetworkTxPackets = &txPackets
+		}
+		break // Use first network interface
+	}
+
+	// Block I/O metrics
+	for _, blkioStats := range dockerStats.BlkioStats.IoServiceBytesRecursive {
+		if blkioStats.Op == "Read" && blkioStats.Value > 0 {
+			readBytes := blkioStats.Value
+			metrics.DiskReadBytes = &readBytes
+		}
+		if blkioStats.Op == "Write" && blkioStats.Value > 0 {
+			writeBytes := blkioStats.Value
+			metrics.DiskWriteBytes = &writeBytes
+		}
+	}
+
+	for _, blkioStats := range dockerStats.BlkioStats.IoServicedRecursive {
+		if blkioStats.Op == "Read" && blkioStats.Value > 0 {
+			readOps := blkioStats.Value
+			metrics.DiskReadOps = &readOps
+		}
+		if blkioStats.Op == "Write" && blkioStats.Value > 0 {
+			writeOps := blkioStats.Value
+			metrics.DiskWriteOps = &writeOps
+		}
+	}
+
+	return metrics
+}
+
+func (dc *DockerCollector) Close() {
+	if dc.client != nil {
+		dc.client.Close()
+	}
+}

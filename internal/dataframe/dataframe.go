@@ -1,0 +1,143 @@
+package dataframe
+
+import (
+	"sync"
+	"time"
+)
+
+type DataFrames struct {
+	containers map[int]*ContainerDataFrame
+	mutex      sync.RWMutex
+}
+
+type ContainerDataFrame struct {
+	steps map[int]*SamplingStep
+	mutex sync.RWMutex
+}
+
+type SamplingStep struct {
+	Timestamp time.Time    `json:"timestamp"`
+	Perf      *PerfMetrics `json:"perf,omitempty"`
+	Docker    *DockerMetrics `json:"docker,omitempty"`
+	RDT       *RDTMetrics  `json:"rdt,omitempty"`
+}
+
+type PerfMetrics struct {
+	CacheMisses          *uint64 `json:"cache_misses,omitempty"`
+	CacheReferences      *uint64 `json:"cache_references,omitempty"`
+	Instructions         *uint64 `json:"instructions,omitempty"`
+	Cycles               *uint64 `json:"cycles,omitempty"`
+	BranchInstructions   *uint64 `json:"branch_instructions,omitempty"`
+	BranchMisses         *uint64 `json:"branch_misses,omitempty"`
+	BusCycles            *uint64 `json:"bus_cycles,omitempty"`
+	L1DCacheLoadMisses   *uint64 `json:"l1d_cache_load_misses,omitempty"`
+	L1DCacheLoads        *uint64 `json:"l1d_cache_loads,omitempty"`
+	L1DCacheStores       *uint64 `json:"l1d_cache_stores,omitempty"`
+	L1ICacheLoadMisses   *uint64 `json:"l1i_cache_load_misses,omitempty"`
+	LLCLoadMisses        *uint64 `json:"llc_load_misses,omitempty"`
+	LLCLoads             *uint64 `json:"llc_loads,omitempty"`
+	LLCStoreMisses       *uint64 `json:"llc_store_misses,omitempty"`
+	LLCStores            *uint64 `json:"llc_stores,omitempty"`
+	CacheMissRate        *float64 `json:"cache_miss_rate,omitempty"`
+	BranchMissRate       *float64 `json:"branch_miss_rate,omitempty"`
+}
+
+type DockerMetrics struct {
+	CPUUsageTotal       *uint64  `json:"cpu_usage_total,omitempty"`
+	CPUUsageKernel      *uint64  `json:"cpu_usage_kernel,omitempty"`
+	CPUUsageUser        *uint64  `json:"cpu_usage_user,omitempty"`
+	CPUUsagePercent     *float64 `json:"cpu_usage_percent,omitempty"`
+	CPUThrottling       *uint64  `json:"cpu_throttling,omitempty"`
+	MemoryUsage         *uint64  `json:"memory_usage,omitempty"`
+	MemoryLimit         *uint64  `json:"memory_limit,omitempty"`
+	MemoryCache         *uint64  `json:"memory_cache,omitempty"`
+	MemoryRSS           *uint64  `json:"memory_rss,omitempty"`
+	MemorySwap          *uint64  `json:"memory_swap,omitempty"`
+	MemoryUsagePercent  *float64 `json:"memory_usage_percent,omitempty"`
+	NetworkRxBytes      *uint64  `json:"network_rx_bytes,omitempty"`
+	NetworkTxBytes      *uint64  `json:"network_tx_bytes,omitempty"`
+	NetworkRxPackets    *uint64  `json:"network_rx_packets,omitempty"`
+	NetworkTxPackets    *uint64  `json:"network_tx_packets,omitempty"`
+	DiskReadBytes       *uint64  `json:"disk_read_bytes,omitempty"`
+	DiskWriteBytes      *uint64  `json:"disk_write_bytes,omitempty"`
+	DiskReadOps         *uint64  `json:"disk_read_ops,omitempty"`
+	DiskWriteOps        *uint64  `json:"disk_write_ops,omitempty"`
+}
+
+type RDTMetrics struct {
+	L3CacheUsage    *uint64 `json:"l3_cache_usage,omitempty"`
+	MemoryBandwidth *uint64 `json:"memory_bandwidth,omitempty"`
+	CLOSGroup       *string `json:"clos_group,omitempty"`
+}
+
+func NewDataFrames() *DataFrames {
+	return &DataFrames{
+		containers: make(map[int]*ContainerDataFrame),
+	}
+}
+
+func (df *DataFrames) GetContainer(index int) *ContainerDataFrame {
+	df.mutex.RLock()
+	defer df.mutex.RUnlock()
+	return df.containers[index]
+}
+
+func (df *DataFrames) AddContainer(index int) *ContainerDataFrame {
+	df.mutex.Lock()
+	defer df.mutex.Unlock()
+	
+	cdf := &ContainerDataFrame{
+		steps: make(map[int]*SamplingStep),
+	}
+	df.containers[index] = cdf
+	return cdf
+}
+
+func (df *DataFrames) GetAllContainers() map[int]*ContainerDataFrame {
+	df.mutex.RLock()
+	defer df.mutex.RUnlock()
+	
+	result := make(map[int]*ContainerDataFrame)
+	for k, v := range df.containers {
+		result[k] = v
+	}
+	return result
+}
+
+func (cdf *ContainerDataFrame) AddStep(stepNumber int, step *SamplingStep) {
+	cdf.mutex.Lock()
+	defer cdf.mutex.Unlock()
+	cdf.steps[stepNumber] = step
+}
+
+func (cdf *ContainerDataFrame) GetStep(stepNumber int) *SamplingStep {
+	cdf.mutex.RLock()
+	defer cdf.mutex.RUnlock()
+	return cdf.steps[stepNumber]
+}
+
+func (cdf *ContainerDataFrame) GetAllSteps() map[int]*SamplingStep {
+	cdf.mutex.RLock()
+	defer cdf.mutex.RUnlock()
+	
+	result := make(map[int]*SamplingStep)
+	for k, v := range cdf.steps {
+		result[k] = v
+	}
+	return result
+}
+
+func (cdf *ContainerDataFrame) GetLatestStep() *SamplingStep {
+	cdf.mutex.RLock()
+	defer cdf.mutex.RUnlock()
+	
+	maxStep := -1
+	var latest *SamplingStep
+	for step, data := range cdf.steps {
+		if step > maxStep {
+			maxStep = step
+			latest = data
+		}
+	}
+	return latest
+}
