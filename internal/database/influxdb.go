@@ -56,8 +56,9 @@ func (idb *InfluxDBClient) GetLastBenchmarkID() (int, error) {
 		from(bucket: "%s")
 		|> range(start: -30d)
 		|> filter(fn: (r) => r._measurement == "benchmark_metrics")
-		|> filter(fn: (r) => r._field == "benchmark_id")
-		|> max(column: "_value")
+		|> distinct(column: "benchmark_id")
+		|> map(fn: (r) => ({_value: int(v: r.benchmark_id)}))
+		|> max()
 		|> yield(name: "max_benchmark_id")
 	`, idb.bucket)
 
