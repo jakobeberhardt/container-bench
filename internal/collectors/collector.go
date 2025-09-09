@@ -68,7 +68,7 @@ func (cc *ContainerCollector) Start(ctx context.Context) error {
 	}
 	
 	if cc.config.EnableDocker {
-		cc.dockerCollector, err = NewDockerCollector(cc.ContainerID)
+		cc.dockerCollector, err = NewDockerCollector(cc.ContainerID, cc.containerIndex)
 		if err != nil {
 			return err
 		}
@@ -107,7 +107,7 @@ func (cc *ContainerCollector) collect(ctx context.Context) {
 				Timestamp: time.Now(),
 			}
 			
-			// Collect metrics from enabled collectors
+			// Collect metrics from all enabled collectors
 			if cc.perfCollector != nil {
 				step.Perf = cc.perfCollector.Collect()
 			}
