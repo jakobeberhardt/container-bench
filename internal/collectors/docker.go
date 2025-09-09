@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"container-bench/internal/dataframe"
@@ -15,6 +16,11 @@ type DockerCollector struct {
 	client         *client.Client
 	containerID    string
 	containerIndex int
+	
+	// Store previous stats for CPU percentage calculation
+	lastCPUStats   *types.CPUStats
+	lastTimestamp  time.Time
+	mutex          sync.Mutex
 }
 
 func NewDockerCollector(containerID string, containerIndex int) (*DockerCollector, error) {
@@ -53,7 +59,8 @@ func (dc *DockerCollector) Collect() *dataframe.DockerMetrics {
 	}
 
 	// Parse and return metrics
-	metrics := dc.parseDockerStats(&dockerStats)
+	currentTime := time.Now()
+	metrics := dc.parseDockerStats(&dockerStats, currentTime)
 	if metrics != nil {
 		fmt.Printf("✅ Fresh Docker stats collected for container %d (%s)\n", dc.containerIndex, dc.containerID[:12])
 	}
@@ -61,7 +68,10 @@ func (dc *DockerCollector) Collect() *dataframe.DockerMetrics {
 	return metrics
 }
 
-func (dc *DockerCollector) parseDockerStats(dockerStats *types.StatsJSON) *dataframe.DockerMetrics {
+func (dc *DockerCollector) parseDockerStats(dockerStats *types.StatsJSON, currentTime time.Time) *dataframe.DockerMetrics {
+	dc.mutex.Lock()
+	defer dc.mutex.Unlock()
+	
 	metrics := &dataframe.DockerMetrics{}
 
 	// CPU metrics
@@ -80,15 +90,21 @@ func (dc *DockerCollector) parseDockerStats(dockerStats *types.StatsJSON) *dataf
 		metrics.CPUUsageUser = &userUsage
 	}
 
-	// CPU percentage calculation
-	if dockerStats.CPUStats.CPUUsage.TotalUsage > 0 && dockerStats.PreCPUStats.CPUUsage.TotalUsage > 0 {
-		cpuDelta := float64(dockerStats.CPUStats.CPUUsage.TotalUsage - dockerStats.PreCPUStats.CPUUsage.TotalUsage)
-		systemDelta := float64(dockerStats.CPUStats.SystemUsage - dockerStats.PreCPUStats.SystemUsage)
+	// CPU percentage calculation using our own previous stats
+	if dc.lastCPUStats != nil && dockerStats.CPUStats.CPUUsage.TotalUsage > 0 {
+		cpuDelta := float64(dockerStats.CPUStats.CPUUsage.TotalUsage - dc.lastCPUStats.CPUUsage.TotalUsage)
+		systemDelta := float64(dockerStats.CPUStats.SystemUsage - dc.lastCPUStats.SystemUsage)
 		
-		if systemDelta > 0 {
+		if systemDelta > 0 && cpuDelta >= 0 {
 			cpuPercent := (cpuDelta / systemDelta) * float64(dockerStats.CPUStats.OnlineCPUs) * 100.0
 			metrics.CPUUsagePercent = &cpuPercent
 		}
+	}
+
+	// Store current stats for next calculation
+	if dockerStats.CPUStats.CPUUsage.TotalUsage > 0 {
+		dc.lastCPUStats = &dockerStats.CPUStats
+		dc.lastTimestamp = currentTime
 	}
 
 	// CPU throttling
