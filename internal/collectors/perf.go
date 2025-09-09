@@ -15,7 +15,12 @@ type PerfCollector struct {
 	cpuCore   int
 }
 
-func NewPerfCollector(pid int, cgroupPath string) (*PerfCollector, error) {
+func NewPerfCollector(pid int, cgroupPath string, cpuCore int) (*PerfCollector, error) {
+	// Check if cgroup path exists
+	if _, err := os.Stat(cgroupPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("cgroup path does not exist: %s", cgroupPath)
+	}
+	
 	// Open cgroup file descriptor
 	cgroupFd, err := os.Open(cgroupPath)
 	if err != nil {
@@ -24,35 +29,30 @@ func NewPerfCollector(pid int, cgroupPath string) (*PerfCollector, error) {
 
 	collector := &PerfCollector{
 		cgroupFd: int(cgroupFd.Fd()),
-		cpuCore:  -1, // Monitor all CPUs
+		cpuCore:  cpuCore, // Use the specific CPU core assigned to the container
 	}
 
-	// Define the hardware events we want to monitor
-	eventConfigs := []struct {
-		Type   int
-		Config uint64
-	}{
-		{1, 3},  // PERF_TYPE_HARDWARE, PERF_COUNT_HW_CACHE_MISSES
-		{1, 4},  // PERF_TYPE_HARDWARE, PERF_COUNT_HW_CACHE_REFERENCES
-		{1, 0},  // PERF_TYPE_HARDWARE, PERF_COUNT_HW_INSTRUCTIONS
-		{1, 1},  // PERF_TYPE_HARDWARE, PERF_COUNT_HW_CPU_CYCLES
-		{1, 5},  // PERF_TYPE_HARDWARE, PERF_COUNT_HW_BRANCH_INSTRUCTIONS
-		{1, 6},  // PERF_TYPE_HARDWARE, PERF_COUNT_HW_BRANCH_MISSES
-		{1, 2},  // PERF_TYPE_HARDWARE, PERF_COUNT_HW_BUS_CYCLES
+	// Define the hardware events we want to monitor using proper go-perf constants
+	hardwareCounters := []perf.HardwareCounter{
+		perf.CacheMisses,
+		perf.CacheReferences,
+		perf.Instructions,
+		perf.CPUCycles,
+		perf.BranchInstructions,
+		perf.BranchMisses,
+		perf.BusCycles,
 	}
 
 	// Create perf events
-	for _, config := range eventConfigs {
-		attr := &perf.Attr{
-			Type:   perf.EventType(config.Type),
-			Config: config.Config,
-		}
+	for _, counter := range hardwareCounters {
+		attr := &perf.Attr{}
+		counter.Configure(attr)
 
 		event, err := perf.OpenCGroup(attr, collector.cgroupFd, collector.cpuCore, nil)
 		if err != nil {
 			// Clean up previously opened events
 			collector.Close()
-			return nil, fmt.Errorf("failed to open perf event: %w", err)
+			return nil, fmt.Errorf("failed to open perf event %v: %w", counter, err)
 		}
 
 		collector.events = append(collector.events, event)

@@ -39,6 +39,41 @@ type ContainerBench struct {
 	endTime      time.Time
 }
 
+func (cb *ContainerBench) cleanup() {
+	if cb.dockerClient == nil {
+		return
+	}
+
+	ctx := context.Background()
+	
+	// Stop and remove containers, and stop collectors
+	for _, collector := range cb.collectors {
+		if collector != nil {
+			// Stop collector first
+			collector.Stop()
+			
+			// Stop and remove container
+			if collector.ContainerID != "" {
+				fmt.Printf("Stopping container %s...\n", collector.ContainerID)
+				
+				// Stop container (with timeout)
+				timeout := 10 // 10 seconds
+				stopOptions := container.StopOptions{Timeout: &timeout}
+				if err := cb.dockerClient.ContainerStop(ctx, collector.ContainerID, stopOptions); err != nil {
+					fmt.Printf("Warning: failed to stop container %s: %v\n", collector.ContainerID, err)
+				}
+				
+				// Remove container
+				if err := cb.dockerClient.ContainerRemove(ctx, collector.ContainerID, types.ContainerRemoveOptions{Force: true}); err != nil {
+					fmt.Printf("Warning: failed to remove container %s: %v\n", collector.ContainerID, err)
+				} else {
+					fmt.Printf("✅ Container %s cleaned up\n", collector.ContainerID)
+				}
+			}
+		}
+	}
+}
+
 func loadEnvironment() {
 	// Try to load .env file from current directory
 	envFile := ".env"
@@ -189,6 +224,8 @@ func runBenchmark(configFile string) error {
 	if err := bench.setupContainers(); err != nil {
 		return fmt.Errorf("failed to setup containers: %w", err)
 	}
+	// Ensure cleanup happens regardless of how the function exits
+	defer bench.cleanup()
 
 	// Setup signal handling for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
@@ -325,9 +362,10 @@ func (cb *ContainerBench) startBenchmark(ctx context.Context) error {
 		}
 
 		pid := info.State.Pid
-		cgroupPath := filepath.Join("/sys/fs/cgroup", info.HostConfig.CgroupParent, info.ID)
+		// Fix cgroup path - use the correct systemd cgroup structure
+		cgroupPath := fmt.Sprintf("/sys/fs/cgroup/system.slice/docker-%s.scope", info.ID)
 
-		collector.SetContainerInfo(pid, cgroupPath)
+		collector.SetContainerInfo(pid, cgroupPath, containerConfig.Core)
 
 		// Start collector
 		if err := collector.Start(ctx); err != nil {

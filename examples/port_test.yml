@@ -1,7 +1,7 @@
 benchmark:
   name: Port Test
   description: Test port binding functionality
-  max_t: 10
+  max_t: 20
   log_level: info
   scheduler:
     implementation: default
@@ -19,9 +19,9 @@ container0:
   image: nginx:alpine
   port: 8080:80
   core: 0
-  command: "echo 'Port test' && sleep 5"
+  command: "while :; do dd if=/dev/zero of=/dev/null bs=1M count=100 2>/dev/null; done"
   data:
-    frequency: 1000
-    perf: false
+    frequency: 100
+    perf: true
     docker: true
-    rdt: false
+    rdt: true
