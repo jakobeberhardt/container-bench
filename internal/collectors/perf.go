@@ -116,6 +116,11 @@ func (pc *PerfCollector) Collect() *dataframe.PerfMetrics {
 		metrics.BranchMissRate = &rate
 	}
 
+	if metrics.Instructions != nil && metrics.Cycles != nil && *metrics.Cycles > 0 {
+		ipc := float64(*metrics.Instructions) / float64(*metrics.Cycles)
+		metrics.InstructionsPerCycle = &ipc
+	}
+
 	return metrics
 }
 

@@ -174,6 +174,9 @@ func (idb *InfluxDBClient) createFields(step *dataframe.SamplingStep, stepNumber
 		if step.Perf.BranchMissRate != nil {
 			fields["perf_branch_miss_rate"] = *step.Perf.BranchMissRate
 		}
+		if step.Perf.InstructionsPerCycle != nil {
+			fields["perf_instructions_per_cycle"] = *step.Perf.InstructionsPerCycle
+		}
 	}
 
 	// Add Docker metrics

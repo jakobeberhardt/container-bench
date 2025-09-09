@@ -40,6 +40,7 @@ type PerfMetrics struct {
 	LLCStores            *uint64 `json:"llc_stores,omitempty"`
 	CacheMissRate        *float64 `json:"cache_miss_rate,omitempty"`
 	BranchMissRate       *float64 `json:"branch_miss_rate,omitempty"`
+	InstructionsPerCycle *float64 `json:"instructions_per_cycle,omitempty"`
 }
 
 type DockerMetrics struct {
