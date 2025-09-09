@@ -1,34 +1,64 @@
 package scheduler
 
 import (
-	"context"
-	"fmt"
-
-	"github.com/jakobeberhardt/container-bench/internal/config"
+	"container-bench/internal/dataframe"
 )
 
-// Scheduler defines the interface for container scheduling strategies
 type Scheduler interface {
-	Initialize(ctx context.Context) error
-	ScheduleContainer(ctx context.Context, containerID string, config config.ContainerConfig) error
-	Monitor(ctx context.Context, containerIDs map[string]string) error
-	Finalize(ctx context.Context) error
-	Name() string
+	Initialize() error
+	ProcessDataFrames(dataframes *dataframe.DataFrames) error
+	Shutdown() error
+	GetVersion() string
 }
 
-// NewScheduler creates a new scheduler based on the implementation name
-func NewScheduler(implementation string, rdtEnabled bool) (Scheduler, error) {
-	switch implementation {
-	case "default", "":
-		return NewDefaultScheduler(rdtEnabled), nil
-	case "rdt":
-		if !rdtEnabled {
-			return nil, fmt.Errorf("RDT scheduler requested but RDT is not enabled")
-		}
-		return NewRDTScheduler(), nil
-	case "adaptive":
-		return NewAdaptiveScheduler(rdtEnabled), nil
-	default:
-		return nil, fmt.Errorf("unknown scheduler implementation: %s", implementation)
+type DefaultScheduler struct {
+	name    string
+	version string
+}
+
+func NewDefaultScheduler() *DefaultScheduler {
+	return &DefaultScheduler{
+		name:    "default",
+		version: "1.0.0",
 	}
+}
+
+func (ds *DefaultScheduler) Initialize() error {
+	// Default scheduler doesn't need initialization
+	return nil
+}
+
+func (ds *DefaultScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) error {
+	// Default scheduler just observes the data but doesn't act on it
+	// In a real implementation, this could:
+	// - Analyze performance patterns
+	// - Move containers between CLOS groups
+	// - Adjust resource allocations
+	// - Make scheduling decisions
+	
+	containers := dataframes.GetAllContainers()
+	for containerIndex, containerDF := range containers {
+		latest := containerDF.GetLatestStep()
+		if latest != nil {
+			// Example: Log high cache miss rates
+			if latest.Perf != nil && latest.Perf.CacheMissRate != nil {
+				if *latest.Perf.CacheMissRate > 0.1 { // 10% cache miss rate
+					// In a real scheduler, this might trigger moving the container
+					// to a different CLOS group with more cache allocation
+					_ = containerIndex // Suppress unused variable warning
+				}
+			}
+		}
+	}
+	
+	return nil
+}
+
+func (ds *DefaultScheduler) Shutdown() error {
+	// Default scheduler doesn't need cleanup
+	return nil
+}
+
+func (ds *DefaultScheduler) GetVersion() string {
+	return ds.version
 }
