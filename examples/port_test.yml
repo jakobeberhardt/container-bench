@@ -1,7 +1,7 @@
 benchmark:
   name: Port Test
   description: Test port binding functionality
-  max_t: 20
+  max_t: 10
   log_level: info
   scheduler:
     implementation: default
@@ -21,7 +21,7 @@ container0:
   core: 0
   command: "while :; do dd if=/dev/zero of=/dev/null bs=1M count=100 2>/dev/null; done"
   data:
-    frequency: 100
+    frequency: 200
     perf: true
     docker: true
-    rdt: true
+    rdt: false

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"container-bench/internal/dataframe"
 	"github.com/docker/docker/api/types"
@@ -28,11 +29,13 @@ func NewDockerCollector(containerID string) (*DockerCollector, error) {
 }
 
 func (dc *DockerCollector) Collect() *dataframe.DockerMetrics {
-	ctx := context.Background()
+	// Use a timeout context to prevent blocking
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
 	
 	stats, err := dc.client.ContainerStats(ctx, dc.containerID, false)
 	if err != nil {
-		// Return nil if we can't get stats
+		// Return nil if we can't get stats (including timeout)
 		return nil
 	}
 	defer stats.Body.Close()
