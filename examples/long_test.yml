@@ -1,8 +1,8 @@
 benchmark:
   name: Long Test
   description: A simple test benchmark that starts three containers with different workloads
-  max_t: 300
-  log_level: info
+  max_t: 100
+  log_level: debug
   scheduler:
     implementation: default
     rdt: false
