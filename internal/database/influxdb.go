@@ -10,10 +10,12 @@ import (
 
 	"container-bench/internal/config"
 	"container-bench/internal/dataframe"
+	"container-bench/internal/logging"
 	
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/influxdata/influxdb-client-go/v2/api"
 	"github.com/influxdata/influxdb-client-go/v2/api/write"
+	"github.com/sirupsen/logrus"
 )
 
 // BenchmarkMetadata contains all metadata about a benchmark run
@@ -122,6 +124,8 @@ type InfluxDBClient struct {
 }
 
 func NewInfluxDBClient(config config.DatabaseConfig) (*InfluxDBClient, error) {
+	logger := logging.GetLogger()
+	
 	client := influxdb2.NewClient(config.Host, config.Password)
 	
 	// Test connection
@@ -130,15 +134,27 @@ func NewInfluxDBClient(config config.DatabaseConfig) (*InfluxDBClient, error) {
 	
 	health, err := client.Health(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to InfluxDB: %w", err)
+		logger.WithField("host", config.Host).WithError(err).Error("Failed to connect to InfluxDB")
+		return nil, err
 	}
 	
 	if health.Status != "pass" {
-		return nil, fmt.Errorf("InfluxDB health check failed: %s", health.Message)
+		logger.WithFields(logrus.Fields{
+			"host":    config.Host,
+			"status":  health.Status,
+			"message": health.Message,
+		}).Error("InfluxDB health check failed")
+		return nil, err
 	}
 
 	writeAPI := client.WriteAPIBlocking(config.Org, config.Name)
 	queryAPI := client.QueryAPI(config.Org)
+
+	logger.WithFields(logrus.Fields{
+		"host":   config.Host,
+		"bucket": config.Name,
+		"org":    config.Org,
+	}).Info("Connected to InfluxDB")
 
 	return &InfluxDBClient{
 		client:   client,

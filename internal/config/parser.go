@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	"container-bench/internal/logging"
 	"gopkg.in/yaml.v3"
 )
 
@@ -15,9 +16,12 @@ func LoadConfig(filepath string) (*BenchmarkConfig, error) {
 }
 
 func LoadConfigWithContent(filepath string) (*BenchmarkConfig, string, error) {
+	logger := logging.GetLogger()
+	
 	data, err := os.ReadFile(filepath)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to read config file: %w", err)
+		logger.WithField("filepath", filepath).WithError(err).Error("Failed to read config file")
+		return nil, "", err
 	}
 
 	originalContent := string(data)
@@ -27,7 +31,8 @@ func LoadConfigWithContent(filepath string) (*BenchmarkConfig, string, error) {
 
 	var config BenchmarkConfig
 	if err := yaml.Unmarshal([]byte(expanded), &config); err != nil {
-		return nil, "", fmt.Errorf("failed to parse config file: %w", err)
+		logger.WithField("filepath", filepath).WithError(err).Error("Failed to parse config file")
+		return nil, "", err
 	}
 
 	if err := validateConfig(&config); err != nil {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"container-bench/internal/dataframe"
+	"container-bench/internal/logging"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
 )
@@ -24,9 +25,12 @@ type DockerCollector struct {
 }
 
 func NewDockerCollector(containerID string, containerIndex int) (*DockerCollector, error) {
+	logger := logging.GetLogger()
+	
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Docker client: %w", err)
+		logger.WithField("container_index", containerIndex).WithError(err).Error("Failed to create Docker client")
+		return nil, err
 	}
 
 	collector := &DockerCollector{

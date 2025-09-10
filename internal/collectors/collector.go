@@ -2,10 +2,11 @@ package collectors
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"container-bench/internal/dataframe"
+	"container-bench/internal/logging"
+	"github.com/sirupsen/logrus"
 )
 
 type Collector interface {
@@ -61,8 +62,10 @@ func (cc *ContainerCollector) Start(ctx context.Context) error {
 		cc.perfCollector, err = NewPerfCollector(cc.containerPID, cc.cgroupPath, cc.cpuCore)
 		if err != nil {
 			// Log warning but don't fail the entire collector
-			fmt.Printf("⚠️  Warning: Failed to enable perf monitoring for container %d: %v\n", cc.containerIndex, err)
-			fmt.Printf("   Continuing without perf metrics...\n")
+			logger := logging.GetLogger()
+			logger.WithFields(logrus.Fields{
+				"container_index": cc.containerIndex,
+			}).WithError(err).Warn("Failed to enable perf monitoring, continuing without perf metrics")
 			cc.perfCollector = nil
 		}
 	}
@@ -78,8 +81,10 @@ func (cc *ContainerCollector) Start(ctx context.Context) error {
 		cc.rdtCollector, err = NewRDTCollector(cc.containerPID)
 		if err != nil {
 			// Log warning but don't fail the entire collector
-			fmt.Printf("⚠️  Warning: Failed to enable RDT monitoring for container %d: %v\n", cc.containerIndex, err)
-			fmt.Printf("   Continuing without RDT metrics...\n")
+			logger := logging.GetLogger()
+			logger.WithFields(logrus.Fields{
+				"container_index": cc.containerIndex,
+			}).WithError(err).Warn("Failed to enable RDT monitoring, continuing without RDT metrics")
 			cc.rdtCollector = nil
 		}
 	}
