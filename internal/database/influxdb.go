@@ -213,6 +213,9 @@ func (idb *InfluxDBClient) WriteDataFrames(benchmarkID int, benchmarkConfig *con
 			continue
 		}
 
+		// Get the effective container name
+		containerName := containerConfig.GetContainerName(benchmarkID)
+
 		steps := containerDF.GetAllSteps()
 		for stepNumber, step := range steps {
 			if step == nil {
@@ -224,6 +227,7 @@ func (idb *InfluxDBClient) WriteDataFrames(benchmarkID int, benchmarkConfig *con
 				map[string]string{
 					"benchmark_id":     fmt.Sprintf("%d", benchmarkID),
 					"container_index":  fmt.Sprintf("%d", containerIndex),
+					"container_name":   containerName,
 					"container_image":  containerConfig.Image,
 					"container_core":   fmt.Sprintf("%d", containerConfig.Core),
 					"benchmark_started": startTime.Format(time.RFC3339),

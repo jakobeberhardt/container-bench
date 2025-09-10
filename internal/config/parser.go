@@ -35,6 +35,12 @@ func LoadConfigWithContent(filepath string) (*BenchmarkConfig, string, error) {
 		return nil, "", err
 	}
 
+	// Set KeyName field for each container based on the YAML key
+	for keyName, container := range config.Containers {
+		container.KeyName = keyName
+		config.Containers[keyName] = container
+	}
+
 	if err := validateConfig(&config); err != nil {
 		return nil, "", fmt.Errorf("invalid config: %w", err)
 	}

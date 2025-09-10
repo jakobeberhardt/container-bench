@@ -1,7 +1,7 @@
 benchmark:
-  name: Long Test
-  description: A simple test benchmark that starts three containers with different workloads
-  max_t: 100
+  name: Simple Test Without Names
+  description: A simple test benchmark that starts three containers with different workloads (no custom names)
+  max_t: 10
   log_level: debug
   scheduler:
     implementation: default
@@ -12,7 +12,7 @@ benchmark:
       name: ${INFLUXDB_BUCKET}
       user: ${INFLUXDB_USER}
       password: ${INFLUXDB_TOKEN}
-      org: ${INFLUXDB_ORG}
+      org: ${INFLUXDB_ORG}    
 
 container0:
   index: 0
@@ -42,17 +42,6 @@ container2:
   image: nginx:alpine
   core: 4
   command: "apk add --no-cache stress-ng && stress-ng --cpu 1"
-  data:
-    frequency: 100
-    perf: true
-    docker: true
-    rdt: false
-
-container3:
-  index: 3
-  image: nginx:alpine
-  core: 6
-  command: "apk add --no-cache firefox chromium libreoffice gimp inkscape blender thunderbird nodejs rust llvm17 texlive-full"
   data:
     frequency: 100
     perf: true

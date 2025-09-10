@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"time"
 )
@@ -49,6 +50,8 @@ type DatabaseConfig struct {
 
 type ContainerConfig struct {
 	Index    int             `yaml:"index"`
+	Name     string          `yaml:"name,omitempty"`
+	KeyName  string          `yaml:"-"` // Store the YAML key name, not serialized
 	Image    string          `yaml:"image"`
 	Port     string          `yaml:"port,omitempty"`
 	Core     int             `yaml:"core"`
@@ -105,4 +108,18 @@ func (c *BenchmarkConfig) GetContainersSorted() []ContainerConfig {
 	}
 	
 	return containers
+}
+
+// GetContainerName returns the effective container name for a given container config
+func (c *ContainerConfig) GetContainerName(benchmarkID int) string {
+	if c.Name != "" {
+		// Use explicit name if specified
+		return c.Name
+	}
+	if c.KeyName != "" {
+		// Use the YAML key name directly (e.g., default, sequential, stride, random)
+		return c.KeyName
+	}
+	// Fallback to generated name if neither is available
+	return fmt.Sprintf("bench-%d-container-%d", benchmarkID, c.Index)
 }
