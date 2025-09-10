@@ -10,24 +10,31 @@ import (
 )
 
 func LoadConfig(filepath string) (*BenchmarkConfig, error) {
+	config, _, err := LoadConfigWithContent(filepath)
+	return config, err
+}
+
+func LoadConfigWithContent(filepath string) (*BenchmarkConfig, string, error) {
 	data, err := os.ReadFile(filepath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config file: %w", err)
+		return nil, "", fmt.Errorf("failed to read config file: %w", err)
 	}
 
+	originalContent := string(data)
+
 	// Expand environment variables
-	expanded := expandEnvVars(string(data))
+	expanded := expandEnvVars(originalContent)
 
 	var config BenchmarkConfig
 	if err := yaml.Unmarshal([]byte(expanded), &config); err != nil {
-		return nil, fmt.Errorf("failed to parse config file: %w", err)
+		return nil, "", fmt.Errorf("failed to parse config file: %w", err)
 	}
 
 	if err := validateConfig(&config); err != nil {
-		return nil, fmt.Errorf("invalid config: %w", err)
+		return nil, "", fmt.Errorf("invalid config: %w", err)
 	}
 
-	return &config, nil
+	return &config, originalContent, nil
 }
 
 func expandEnvVars(content string) string {

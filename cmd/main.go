@@ -27,16 +27,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const Version = "1.0.0"
+
 type ContainerBench struct {
-	config       *config.BenchmarkConfig
-	dockerClient *client.Client
-	dbClient     *database.InfluxDBClient
-	dataframes   *dataframe.DataFrames
-	scheduler    scheduler.Scheduler
-	collectors   []*collectors.ContainerCollector
-	benchmarkID  int
-	startTime    time.Time
-	endTime      time.Time
+	config        *config.BenchmarkConfig
+	configContent string
+	dockerClient  *client.Client
+	dbClient      *database.InfluxDBClient
+	dataframes    *dataframe.DataFrames
+	scheduler     scheduler.Scheduler
+	collectors    []*collectors.ContainerCollector
+	benchmarkID   int
+	startTime     time.Time
+	endTime       time.Time
 }
 
 func (cb *ContainerBench) cleanup() {
@@ -185,7 +188,7 @@ func runBenchmark(configFile string) error {
 
 	// Load configuration
 	var err error
-	bench.config, err = config.LoadConfig(configFile)
+	bench.config, bench.configContent, err = config.LoadConfigWithContent(configFile)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -431,6 +434,17 @@ func (cb *ContainerBench) finalizeBenchmark() error {
 	fmt.Println("Exporting data to database...")
 	if err := cb.dbClient.WriteDataFrames(cb.benchmarkID, cb.config, cb.dataframes, cb.startTime, cb.endTime); err != nil {
 		return fmt.Errorf("failed to export data: %w", err)
+	}
+
+	// Collect and export metadata
+	fmt.Println("Collecting and exporting metadata...")
+	metadata, err := database.CollectBenchmarkMetadata(cb.benchmarkID, cb.config, cb.configContent, cb.dataframes, cb.startTime, cb.endTime, Version)
+	if err != nil {
+		return fmt.Errorf("failed to collect metadata: %w", err)
+	}
+
+	if err := cb.dbClient.WriteMetadata(metadata); err != nil {
+		return fmt.Errorf("failed to export metadata: %w", err)
 	}
 
 	duration := cb.endTime.Sub(cb.startTime)
