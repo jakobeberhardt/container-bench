@@ -1,7 +1,7 @@
 benchmark:
   name: Registry Test
   description: Test mixing public and private registry images
-  max_t: 250
+  max_t: 40
   log_level: debug
   scheduler:
     implementation: default
@@ -19,7 +19,7 @@ benchmark:
       username: ${DOCKER_REGISTRY_USERNAME}
       password: ${DOCKER_REGISTRY_PASSWORD}
 
-container0:
+default:
   index: 0
   image: nginx:alpine 
   core: 0
@@ -30,7 +30,7 @@ container0:
     docker: true
     rdt: false
 
-container1:
+sequential:
   index: 1
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 2
@@ -41,7 +41,7 @@ container1:
     docker: true
     rdt: false
 
-container2:
+stride:
   index: 2
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 4
@@ -52,7 +52,7 @@ container2:
     docker: true
     rdt: false
 
-container3:
+random:
   index: 3
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 6

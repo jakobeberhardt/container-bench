@@ -402,7 +402,7 @@ func (cb *ContainerBench) setupContainers() error {
 		logger.WithField("image", containerConfig.Image).Info("Image pulled successfully")
 
 		// Create container
-		containerName := fmt.Sprintf("bench-%d-container-%d", cb.benchmarkID, containerConfig.Index)
+		containerName := containerConfig.GetContainerName(cb.benchmarkID)
 		
 		config := &container.Config{
 			Image: containerConfig.Image,
