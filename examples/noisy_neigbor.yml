@@ -1,8 +1,8 @@
 benchmark:
-  name: Registry Test
-  description: Test mixing public and private registry images
-  max_t: 300
-  log_level: info
+  name: Noisy neighbor
+  description: Test which starts more and more neigbors
+  max_t: 100
+  log_level: debug
   scheduler:
     implementation: default
     rdt: false
@@ -21,42 +21,42 @@ benchmark:
 
 default:
   index: 0
-  image: nginx:alpine 
+  image: registry.jakob-eberhardt.de/neighbor:default
   core: 0
-  command: "while :; do dd if=/dev/zero of=/dev/null bs=1M count=100 2>/dev/null; done"
+  command: "/neighbor --duration 3600 --buffer-size 2KB --pattern random"
   data:
     frequency: 100
     perf: true
     docker: true
     rdt: false
 
-install:
+first:
   index: 1
-  image: nginx:alpine   
+  image: registry.jakob-eberhardt.de/neighbor:default  
   core: 2
-  command: "apk add --no-cache firefox chromium libreoffice gimp inkscape blender thunderbird nodejs rust llvm17 texlive-full"
+  command: "sleep 15 && /neighbor --duration 3600 --buffer-size 2KB --pattern random"
   data:
     frequency: 100
     perf: true
     docker: true
     rdt: false
 
-sequential:
+second:
   index: 2
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 4
-  command: "/neighbor --duration 3600 --buffer-size 500MB --pattern sequential"
+  command: "sleep 30 && /neighbor --duration 3600 --buffer-size 2KB --pattern random"
   data:
     frequency: 100
     perf: true
     docker: true
     rdt: false
 
-random:
+third:
   index: 3
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 6
-  command: "/neighbor --duration 3600 --buffer-size 500MB --pattern random"
+  command: "sleep 45 && /neighbor --duration 3600 --buffer-size 2KB --pattern random"
   data:
     frequency: 100
     perf: true
