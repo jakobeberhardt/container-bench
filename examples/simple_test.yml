@@ -2,7 +2,7 @@ benchmark:
   name: Simple Test
   description: A simple test benchmark that starts three containers with different workloads
   max_t: 10
-  log_level: info
+  log_level: debug
   scheduler:
     implementation: default
     rdt: false
@@ -41,7 +41,7 @@ container2:
   index: 2
   image: nginx:alpine
   core: 4
-  command: "apk add --no-cache stress-ng && stress-ng --cpu 1 --timeout 25s"
+  command: "apk add --no-cache stress-ng && stress-ng --cpu 1"
   data:
     frequency: 100
     perf: true

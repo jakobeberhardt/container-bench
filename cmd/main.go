@@ -44,39 +44,73 @@ type ContainerBench struct {
 }
 
 func (cb *ContainerBench) cleanup() {
-	logger := logging.GetLogger()
-	
-	if cb.dockerClient == nil {
-		return
-	}
-
-	ctx := context.Background()
-	
-	// Stop and remove containers, and stop collectors
+	// Emergency cleanup - only stop collectors
+	// Containers should only be stopped in finalizeBenchmark() for proper orchestration
 	for _, collector := range cb.collectors {
 		if collector != nil {
-			// Stop collector first
 			collector.Stop()
-			
-			// Stop and remove container
-			if collector.ContainerID != "" {
-				logger.WithField("container_id", collector.ContainerID).Info("Stopping container")
-				
-				// Stop container (with timeout)
-				timeout := 10 // 10 seconds
-				stopOptions := container.StopOptions{Timeout: &timeout}
-				if err := cb.dockerClient.ContainerStop(ctx, collector.ContainerID, stopOptions); err != nil {
-					logger.WithField("container_id", collector.ContainerID).WithError(err).Warn("Failed to stop container")
-				}
-				
-				// Remove container
-				if err := cb.dockerClient.ContainerRemove(ctx, collector.ContainerID, types.ContainerRemoveOptions{Force: true}); err != nil {
-					logger.WithField("container_id", collector.ContainerID).WithError(err).Error("Failed to remove container")
-				} else {
-					logger.WithField("container_id", collector.ContainerID).Info("Container cleaned up")
-				}
-			}
 		}
+	}
+}
+
+func (cb *ContainerBench) cleanupContainers(ctx context.Context) {
+	for _, collector := range cb.collectors {
+		if collector != nil && collector.ContainerID != "" {
+			cb.stopAndRemoveContainer(ctx, collector.ContainerID)
+		}
+	}
+}
+
+func (cb *ContainerBench) stopAndRemoveContainer(ctx context.Context, containerID string) {
+	logger := logging.GetLogger()
+	
+	// Check if container exists and get its state
+	containerInfo, err := cb.dockerClient.ContainerInspect(ctx, containerID)
+	if err != nil {
+		if client.IsErrNotFound(err) {
+			logger.WithField("container_id", containerID[:12]).Warn("Container not found - may have been removed unexpectedly")
+			return
+		}
+		logger.WithField("container_id", containerID[:12]).WithError(err).Error("Failed to inspect container")
+		return
+	}
+	
+	// Check container state and warn if unexpectedly stopped
+	if !containerInfo.State.Running {
+		if containerInfo.State.Status == "exited" {
+			logger.WithFields(logrus.Fields{
+				"container_id": containerID[:12],
+				"exit_code":    containerInfo.State.ExitCode,
+				"status":       containerInfo.State.Status,
+			}).Warn("Container exited unexpectedly before benchmark completion")
+		} else {
+			logger.WithFields(logrus.Fields{
+				"container_id": containerID[:12],
+				"status":       containerInfo.State.Status,
+			}).Warn("Container in unexpected state")
+		}
+	} else {
+		// Container is running as expected - stop it
+		logger.WithField("container_id", containerID[:12]).Info("Stopping container")
+		
+		timeout := 10 // 10 seconds
+		stopOptions := container.StopOptions{Timeout: &timeout}
+		if err := cb.dockerClient.ContainerStop(ctx, containerID, stopOptions); err != nil {
+			if !client.IsErrNotFound(err) {
+				logger.WithField("container_id", containerID[:12]).WithError(err).Error("Failed to stop container")
+			}
+		} else {
+			logger.WithField("container_id", containerID[:12]).Info("Container stopped")
+		}
+	}
+	
+	// Always try to remove container for cleanup
+	if err := cb.dockerClient.ContainerRemove(ctx, containerID, types.ContainerRemoveOptions{Force: true}); err != nil {
+		if !client.IsErrNotFound(err) {
+			logger.WithField("container_id", containerID[:12]).WithError(err).Error("Failed to remove container")
+		}
+	} else {
+		logger.WithField("container_id", containerID[:12]).Info("Container removed")
 	}
 }
 
@@ -476,24 +510,18 @@ func (cb *ContainerBench) finalizeBenchmark() error {
 	logger := logging.GetLogger()
 	logger.Info("Finalizing benchmark")
 
-	// Stop all collectors
+	// Step 1: Stop all collectors first
+	logger.Info("Stopping profilers/collectors")
 	for _, collector := range cb.collectors {
 		if err := collector.Stop(); err != nil {
 			logger.WithError(err).Warn("Error stopping collector")
 		}
 	}
 
-	// Stop and remove containers
+	// Step 2: Stop and remove all containers (single orchestration point)
+	logger.Info("Stopping and removing containers")
 	ctx := context.Background()
-	for _, collector := range cb.collectors {
-		if err := cb.dockerClient.ContainerStop(ctx, collector.ContainerID, container.StopOptions{}); err != nil {
-			logger.WithField("container_id", collector.ContainerID[:12]).WithError(err).Warn("Error stopping container")
-		}
-
-		if err := cb.dockerClient.ContainerRemove(ctx, collector.ContainerID, container.RemoveOptions{}); err != nil {
-			logger.WithField("container_id", collector.ContainerID[:12]).WithError(err).Error("Error removing container")
-		}
-	}
+	cb.cleanupContainers(ctx)
 
 	// Export data to database
 	logger.Info("Exporting data to database")
