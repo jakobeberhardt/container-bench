@@ -12,6 +12,7 @@ A configurable and flexible tool for defining and profiling Docker-based contain
 - **Thread-Safe Data Collection**: Real-time data collection with concurrent goroutines
 - **Flexible Scheduling**: Scheduler interface for implementing resource management policies
 - **Database Integration**: Export time-series data to InfluxDB 2.7
+- **Metadata Collection**: Automatic collection of benchmark metadata for reporting
 - **YAML Configuration**: Human-readable benchmark definitions
 
 ## Prerequisites
@@ -123,6 +124,15 @@ The tool collects the following metrics:
 - Memory bandwidth usage
 - CLOS group assignment
 
+### Metadata Collection
+Container-bench automatically collects comprehensive metadata for each benchmark run, including:
+- Benchmark configuration and timing information
+- Host system details (hostname, OS, CPU specifications)
+- Data collection statistics (sampling steps, measurements, data size)
+- Original configuration file content
+
+Metadata is exported to the `benchmark_meta` table for generating detailed reports. See [METADATA.md](METADATA.md) for complete details.
+
 ## Architecture
 
 ```
@@ -197,12 +207,18 @@ sudo ./fix-msr-access.sh
 
 Data is exported to InfluxDB with the following structure:
 
+### Time-Series Data
 - **Measurement**: `benchmark_metrics`
 - **Tags**: `benchmark_id`, `container_index`, `container_image`, `container_core`
 - **Fields**: All collected metrics with prefixes:
   - `perf_*`: Performance counter metrics
   - `docker_*`: Docker statistics
   - `rdt_*`: Intel RDT metrics
+
+### Metadata
+- **Measurement**: `benchmark_meta`
+- **Tags**: `benchmark_id`
+- **Fields**: Comprehensive metadata including system info, configuration, and statistics
 
 ## License
 

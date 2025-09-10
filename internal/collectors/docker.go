@@ -61,9 +61,6 @@ func (dc *DockerCollector) Collect() *dataframe.DockerMetrics {
 	// Parse and return metrics
 	currentTime := time.Now()
 	metrics := dc.parseDockerStats(&dockerStats, currentTime)
-	if metrics != nil {
-		fmt.Printf("✅ Fresh Docker stats collected for container %d (%s)\n", dc.containerIndex, dc.containerID[:12])
-	}
 	
 	return metrics
 }
