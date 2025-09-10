@@ -3,7 +3,6 @@ package collectors
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"sync"
 	"time"
 
@@ -43,13 +42,15 @@ func NewDockerCollector(containerID string, containerIndex int) (*DockerCollecto
 }
 
 func (dc *DockerCollector) Collect() *dataframe.DockerMetrics {
+	logger := logging.GetLogger()
+	
 	// Use one-shot stats collection for fresh data every call
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	
 	stats, err := dc.client.ContainerStatsOneShot(ctx, dc.containerID)
 	if err != nil {
-		fmt.Printf("⚠️  Failed to collect Docker stats for %s: %v\n", dc.containerID[:12], err)
+		logger.WithField("container_id", dc.containerID[:12]).WithError(err).Warn("Failed to collect Docker stats")
 		return nil
 	}
 	defer stats.Body.Close()
@@ -58,7 +59,7 @@ func (dc *DockerCollector) Collect() *dataframe.DockerMetrics {
 	var dockerStats types.StatsJSON
 	decoder := json.NewDecoder(stats.Body)
 	if err := decoder.Decode(&dockerStats); err != nil {
-		fmt.Printf("⚠️  Failed to decode Docker stats for %s: %v\n", dc.containerID[:12], err)
+		logger.WithField("container_id", dc.containerID[:12]).WithError(err).Warn("Failed to decode Docker stats")
 		return nil
 	}
 
