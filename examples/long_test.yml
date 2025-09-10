@@ -1,7 +1,7 @@
 benchmark:
   name: Long Test
   description: A simple test benchmark that starts three containers with different workloads
-  max_t: 30
+  max_t: 300
   log_level: info
   scheduler:
     implementation: default
@@ -41,6 +41,17 @@ container2:
   index: 2
   image: nginx:alpine
   core: 4
+  command: "apk add --no-cache stress-ng && stress-ng --cpu 1 --timeout 25s"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: false
+
+container3:
+  index: 3
+  image: nginx:alpine
+  core: 6
   command: "apk add --no-cache firefox chromium libreoffice gimp inkscape blender thunderbird nodejs rust llvm17 texlive-full"
   data:
     frequency: 100
