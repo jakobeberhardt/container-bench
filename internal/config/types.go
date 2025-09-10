@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"time"
 )
 
@@ -16,6 +17,17 @@ type BenchmarkInfo struct {
 	LogLevel    string            `yaml:"log_level"`
 	Scheduler   SchedulerConfig   `yaml:"scheduler"`
 	Data        DataConfig        `yaml:"data"`
+	Docker      *DockerConfig     `yaml:"docker,omitempty"`
+}
+
+type DockerConfig struct {
+	Registry *RegistryConfig `yaml:"registry,omitempty"`
+}
+
+type RegistryConfig struct {
+	Host     string `yaml:"host"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
 }
 
 type SchedulerConfig struct {
@@ -53,6 +65,28 @@ type CollectorConfig struct {
 
 func (c *BenchmarkConfig) GetMaxDuration() time.Duration {
 	return time.Duration(c.Benchmark.MaxT) * time.Second
+}
+
+func (c *BenchmarkConfig) GetRegistryConfig() *RegistryConfig {
+	// First check if registry is configured in the YAML file
+	if c.Benchmark.Docker != nil && c.Benchmark.Docker.Registry != nil {
+		return c.Benchmark.Docker.Registry
+	}
+	
+	// Otherwise, try to get from environment variables (legacy support)
+	host := os.Getenv("DOCKER_REGISTRY_HOST")
+	username := os.Getenv("DOCKER_REGISTRY_USERNAME")
+	password := os.Getenv("DOCKER_REGISTRY_PASSWORD")
+	
+	if host != "" && username != "" && password != "" {
+		return &RegistryConfig{
+			Host:     host,
+			Username: username,
+			Password: password,
+		}
+	}
+	
+	return nil
 }
 
 func (c *BenchmarkConfig) GetContainersSorted() []ContainerConfig {

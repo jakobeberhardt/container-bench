@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -21,6 +23,7 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	"github.com/joho/godotenv"
@@ -29,6 +32,36 @@ import (
 )
 
 const Version = "1.0.0"
+
+// isPrivateRegistryImage checks if an image belongs to a private registry
+func isPrivateRegistryImage(image string, registryHost string) bool {
+	if registryHost == "" {
+		return false
+	}
+	
+	// If image starts with the registry host, it's from the private registry
+	return strings.HasPrefix(image, registryHost)
+}
+
+// createRegistryAuth creates a base64-encoded auth string for Docker registry
+func createRegistryAuth(registryConfig *config.RegistryConfig) (string, error) {
+	if registryConfig == nil {
+		return "", nil
+	}
+	
+	authConfig := registry.AuthConfig{
+		Username:      registryConfig.Username,
+		Password:      registryConfig.Password,
+		ServerAddress: registryConfig.Host,
+	}
+	
+	authJSON, err := json.Marshal(authConfig)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal auth config: %w", err)
+	}
+	
+	return base64.URLEncoding.EncodeToString(authJSON), nil
+}
 
 type ContainerBench struct {
 	config        *config.BenchmarkConfig
@@ -335,7 +368,25 @@ func (cb *ContainerBench) setupContainers() error {
 		ctx := context.Background()
 		logger.WithField("image", containerConfig.Image).Debug("Pulling image")
 		
-		pullResp, err := cb.dockerClient.ImagePull(ctx, containerConfig.Image, types.ImagePullOptions{})
+		// Prepare pull options with authentication if needed
+		pullOptions := types.ImagePullOptions{}
+		
+		// Check if this image requires private registry authentication
+		registryConfig := cb.config.GetRegistryConfig()
+		if registryConfig != nil && isPrivateRegistryImage(containerConfig.Image, registryConfig.Host) {
+			authString, err := createRegistryAuth(registryConfig)
+			if err != nil {
+				logger.WithField("image", containerConfig.Image).WithError(err).Error("Failed to create registry auth")
+				return fmt.Errorf("failed to create registry auth for %s: %w", containerConfig.Image, err)
+			}
+			pullOptions.RegistryAuth = authString
+			logger.WithFields(logrus.Fields{
+				"image":    containerConfig.Image,
+				"registry": registryConfig.Host,
+			}).Debug("Using private registry authentication")
+		}
+		
+		pullResp, err := cb.dockerClient.ImagePull(ctx, containerConfig.Image, pullOptions)
 		if err != nil {
 			logger.WithField("image", containerConfig.Image).WithError(err).Error("Failed to pull image")
 			return fmt.Errorf("failed to pull image %s: %w", containerConfig.Image, err)
