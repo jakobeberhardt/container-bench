@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -17,6 +16,7 @@ import (
 	"container-bench/internal/config"
 	"container-bench/internal/database"
 	"container-bench/internal/dataframe"
+	"container-bench/internal/logging"
 	"container-bench/internal/scheduler"
 
 	"github.com/docker/docker/api/types"
@@ -24,6 +24,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	"github.com/joho/godotenv"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -43,6 +44,8 @@ type ContainerBench struct {
 }
 
 func (cb *ContainerBench) cleanup() {
+	logger := logging.GetLogger()
+	
 	if cb.dockerClient == nil {
 		return
 	}
@@ -57,20 +60,20 @@ func (cb *ContainerBench) cleanup() {
 			
 			// Stop and remove container
 			if collector.ContainerID != "" {
-				fmt.Printf("Stopping container %s...\n", collector.ContainerID)
+				logger.WithField("container_id", collector.ContainerID).Info("Stopping container")
 				
 				// Stop container (with timeout)
 				timeout := 10 // 10 seconds
 				stopOptions := container.StopOptions{Timeout: &timeout}
 				if err := cb.dockerClient.ContainerStop(ctx, collector.ContainerID, stopOptions); err != nil {
-					fmt.Printf("Warning: failed to stop container %s: %v\n", collector.ContainerID, err)
+					logger.WithField("container_id", collector.ContainerID).WithError(err).Warn("Failed to stop container")
 				}
 				
 				// Remove container
 				if err := cb.dockerClient.ContainerRemove(ctx, collector.ContainerID, types.ContainerRemoveOptions{Force: true}); err != nil {
-					fmt.Printf("Warning: failed to remove container %s: %v\n", collector.ContainerID, err)
+					logger.WithField("container_id", collector.ContainerID).WithError(err).Error("Failed to remove container")
 				} else {
-					fmt.Printf("✅ Container %s cleaned up\n", collector.ContainerID)
+					logger.WithField("container_id", collector.ContainerID).Info("Container cleaned up")
 				}
 			}
 		}
@@ -78,13 +81,15 @@ func (cb *ContainerBench) cleanup() {
 }
 
 func loadEnvironment() {
+	logger := logging.GetLogger()
+	
 	// Try to load .env file from current directory
 	envFile := ".env"
 	if _, err := os.Stat(envFile); err == nil {
 		if err := godotenv.Load(envFile); err != nil {
-			fmt.Printf("Warning: Error loading .env file: %v\n", err)
+			logger.WithField("file", envFile).WithError(err).Warn("Error loading .env file")
 		} else {
-			fmt.Printf("✅ Loaded environment variables from %s\n", envFile)
+			logger.WithField("file", envFile).Info("Loaded environment variables")
 		}
 	} else {
 		// Try to load from the application directory
@@ -93,9 +98,9 @@ func loadEnvironment() {
 			envFile = filepath.Join(appDir, ".env")
 			if _, err := os.Stat(envFile); err == nil {
 				if err := godotenv.Load(envFile); err != nil {
-					fmt.Printf("Warning: Error loading .env file: %v\n", err)
+					logger.WithField("file", envFile).WithError(err).Warn("Error loading .env file")
 				} else {
-					fmt.Printf("✅ Loaded environment variables from %s\n", envFile)
+					logger.WithField("file", envFile).Info("Loaded environment variables")
 				}
 			}
 		}
@@ -103,6 +108,8 @@ func loadEnvironment() {
 }
 
 func validateEnvironment() error {
+	logger := logging.GetLogger()
+	
 	requiredVars := []string{
 		"INFLUXDB_HOST",
 		"INFLUXDB_USER", 
@@ -119,13 +126,18 @@ func validateEnvironment() error {
 	}
 	
 	if len(missing) > 0 {
+		logger.WithField("missing_vars", missing).Error("Missing required environment variables")
 		return fmt.Errorf("missing required environment variables: %v. Please ensure your .env file contains these variables", missing)
 	}
 	
+	logger.Debug("All required environment variables are present")
 	return nil
 }
 
 func main() {
+	// Initialize logging
+	logger := logging.GetLogger()
+	
 	// Load environment variables from .env file if it exists
 	loadEnvironment()
 
@@ -167,21 +179,25 @@ func main() {
 	rootCmd.AddCommand(validateCmd)
 
 	if err := rootCmd.Execute(); err != nil {
-		log.Fatal(err)
+		logger.WithError(err).Fatal("Command execution failed")
 	}
 }
 
 func validateConfig(configFile string) error {
+	logger := logging.GetLogger()
+	
 	_, err := config.LoadConfig(configFile)
 	if err != nil {
-		fmt.Printf("Configuration validation failed: %v\n", err)
+		logger.WithField("config_file", configFile).WithError(err).Error("Configuration validation failed")
 		return err
 	}
-	fmt.Println("Configuration is valid")
+	logger.WithField("config_file", configFile).Info("Configuration is valid")
 	return nil
 }
 
 func runBenchmark(configFile string) error {
+	logger := logging.GetLogger()
+	
 	bench := &ContainerBench{
 		dataframes: dataframe.NewDataFrames(),
 	}
@@ -190,12 +206,22 @@ func runBenchmark(configFile string) error {
 	var err error
 	bench.config, bench.configContent, err = config.LoadConfigWithContent(configFile)
 	if err != nil {
+		logger.WithField("config_file", configFile).WithError(err).Error("Failed to load configuration")
 		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Set log level from configuration
+	if err := logging.SetLogLevel(bench.config.Benchmark.LogLevel); err != nil {
+		logger.WithField("log_level", bench.config.Benchmark.LogLevel).WithError(err).Warn("Invalid log level in config, using INFO")
+		logging.SetLogLevel("info")
+	} else {
+		logger.WithField("log_level", bench.config.Benchmark.LogLevel).Debug("Log level set from configuration")
 	}
 
 	// Initialize Docker client
 	bench.dockerClient, err = client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
+		logger.WithError(err).Error("Failed to create Docker client")
 		return fmt.Errorf("failed to create Docker client: %w", err)
 	}
 	defer bench.dockerClient.Close()
@@ -203,6 +229,7 @@ func runBenchmark(configFile string) error {
 	// Initialize database client
 	bench.dbClient, err = database.NewInfluxDBClient(bench.config.Benchmark.Data.DB)
 	if err != nil {
+		logger.WithError(err).Error("Failed to create database client")
 		return fmt.Errorf("failed to create database client: %w", err)
 	}
 	defer bench.dbClient.Close()
@@ -210,6 +237,7 @@ func runBenchmark(configFile string) error {
 	// Get next benchmark ID
 	lastID, err := bench.dbClient.GetLastBenchmarkID()
 	if err != nil {
+		logger.WithError(err).Error("Failed to get last benchmark ID")
 		return fmt.Errorf("failed to get last benchmark ID: %w", err)
 	}
 	bench.benchmarkID = lastID + 1
@@ -217,14 +245,19 @@ func runBenchmark(configFile string) error {
 	// Initialize scheduler
 	bench.scheduler = scheduler.NewDefaultScheduler()
 	if err := bench.scheduler.Initialize(); err != nil {
+		logger.WithError(err).Error("Failed to initialize scheduler")
 		return fmt.Errorf("failed to initialize scheduler: %w", err)
 	}
 	defer bench.scheduler.Shutdown()
 
-	fmt.Printf("Starting benchmark %d: %s\n", bench.benchmarkID, bench.config.Benchmark.Name)
+	logger.WithFields(logrus.Fields{
+		"benchmark_id": bench.benchmarkID,
+		"name":        bench.config.Benchmark.Name,
+	}).Info("Starting benchmark")
 
 	// Setup containers
 	if err := bench.setupContainers(); err != nil {
+		logger.WithError(err).Error("Failed to setup containers")
 		return fmt.Errorf("failed to setup containers: %w", err)
 	}
 	// Ensure cleanup happens regardless of how the function exits
@@ -239,31 +272,38 @@ func runBenchmark(configFile string) error {
 
 	go func() {
 		<-sigChan
-		fmt.Println("\nReceived interrupt signal, shutting down...")
+		logger.Info("Received interrupt signal, shutting down")
 		cancel()
 	}()
 
 	// Start benchmark
 	bench.startTime = time.Now()
 	if err := bench.startBenchmark(ctx); err != nil {
+		logger.WithError(err).Error("Benchmark failed")
 		return fmt.Errorf("benchmark failed: %w", err)
 	}
 
+	logger.Info("Benchmark completed successfully")
 	return nil
 }
 
 func (cb *ContainerBench) setupContainers() error {
+	logger := logging.GetLogger()
 	containers := cb.config.GetContainersSorted()
 
 	for _, containerConfig := range containers {
-		fmt.Printf("Setting up container %d: %s\n", containerConfig.Index, containerConfig.Image)
+		logger.WithFields(logrus.Fields{
+			"index": containerConfig.Index,
+			"image": containerConfig.Image,
+		}).Info("Setting up container")
 
 		// Pull image
 		ctx := context.Background()
-		fmt.Printf("Pulling image %s...\n", containerConfig.Image)
+		logger.WithField("image", containerConfig.Image).Debug("Pulling image")
 		
 		pullResp, err := cb.dockerClient.ImagePull(ctx, containerConfig.Image, types.ImagePullOptions{})
 		if err != nil {
+			logger.WithField("image", containerConfig.Image).WithError(err).Error("Failed to pull image")
 			return fmt.Errorf("failed to pull image %s: %w", containerConfig.Image, err)
 		}
 		defer pullResp.Close()
@@ -271,9 +311,10 @@ func (cb *ContainerBench) setupContainers() error {
 		// Read the pull response to completion (required for pull to finish)
 		_, err = io.Copy(io.Discard, pullResp)
 		if err != nil {
+			logger.WithField("image", containerConfig.Image).WithError(err).Error("Failed to complete image pull")
 			return fmt.Errorf("failed to complete image pull for %s: %w", containerConfig.Image, err)
 		}
-		fmt.Printf("✅ Image %s pulled successfully\n", containerConfig.Image)
+		logger.WithField("image", containerConfig.Image).Info("Image pulled successfully")
 
 		// Create container
 		containerName := fmt.Sprintf("bench-%d-container-%d", cb.benchmarkID, containerConfig.Index)
@@ -292,6 +333,7 @@ func (cb *ContainerBench) setupContainers() error {
 			// Parse port mapping (format: host:container, e.g., "8080:80" or "8080:8080")
 			parts := strings.Split(containerConfig.Port, ":")
 			if len(parts) != 2 {
+				logger.WithField("port", containerConfig.Port).Error("Invalid port format")
 				return fmt.Errorf("invalid port format %s, expected format: host:container", containerConfig.Port)
 			}
 			
@@ -301,6 +343,7 @@ func (cb *ContainerBench) setupContainers() error {
 			// Create port binding
 			port, err := nat.NewPort("tcp", containerPort)
 			if err != nil {
+				logger.WithField("container_port", containerPort).WithError(err).Error("Invalid container port")
 				return fmt.Errorf("invalid container port %s: %w", containerPort, err)
 			}
 			
@@ -325,6 +368,7 @@ func (cb *ContainerBench) setupContainers() error {
 
 		resp, err := cb.dockerClient.ContainerCreate(ctx, config, hostConfig, nil, nil, containerName)
 		if err != nil {
+			logger.WithField("container_name", containerName).WithError(err).Error("Failed to create container")
 			return fmt.Errorf("failed to create container %s: %w", containerName, err)
 		}
 
@@ -342,25 +386,38 @@ func (cb *ContainerBench) setupContainers() error {
 		collector := collectors.NewContainerCollector(containerConfig.Index, resp.ID, collectorConfig, containerDF)
 		cb.collectors = append(cb.collectors, collector)
 
-		fmt.Printf("Container %d created with ID: %s\n", containerConfig.Index, resp.ID[:12])
+		logger.WithFields(logrus.Fields{
+			"index":        containerConfig.Index,
+			"container_id": resp.ID[:12],
+		}).Info("Container created")
 	}
 
 	return nil
 }
 
 func (cb *ContainerBench) startBenchmark(ctx context.Context) error {
+	logger := logging.GetLogger()
+	
 	// Start all containers and get their PIDs
 	for i, collector := range cb.collectors {
 		containerConfig := cb.config.GetContainersSorted()[i]
 		
 		// Start container
 		if err := cb.dockerClient.ContainerStart(ctx, collector.ContainerID, container.StartOptions{}); err != nil {
+			logger.WithFields(logrus.Fields{
+				"index":        containerConfig.Index,
+				"container_id": collector.ContainerID,
+			}).WithError(err).Error("Failed to start container")
 			return fmt.Errorf("failed to start container %d: %w", containerConfig.Index, err)
 		}
 
 		// Get container info
 		info, err := cb.dockerClient.ContainerInspect(ctx, collector.ContainerID)
 		if err != nil {
+			logger.WithFields(logrus.Fields{
+				"index":        containerConfig.Index,
+				"container_id": collector.ContainerID,
+			}).WithError(err).Error("Failed to inspect container")
 			return fmt.Errorf("failed to inspect container %d: %w", containerConfig.Index, err)
 		}
 
@@ -372,10 +429,17 @@ func (cb *ContainerBench) startBenchmark(ctx context.Context) error {
 
 		// Start collector
 		if err := collector.Start(ctx); err != nil {
+			logger.WithFields(logrus.Fields{
+				"index":        containerConfig.Index,
+				"container_id": collector.ContainerID,
+			}).WithError(err).Error("Failed to start collector")
 			return fmt.Errorf("failed to start collector for container %d: %w", containerConfig.Index, err)
 		}
 
-		fmt.Printf("Container %d started with PID %d\n", containerConfig.Index, pid)
+		logger.WithFields(logrus.Fields{
+			"index": containerConfig.Index,
+			"pid":   pid,
+		}).Info("Container started")
 	}
 
 	// Start scheduler updates
@@ -386,35 +450,36 @@ func (cb *ContainerBench) startBenchmark(ctx context.Context) error {
 	timeoutCtx, timeoutCancel := context.WithTimeout(ctx, cb.config.GetMaxDuration())
 	defer timeoutCancel()
 
-	fmt.Printf("Benchmark running for up to %v...\n", cb.config.GetMaxDuration())
+	logger.WithField("duration", cb.config.GetMaxDuration()).Info("Benchmark running")
 
 	// Main benchmark loop
 	for {
 		select {
 		case <-timeoutCtx.Done():
 			if timeoutCtx.Err() == context.DeadlineExceeded {
-				fmt.Println("Benchmark timeout reached")
+				logger.Info("Benchmark timeout reached")
 			} else {
-				fmt.Println("Benchmark interrupted")
+				logger.Info("Benchmark interrupted")
 			}
 			cb.endTime = time.Now()
 			return cb.finalizeBenchmark()
 		case <-schedulerTicker.C:
 			// Update scheduler with current data
 			if err := cb.scheduler.ProcessDataFrames(cb.dataframes); err != nil {
-				fmt.Printf("Scheduler error: %v\n", err)
+				logger.WithError(err).Warn("Scheduler error")
 			}
 		}
 	}
 }
 
 func (cb *ContainerBench) finalizeBenchmark() error {
-	fmt.Println("Finalizing benchmark...")
+	logger := logging.GetLogger()
+	logger.Info("Finalizing benchmark")
 
 	// Stop all collectors
 	for _, collector := range cb.collectors {
 		if err := collector.Stop(); err != nil {
-			fmt.Printf("Error stopping collector: %v\n", err)
+			logger.WithError(err).Warn("Error stopping collector")
 		}
 	}
 
@@ -422,33 +487,39 @@ func (cb *ContainerBench) finalizeBenchmark() error {
 	ctx := context.Background()
 	for _, collector := range cb.collectors {
 		if err := cb.dockerClient.ContainerStop(ctx, collector.ContainerID, container.StopOptions{}); err != nil {
-			fmt.Printf("Error stopping container %s: %v\n", collector.ContainerID[:12], err)
+			logger.WithField("container_id", collector.ContainerID[:12]).WithError(err).Warn("Error stopping container")
 		}
 
 		if err := cb.dockerClient.ContainerRemove(ctx, collector.ContainerID, container.RemoveOptions{}); err != nil {
-			fmt.Printf("Error removing container %s: %v\n", collector.ContainerID[:12], err)
+			logger.WithField("container_id", collector.ContainerID[:12]).WithError(err).Error("Error removing container")
 		}
 	}
 
 	// Export data to database
-	fmt.Println("Exporting data to database...")
+	logger.Info("Exporting data to database")
 	if err := cb.dbClient.WriteDataFrames(cb.benchmarkID, cb.config, cb.dataframes, cb.startTime, cb.endTime); err != nil {
+		logger.WithError(err).Error("Failed to export data")
 		return fmt.Errorf("failed to export data: %w", err)
 	}
 
 	// Collect and export metadata
-	fmt.Println("Collecting and exporting metadata...")
+	logger.Info("Collecting and exporting metadata")
 	metadata, err := database.CollectBenchmarkMetadata(cb.benchmarkID, cb.config, cb.configContent, cb.dataframes, cb.startTime, cb.endTime, Version)
 	if err != nil {
+		logger.WithError(err).Error("Failed to collect metadata")
 		return fmt.Errorf("failed to collect metadata: %w", err)
 	}
 
 	if err := cb.dbClient.WriteMetadata(metadata); err != nil {
+		logger.WithError(err).Error("Failed to export metadata")
 		return fmt.Errorf("failed to export metadata: %w", err)
 	}
 
 	duration := cb.endTime.Sub(cb.startTime)
-	fmt.Printf("Benchmark %d completed in %v\n", cb.benchmarkID, duration)
+	logger.WithFields(logrus.Fields{
+		"benchmark_id": cb.benchmarkID,
+		"duration":     duration,
+	}).Info("Benchmark completed")
 
 	return nil
 }

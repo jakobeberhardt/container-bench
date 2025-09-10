@@ -6,6 +6,7 @@ import (
 	"syscall"
 
 	"container-bench/internal/dataframe"
+	"container-bench/internal/logging"
 	"github.com/elastic/go-perf"
 )
 
@@ -16,15 +17,19 @@ type PerfCollector struct {
 }
 
 func NewPerfCollector(pid int, cgroupPath string, cpuCore int) (*PerfCollector, error) {
+	logger := logging.GetLogger()
+	
 	// Check if cgroup path exists
 	if _, err := os.Stat(cgroupPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("cgroup path does not exist: %s", cgroupPath)
+		logger.WithField("cgroup_path", cgroupPath).Error("Cgroup path does not exist")
+		return nil, err
 	}
 	
 	// Open cgroup file descriptor
 	cgroupFd, err := os.Open(cgroupPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open cgroup path %s: %w", cgroupPath, err)
+		logger.WithField("cgroup_path", cgroupPath).WithError(err).Error("Failed to open cgroup path")
+		return nil, err
 	}
 
 	collector := &PerfCollector{
@@ -52,7 +57,8 @@ func NewPerfCollector(pid int, cgroupPath string, cpuCore int) (*PerfCollector, 
 		if err != nil {
 			// Clean up previously opened events
 			collector.Close()
-			return nil, fmt.Errorf("failed to open perf event %v: %w", counter, err)
+			logger.WithField("counter", counter).WithError(err).Error("Failed to open perf event")
+			return nil, err
 		}
 
 		collector.events = append(collector.events, event)

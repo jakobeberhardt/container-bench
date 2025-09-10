@@ -1,11 +1,12 @@
 package collectors
 
 import (
-	"fmt"
 	"strconv"
 
 	"container-bench/internal/dataframe"
+	"container-bench/internal/logging"
 	"github.com/intel/goresctrl/pkg/rdt"
+	"github.com/sirupsen/logrus"
 )
 
 type RDTCollector struct {
@@ -15,9 +16,11 @@ type RDTCollector struct {
 }
 
 func NewRDTCollector(pid int) (*RDTCollector, error) {
+	logger := logging.GetLogger()
+	
 	collector := &RDTCollector{
 		pid:        pid,
-		className:  fmt.Sprintf("container-%d", pid),
+		className:  "container-" + strconv.Itoa(pid),
 		rdtEnabled: false,
 	}
 
@@ -25,6 +28,7 @@ func NewRDTCollector(pid int) (*RDTCollector, error) {
 	if err := rdt.Initialize(""); err != nil {
 		// RDT not available, but we can still create the collector
 		// It will return nil metrics
+		logger.WithError(err).Debug("RDT not available")
 		return collector, nil
 	}
 
@@ -37,7 +41,11 @@ func NewRDTCollector(pid int) (*RDTCollector, error) {
 		if defaultClass, exists := rdt.GetClass("default"); exists {
 			pidStr := strconv.Itoa(pid)
 			if err := defaultClass.AddPids(pidStr); err != nil {
-				return nil, fmt.Errorf("failed to add PID %d to RDT class: %w", pid, err)
+				logger.WithFields(logrus.Fields{
+					"pid":        pid,
+					"class_name": collector.className,
+				}).WithError(err).Error("Failed to add PID to RDT class")
+				return nil, err
 			}
 		}
 	}
