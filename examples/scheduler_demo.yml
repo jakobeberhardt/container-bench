@@ -6,6 +6,7 @@ benchmark:
   scheduler:
     implementation: default
     rdt: false
+    log_level: debug
   data:
     db:
       host: ${INFLUXDB_HOST}
