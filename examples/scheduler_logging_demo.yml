@@ -1,0 +1,55 @@
+# Example showing different scheduler log levels:
+
+# scheduler.log_level: debug
+# - Logs complete dataframe details every 2 seconds
+# - Shows all perf, docker, and RDT metrics for each container
+# - Most verbose, useful for detailed analysis
+
+# scheduler.log_level: info  
+# - Logs scheduling decisions and performance evaluations every 5 seconds
+# - Shows performance scores and resource reallocation decisions
+# - Moderate verbosity, useful for understanding scheduler behavior
+
+# scheduler.log_level: warn
+# - Only logs alerts when thresholds are exceeded
+# - High cache miss rates (>10%), high CPU usage (>80%), high memory (>90%)
+# - Minimal verbosity, useful for monitoring issues
+
+benchmark:
+  name: Scheduler Logging Levels Demo
+  description: Demo showing different scheduler logging levels
+  max_t: 15
+  log_level: info  # System log level
+  scheduler:
+    implementation: default
+    rdt: false
+    log_level: debug  # Try changing this to: debug, info, warn
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+
+normal-load:
+  index: 0
+  image: nginx:alpine
+  core: 0
+  command: "while :; do dd if=/dev/zero of=/dev/null bs=1M count=50 2>/dev/null; sleep 0.5; done"
+  data:
+    frequency: 500
+    perf: true
+    docker: true
+    rdt: false
+
+high-cpu:
+  index: 1
+  image: nginx:alpine
+  core: 1
+  command: "apk add --no-cache stress-ng > /dev/null 2>&1 && stress-ng --cpu 1 --timeout 15s"
+  data:
+    frequency: 500
+    perf: true
+    docker: true
+    rdt: false

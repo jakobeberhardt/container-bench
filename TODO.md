@@ -4,3 +4,4 @@
 - Parallel start up and tear down
 - Bulk write to DBs
 - RDT support
+- Scheduler needs to run in goroutine
