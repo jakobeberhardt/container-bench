@@ -3,6 +3,7 @@ package collectors
 import (
 	"fmt"
 	"os"
+	"sync"
 	"syscall"
 
 	"container-bench/internal/dataframe"
@@ -11,9 +12,13 @@ import (
 )
 
 type PerfCollector struct {
-	events    []*perf.Event
-	cgroupFd  int
-	cpuCore   int
+	events       []*perf.Event
+	cgroupFd     int
+	cpuCore      int
+	
+	// Store previous values for delta calculation
+	lastValues   map[int]uint64
+	mutex        sync.Mutex
 }
 
 func NewPerfCollector(pid int, cgroupPath string, cpuCore int) (*PerfCollector, error) {
@@ -33,8 +38,9 @@ func NewPerfCollector(pid int, cgroupPath string, cpuCore int) (*PerfCollector, 
 	}
 
 	collector := &PerfCollector{
-		cgroupFd: int(cgroupFd.Fd()),
-		cpuCore:  cpuCore, // Use the specific CPU core assigned to the container
+		cgroupFd:   int(cgroupFd.Fd()),
+		cpuCore:    cpuCore, // Use the specific CPU core assigned to the container
+		lastValues: make(map[int]uint64),
 	}
 
 	// Define the hardware events we want to monitor using proper go-perf constants
@@ -79,10 +85,14 @@ func (pc *PerfCollector) Collect() *dataframe.PerfMetrics {
 	if len(pc.events) == 0 {
 		return nil
 	}
+	
+	pc.mutex.Lock()
+	defer pc.mutex.Unlock()
 
 	metrics := &dataframe.PerfMetrics{}
+	hasAnyData := false
 
-	// Read values from events
+	// Read values from events and calculate deltas
 	for i, event := range pc.events {
 		count, err := event.ReadCount()
 		if err != nil {
@@ -90,28 +100,46 @@ func (pc *PerfCollector) Collect() *dataframe.PerfMetrics {
 			continue
 		}
 
-		value := uint64(count.Value)
-
-		// Map to appropriate metric based on event index
-		switch i {
-		case 0: // CACHE_MISSES
-			metrics.CacheMisses = &value
-		case 1: // CACHE_REFERENCES
-			metrics.CacheReferences = &value
-		case 2: // INSTRUCTIONS
-			metrics.Instructions = &value
-		case 3: // CPU_CYCLES
-			metrics.Cycles = &value
-		case 4: // BRANCH_INSTRUCTIONS
-			metrics.BranchInstructions = &value
-		case 5: // BRANCH_MISSES
-			metrics.BranchMisses = &value
-		case 6: // BUS_CYCLES
-			metrics.BusCycles = &value
+		currentValue := uint64(count.Value)
+		
+		// Calculate delta from previous measurement
+		if lastValue, exists := pc.lastValues[i]; exists {
+			delta := currentValue - lastValue
+			
+			// Only store non-zero deltas to avoid writing stale data
+			if delta > 0 {
+				hasAnyData = true
+				
+				// Map to appropriate metric based on event index
+				switch i {
+				case 0: // CACHE_MISSES
+					metrics.CacheMisses = &delta
+				case 1: // CACHE_REFERENCES
+					metrics.CacheReferences = &delta
+				case 2: // INSTRUCTIONS
+					metrics.Instructions = &delta
+				case 3: // CPU_CYCLES
+					metrics.Cycles = &delta
+				case 4: // BRANCH_INSTRUCTIONS
+					metrics.BranchInstructions = &delta
+				case 5: // BRANCH_MISSES
+					metrics.BranchMisses = &delta
+				case 6: // BUS_CYCLES
+					metrics.BusCycles = &delta
+				}
+			}
 		}
+		
+		// Store current value for next delta calculation
+		pc.lastValues[i] = currentValue
+	}
+	
+	// If no activity detected, return nil to indicate no data
+	if !hasAnyData {
+		return nil
 	}
 
-	// Calculate derived metrics
+	// Calculate derived metrics only if we have the base data
 	if metrics.CacheMisses != nil && metrics.CacheReferences != nil && *metrics.CacheReferences > 0 {
 		rate := float64(*metrics.CacheMisses) / float64(*metrics.CacheReferences)
 		metrics.CacheMissRate = &rate
