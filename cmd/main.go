@@ -311,6 +311,16 @@ func runBenchmark(configFile string) error {
 
 	// Initialize scheduler
 	bench.scheduler = scheduler.NewDefaultScheduler()
+	
+	// Set scheduler log level if specified in config
+	if bench.config.Benchmark.Scheduler.LogLevel != "" {
+		if err := bench.scheduler.SetLogLevel(bench.config.Benchmark.Scheduler.LogLevel); err != nil {
+			logger.WithField("scheduler_log_level", bench.config.Benchmark.Scheduler.LogLevel).WithError(err).Warn("Invalid scheduler log level, using default")
+		} else {
+			logger.WithField("scheduler_log_level", bench.config.Benchmark.Scheduler.LogLevel).Debug("Scheduler log level set from configuration")
+		}
+	}
+	
 	if err := bench.scheduler.Initialize(); err != nil {
 		logger.WithError(err).Error("Failed to initialize scheduler")
 		return fmt.Errorf("failed to initialize scheduler: %w", err)

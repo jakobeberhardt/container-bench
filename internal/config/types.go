@@ -34,6 +34,7 @@ type RegistryConfig struct {
 type SchedulerConfig struct {
 	Implementation string `yaml:"implementation"`
 	RDT           bool   `yaml:"rdt"`
+	LogLevel      string `yaml:"log_level,omitempty"`
 }
 
 type DataConfig struct {
