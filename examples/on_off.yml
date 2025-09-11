@@ -1,7 +1,7 @@
 benchmark:
   name: Noisy neighbor on off
   description: Test which starts and stops a neighbor
-  max_t: 60
+  max_t: 30
   log_level: debug
   scheduler:
     implementation: default
@@ -34,7 +34,7 @@ neighbor:
   index: 1
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 1
-  command: "sleep 15 && /neighbor --duration 15 --buffer-size 12MB --pattern sequential && sleep 15 && /neighbor --duration 15 --buffer-size 100MB --pattern sequential && sleep 3600"
+  command: "/neighbor --duration 10 --buffer-size 10MB --pattern random && sleep 5 && /neighbor --duration 10 --buffer-size 10MB --pattern random && sleep 3600"
   data:
     frequency: 100
     perf: true
