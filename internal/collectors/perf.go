@@ -105,28 +105,24 @@ func (pc *PerfCollector) Collect() *dataframe.PerfMetrics {
 		// Calculate delta from previous measurement
 		if lastValue, exists := pc.lastValues[i]; exists {
 			delta := currentValue - lastValue
+			hasAnyData = true // We have a measurement, even if delta is 0
 			
-			// Only store non-zero deltas to avoid writing stale data
-			if delta > 0 {
-				hasAnyData = true
-				
-				// Map to appropriate metric based on event index
-				switch i {
-				case 0: // CACHE_MISSES
-					metrics.CacheMisses = &delta
-				case 1: // CACHE_REFERENCES
-					metrics.CacheReferences = &delta
-				case 2: // INSTRUCTIONS
-					metrics.Instructions = &delta
-				case 3: // CPU_CYCLES
-					metrics.Cycles = &delta
-				case 4: // BRANCH_INSTRUCTIONS
-					metrics.BranchInstructions = &delta
-				case 5: // BRANCH_MISSES
-					metrics.BranchMisses = &delta
-				case 6: // BUS_CYCLES
-					metrics.BusCycles = &delta
-				}
+			// Map to appropriate metric based on event index
+			switch i {
+			case 0: // CACHE_MISSES
+				metrics.CacheMisses = &delta
+			case 1: // CACHE_REFERENCES
+				metrics.CacheReferences = &delta
+			case 2: // INSTRUCTIONS
+				metrics.Instructions = &delta
+			case 3: // CPU_CYCLES
+				metrics.Cycles = &delta
+			case 4: // BRANCH_INSTRUCTIONS
+				metrics.BranchInstructions = &delta
+			case 5: // BRANCH_MISSES
+				metrics.BranchMisses = &delta
+			case 6: // BUS_CYCLES
+				metrics.BusCycles = &delta
 			}
 		}
 		
@@ -134,7 +130,7 @@ func (pc *PerfCollector) Collect() *dataframe.PerfMetrics {
 		pc.lastValues[i] = currentValue
 	}
 	
-	// If no activity detected, return nil to indicate no data
+	// If we couldn't read any events at all, return nil
 	if !hasAnyData {
 		return nil
 	}
