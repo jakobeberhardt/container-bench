@@ -2,7 +2,6 @@ package logging
 
 import (
 	"os"
-
 	"github.com/sirupsen/logrus"
 )
 
@@ -34,17 +33,14 @@ func init() {
 	schedulerLogger.SetLevel(logrus.InfoLevel)
 }
 
-// GetLogger returns the global logger instance
 func GetLogger() *logrus.Logger {
 	return logger
 }
 
-// GetSchedulerLogger returns the scheduler-specific logger instance
 func GetSchedulerLogger() *logrus.Logger {
 	return schedulerLogger
 }
 
-// SetLogLevel sets the logging level from a string
 func SetLogLevel(level string) error {
 	logLevel, err := logrus.ParseLevel(level)
 	if err != nil {
@@ -54,7 +50,6 @@ func SetLogLevel(level string) error {
 	return nil
 }
 
-// SetSchedulerLogLevel sets the scheduler logging level from a string
 func SetSchedulerLogLevel(level string) error {
 	logLevel, err := logrus.ParseLevel(level)
 	if err != nil {
