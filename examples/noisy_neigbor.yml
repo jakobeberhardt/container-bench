@@ -1,11 +1,11 @@
 benchmark:
   name: Noisy neighbor
   description: Test which starts more and more neigbors
-  max_t: 10
-  log_level: debug
+  max_t: 60
+  log_level: info
   scheduler:
     implementation: default
-    rdt: true
+    rdt: false
     log_level: warn
   data:
     db:
@@ -24,7 +24,7 @@ victim:
   index: 0
   image: registry.jakob-eberhardt.de/neighbor:default
   core: 0
-  command: "/neighbor --duration 3600 --buffer-size 2MB --pattern random"
+  command: "/neighbor --duration 3600 --buffer-size 12MB --pattern random"
   data:
     frequency: 100
     perf: true
@@ -35,7 +35,7 @@ first:
   index: 1
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 1
-  command: "sleep 15 && /neighbor --duration 3600 --buffer-size 2MB --pattern random"
+  command: "sleep 15 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
   data:
     frequency: 100
     perf: true
@@ -46,7 +46,7 @@ second:
   index: 2
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 2
-  command: "sleep 30 && /neighbor --duration 3600 --buffer-size 2MB --pattern random"
+  command: "sleep 30 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
   data:
     frequency: 100
     perf: true
@@ -57,7 +57,7 @@ third:
   index: 3
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 3
-  command: "sleep 45 && /neighbor --duration 3600 --buffer-size 2MB --pattern random"
+  command: "sleep 45 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
   data:
     frequency: 100
     perf: true

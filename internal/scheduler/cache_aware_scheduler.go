@@ -49,11 +49,20 @@ const (
 )
 
 func NewCacheAwareScheduler() *CacheAwareScheduler {
+	return NewCacheAwareSchedulerWithRDT(false)
+}
+
+func NewCacheAwareSchedulerWithRDT(enableRDTAllocation bool) *CacheAwareScheduler {
+	var rdtAllocator RDTAllocator
+	if enableRDTAllocation {
+		rdtAllocator = NewDefaultRDTAllocator()
+	}
+	
 	return &CacheAwareScheduler{
 		name:               "cache-aware",
 		version:            "1.0.0",
 		schedulerLogger:    logging.GetSchedulerLogger(),
-		rdtAllocator:       NewDefaultRDTAllocator(),
+		rdtAllocator:       rdtAllocator,
 		cacheMissThreshold: 0.4, // 40% cache miss rate threshold
 		highMissClassName:  "system/default", // High miss containers go to default class
 		lowMissClassName:   "system/default", // For now, use same class (would be separate in production)
@@ -64,28 +73,36 @@ func NewCacheAwareScheduler() *CacheAwareScheduler {
 func (s *CacheAwareScheduler) Initialize() error {
 	s.schedulerLogger.Info("Initializing cache-aware scheduler")
 	
-	// Initialize RDT allocator
-	if err := s.rdtAllocator.Initialize(); err != nil {
-		s.schedulerLogger.WithError(err).Error("Failed to initialize RDT allocator")
-		return fmt.Errorf("failed to initialize RDT allocator: %v", err)
+	// Initialize RDT allocator only if enabled
+	if s.rdtAllocator != nil {
+		if err := s.rdtAllocator.Initialize(); err != nil {
+			s.schedulerLogger.WithError(err).Error("Failed to initialize RDT allocator")
+			return fmt.Errorf("failed to initialize RDT allocator: %v", err)
+		}
+		
+		// Log available RDT classes
+		availableClasses := s.rdtAllocator.ListAvailableClasses()
+		s.schedulerLogger.WithField("available_classes", availableClasses).Info("Available RDT classes")
+		
+		// For demonstration, we'll work with existing classes
+		// In production, you would create specific classes for high/low cache miss containers
+		if len(availableClasses) >= 2 {
+			s.highMissClassName = availableClasses[0]
+			s.lowMissClassName = availableClasses[0] // Use same for now
+		}
+		
+		s.schedulerLogger.WithFields(logrus.Fields{
+			"cache_miss_threshold": s.cacheMissThreshold,
+			"high_miss_class":      s.highMissClassName,
+			"low_miss_class":       s.lowMissClassName,
+			"rdt_allocation":       "enabled",
+		}).Info("Cache-aware scheduler configuration")
+	} else {
+		s.schedulerLogger.WithFields(logrus.Fields{
+			"cache_miss_threshold": s.cacheMissThreshold,
+			"rdt_allocation":       "disabled (monitoring only)",
+		}).Info("Cache-aware scheduler configuration")
 	}
-	
-	// Log available RDT classes
-	availableClasses := s.rdtAllocator.ListAvailableClasses()
-	s.schedulerLogger.WithField("available_classes", availableClasses).Info("Available RDT classes")
-	
-	// For demonstration, we'll work with existing classes
-	// In production, you would create specific classes for high/low cache miss containers
-	if len(availableClasses) >= 2 {
-		s.highMissClassName = availableClasses[0]
-		s.lowMissClassName = availableClasses[0] // Use same for now
-	}
-	
-	s.schedulerLogger.WithFields(logrus.Fields{
-		"cache_miss_threshold": s.cacheMissThreshold,
-		"high_miss_class":      s.highMissClassName,
-		"low_miss_class":       s.lowMissClassName,
-	}).Info("Cache-aware scheduler configuration")
 	
 	s.initialized = true
 	return nil
@@ -186,6 +203,25 @@ func (s *CacheAwareScheduler) updateContainerState(state *ContainerState, cacheM
 }
 
 func (s *CacheAwareScheduler) makeSchedulingDecision(state *ContainerState) error {
+	// Skip allocation decisions if RDT allocator is not available (monitoring-only mode)
+	if s.rdtAllocator == nil {
+		// Just log the cache behavior for monitoring purposes
+		if state.ConsecutiveHighMisses >= ConsecutiveThreshold {
+			s.schedulerLogger.WithFields(logrus.Fields{
+				"container":           state.ContainerIndex,
+				"consecutive_high":    state.ConsecutiveHighMisses,
+				"cache_miss_threshold": s.cacheMissThreshold,
+			}).Info("Container has high cache miss rate (monitoring only)")
+		} else if state.ConsecutiveLowMisses >= ConsecutiveThreshold {
+			s.schedulerLogger.WithFields(logrus.Fields{
+				"container":           state.ContainerIndex,
+				"consecutive_low":     state.ConsecutiveLowMisses,
+				"cache_miss_threshold": s.cacheMissThreshold,
+			}).Info("Container has low cache miss rate (monitoring only)")
+		}
+		return nil
+	}
+	
 	// Prevent thrashing by limiting allocation decisions
 	if state.AllocationDecisionsMade >= MaxAllocationDecisions {
 		return nil
@@ -283,9 +319,11 @@ func (s *CacheAwareScheduler) Shutdown() error {
 	
 	s.schedulerLogger.Info("Shutting down cache-aware scheduler")
 	
-	// Clean up RDT allocator
-	if err := s.rdtAllocator.Cleanup(); err != nil {
-		s.schedulerLogger.WithError(err).Warn("Failed to cleanup RDT allocator")
+	// Clean up RDT allocator if it exists
+	if s.rdtAllocator != nil {
+		if err := s.rdtAllocator.Cleanup(); err != nil {
+			s.schedulerLogger.WithError(err).Warn("Failed to cleanup RDT allocator")
+		}
 	}
 	
 	s.stateMutex.Lock()
