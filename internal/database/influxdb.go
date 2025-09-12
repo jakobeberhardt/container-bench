@@ -170,7 +170,7 @@ func (idb *InfluxDBClient) GetLastBenchmarkID() (int, error) {
 	
 	query := fmt.Sprintf(`
 		from(bucket: "%s")
-		|> range(start: -30d)
+		|> range(start: -300d)
 		|> filter(fn: (r) => r._measurement == "benchmark_metrics")
 		|> distinct(column: "benchmark_id")
 		|> map(fn: (r) => ({_value: int(v: r.benchmark_id)}))

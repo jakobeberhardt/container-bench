@@ -5,3 +5,4 @@
 - Bulk write to DBs
 - RDT Memory/s Field: Use Delta
 - Add relative time
+- Handle docker timeouts using context
