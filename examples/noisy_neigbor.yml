@@ -4,9 +4,9 @@ benchmark:
   max_t: 60
   log_level: info
   scheduler:
-    implementation: default
-    rdt: false
-    log_level: warn
+    implementation: cache-aware
+    rdt: true
+    log_level: debug
   data:
     db:
       host: ${INFLUXDB_HOST}
@@ -62,4 +62,4 @@ third:
     frequency: 100
     perf: true
     docker: true
-    rdt: false
+    rdt: true
