@@ -66,9 +66,30 @@ type DockerMetrics struct {
 }
 
 type RDTMetrics struct {
-	L3CacheUsage    *uint64 `json:"l3_cache_usage,omitempty"`
-	MemoryBandwidth *uint64 `json:"memory_bandwidth,omitempty"`
-	CLOSGroup       *string `json:"clos_group,omitempty"`
+	// L3 Cache Monitoring
+	L3CacheOccupancy     *uint64  `json:"l3_cache_occupancy,omitempty"`     // L3 cache occupancy in bytes
+	L3CacheOccupancyKB   *float64 `json:"l3_cache_occupancy_kb,omitempty"`  // L3 cache occupancy in KB
+	L3CacheOccupancyMB   *float64 `json:"l3_cache_occupancy_mb,omitempty"`  // L3 cache occupancy in MB
+	
+	// Memory Bandwidth Monitoring
+	MemoryBandwidthTotal *uint64  `json:"memory_bandwidth_total,omitempty"` // Total memory bandwidth in bytes/sec
+	MemoryBandwidthLocal *uint64  `json:"memory_bandwidth_local,omitempty"` // Local memory bandwidth in bytes/sec
+	MemoryBandwidthMBps  *float64 `json:"memory_bandwidth_mbps,omitempty"`  // Memory bandwidth in MB/s
+	
+	// RDT Class Information
+	RDTClassName         *string `json:"rdt_class_name,omitempty"`         // Name of the RDT class/CLOS group
+	MonGroupName         *string `json:"mon_group_name,omitempty"`         // Name of the monitoring group
+	
+	// Cache Allocation Information (if available)
+	L3CacheAllocation    *uint64  `json:"l3_cache_allocation,omitempty"`    // Allocated L3 cache ways/percentage
+	L3CacheAllocationPct *float64 `json:"l3_cache_allocation_pct,omitempty"` // L3 cache allocation percentage
+	
+	// Memory Bandwidth Allocation (if available)
+	MBAThrottle          *uint64  `json:"mba_throttle,omitempty"`           // Memory bandwidth throttle percentage
+	
+	// Derived Metrics
+	CacheUtilization     *float64 `json:"cache_utilization,omitempty"`     // Cache utilization percentage
+	BandwidthUtilization *float64 `json:"bandwidth_utilization,omitempty"` // Bandwidth utilization percentage
 }
 
 func NewDataFrames() *DataFrames {

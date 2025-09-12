@@ -483,14 +483,44 @@ func (idb *InfluxDBClient) createFields(step *dataframe.SamplingStep, stepNumber
 
 	// Add RDT metrics
 	if step.RDT != nil {
-		if step.RDT.L3CacheUsage != nil {
-			fields["rdt_l3_cache_usage"] = *step.RDT.L3CacheUsage
+		if step.RDT.L3CacheOccupancy != nil {
+			fields["rdt_l3_cache_occupancy"] = *step.RDT.L3CacheOccupancy
 		}
-		if step.RDT.MemoryBandwidth != nil {
-			fields["rdt_memory_bandwidth"] = *step.RDT.MemoryBandwidth
+		if step.RDT.L3CacheOccupancyKB != nil {
+			fields["rdt_l3_cache_occupancy_kb"] = *step.RDT.L3CacheOccupancyKB
 		}
-		if step.RDT.CLOSGroup != nil {
-			fields["rdt_clos_group"] = *step.RDT.CLOSGroup
+		if step.RDT.L3CacheOccupancyMB != nil {
+			fields["rdt_l3_cache_occupancy_mb"] = *step.RDT.L3CacheOccupancyMB
+		}
+		if step.RDT.MemoryBandwidthTotal != nil {
+			fields["rdt_memory_bandwidth_total"] = *step.RDT.MemoryBandwidthTotal
+		}
+		if step.RDT.MemoryBandwidthLocal != nil {
+			fields["rdt_memory_bandwidth_local"] = *step.RDT.MemoryBandwidthLocal
+		}
+		if step.RDT.MemoryBandwidthMBps != nil {
+			fields["rdt_memory_bandwidth_mbps"] = *step.RDT.MemoryBandwidthMBps
+		}
+		if step.RDT.RDTClassName != nil {
+			fields["rdt_class_name"] = *step.RDT.RDTClassName
+		}
+		if step.RDT.MonGroupName != nil {
+			fields["rdt_mon_group_name"] = *step.RDT.MonGroupName
+		}
+		if step.RDT.L3CacheAllocation != nil {
+			fields["rdt_l3_cache_allocation"] = *step.RDT.L3CacheAllocation
+		}
+		if step.RDT.L3CacheAllocationPct != nil {
+			fields["rdt_l3_cache_allocation_pct"] = *step.RDT.L3CacheAllocationPct
+		}
+		if step.RDT.MBAThrottle != nil {
+			fields["rdt_mba_throttle"] = *step.RDT.MBAThrottle
+		}
+		if step.RDT.CacheUtilization != nil {
+			fields["rdt_cache_utilization"] = *step.RDT.CacheUtilization
+		}
+		if step.RDT.BandwidthUtilization != nil {
+			fields["rdt_bandwidth_utilization"] = *step.RDT.BandwidthUtilization
 		}
 	}
 

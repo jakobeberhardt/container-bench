@@ -1,12 +1,12 @@
 benchmark:
   name: Noisy neighbor
   description: Test which starts more and more neigbors
-  max_t: 60
-  log_level: info
+  max_t: 10
+  log_level: debug
   scheduler:
     implementation: default
-    rdt: false
-    log_level: error
+    rdt: true
+    log_level: warn
   data:
     db:
       host: ${INFLUXDB_HOST}
@@ -29,7 +29,7 @@ victim:
     frequency: 100
     perf: true
     docker: true
-    rdt: false
+    rdt: true
 
 first:
   index: 1
@@ -40,7 +40,7 @@ first:
     frequency: 100
     perf: true
     docker: true
-    rdt: false
+    rdt: true
 
 second:
   index: 2
@@ -51,7 +51,7 @@ second:
     frequency: 100
     perf: true
     docker: true
-    rdt: false
+    rdt: true
 
 third:
   index: 3
