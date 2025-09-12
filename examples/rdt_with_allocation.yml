@@ -1,0 +1,49 @@
+benchmark:
+  name: RDT Monitoring with Allocation Test
+  description: Test RDT monitoring WITH scheduler allocation enabled
+  max_t: 30
+  log_level: info
+  scheduler:
+    implementation: cache-aware
+    rdt: true  # Scheduler HAS RDT allocation access
+    log_level: debug
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+
+container0:
+  index: 0
+  image: alpine:latest
+  core: 0
+  command: "while :; do dd if=/dev/zero of=/dev/null bs=1M count=100 2>/dev/null; done"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true  # RDT monitoring ENABLED
+
+container1:
+  index: 1
+  image: alpine:latest
+  core: 2
+  command: "while :; do for i in $(seq 1 100000); do echo $i > /dev/null; done; done"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true  # RDT monitoring ENABLED
+
+container2:
+  index: 2
+  image: alpine:latest
+  core: 4
+  command: "apk add --no-cache stress && stress --cpu 1 --vm 1 --vm-bytes 50M --timeout 30s"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true  # RDT monitoring ENABLED

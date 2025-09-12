@@ -310,9 +310,20 @@ func runBenchmark(configFile string) error {
 	}
 	bench.benchmarkID = lastID + 1
 
-	// Initialize RDT if enabled in scheduler configuration
-	if bench.config.Benchmark.Scheduler.RDT {
-		logger.Info("Initializing Intel RDT")
+	// Initialize RDT if any container has RDT monitoring enabled OR if scheduler needs RDT access
+	rdtNeeded := bench.config.Benchmark.Scheduler.RDT
+	if !rdtNeeded {
+		// Check if any container has RDT monitoring enabled
+		for _, containerConfig := range bench.config.GetContainersSorted() {
+			if containerConfig.Data.RDT {
+				rdtNeeded = true
+				break
+			}
+		}
+	}
+	
+	if rdtNeeded {
+		logger.Info("Initializing Intel RDT (required for monitoring or scheduler)")
 		if err := rdt.Initialize(""); err != nil {
 			logger.WithError(err).Warn("Failed to initialize RDT, RDT features will be disabled")
 		} else {
@@ -329,7 +340,7 @@ func runBenchmark(configFile string) error {
 	switch schedulerImpl {
 	case "cache-aware":
 		logger.Info("Using cache-aware scheduler")
-		bench.scheduler = scheduler.NewCacheAwareScheduler()
+		bench.scheduler = scheduler.NewCacheAwareSchedulerWithRDT(bench.config.Benchmark.Scheduler.RDT)
 	case "default":
 		logger.Info("Using default scheduler")
 		bench.scheduler = scheduler.NewDefaultScheduler()
