@@ -375,7 +375,6 @@ func runBenchmark(configFile string) error {
 		logger.WithError(err).Error("Failed to initialize scheduler")
 		return fmt.Errorf("failed to initialize scheduler: %w", err)
 	}
-	defer bench.scheduler.Shutdown()
 
 	logger.WithFields(logrus.Fields{
 		"benchmark_id": bench.benchmarkID,
@@ -738,7 +737,9 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 func (cb *ContainerBench) stopScheduler() {
 	logger := logging.GetLogger()
 	logger.Info("Stopping scheduler")
-	// Scheduler shutdown is handled by defer in main execution
+	if cb.scheduler != nil {
+		cb.scheduler.Shutdown()
+	}
 }
 
 // Stop collectors
