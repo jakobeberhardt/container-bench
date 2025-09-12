@@ -26,6 +26,7 @@ import (
 	"github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
+	"github.com/intel/goresctrl/pkg/rdt"
 	"github.com/joho/godotenv"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -309,8 +310,33 @@ func runBenchmark(configFile string) error {
 	}
 	bench.benchmarkID = lastID + 1
 
-	// Initialize scheduler
-	bench.scheduler = scheduler.NewDefaultScheduler()
+	// Initialize RDT if enabled in scheduler configuration
+	if bench.config.Benchmark.Scheduler.RDT {
+		logger.Info("Initializing Intel RDT")
+		if err := rdt.Initialize(""); err != nil {
+			logger.WithError(err).Warn("Failed to initialize RDT, RDT features will be disabled")
+		} else {
+			logger.Info("Intel RDT initialized successfully")
+		}
+	}
+
+	// Initialize scheduler based on configuration
+	schedulerImpl := bench.config.Benchmark.Scheduler.Implementation
+	if schedulerImpl == "" {
+		schedulerImpl = "default" // Default to default scheduler
+	}
+	
+	switch schedulerImpl {
+	case "cache-aware":
+		logger.Info("Using cache-aware scheduler")
+		bench.scheduler = scheduler.NewCacheAwareScheduler()
+	case "default":
+		logger.Info("Using default scheduler")
+		bench.scheduler = scheduler.NewDefaultScheduler()
+	default:
+		logger.WithField("implementation", schedulerImpl).Warn("Unknown scheduler implementation, using default")
+		bench.scheduler = scheduler.NewDefaultScheduler()
+	}
 	
 	// Set scheduler log level if specified in config
 	if bench.config.Benchmark.Scheduler.LogLevel != "" {
@@ -521,6 +547,11 @@ func (cb *ContainerBench) startBenchmark(ctx context.Context) error {
 		cgroupPath := fmt.Sprintf("/sys/fs/cgroup/system.slice/docker-%s.scope", info.ID)
 
 		collector.SetContainerInfo(pid, cgroupPath, containerConfig.Core)
+
+		// Notify scheduler of container PID for cache-aware scheduling
+		if cacheAwareScheduler, ok := cb.scheduler.(*scheduler.CacheAwareScheduler); ok {
+			cacheAwareScheduler.SetContainerPID(containerConfig.Index, pid)
+		}
 
 		// Start collector
 		if err := collector.Start(ctx); err != nil {
