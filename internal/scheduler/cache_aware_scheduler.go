@@ -41,11 +41,11 @@ type ContainerState struct {
 
 const (
 	// Number of consecutive high/low miss rates before taking action
-	ConsecutiveThreshold = 3
+	ConsecutiveThreshold = 1
 	// Maximum number of allocation decisions per container to prevent thrashing
-	MaxAllocationDecisions = 5
+	MaxAllocationDecisions = 3
 	// History length for cache miss rates
-	CacheMissHistoryLength = 10
+	CacheMissHistoryLength = 3
 )
 
 func NewCacheAwareScheduler() *CacheAwareScheduler {

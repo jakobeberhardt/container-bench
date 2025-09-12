@@ -1,0 +1,197 @@
+benchmark:
+  name: Lots of Noisy Neighbor
+  description: Test which starts more and more neigbors
+  max_t: 240
+  log_level: info
+  scheduler:
+    implementation: default
+    rdt: false
+    log_level: error
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+victim:
+  index: 0
+  image: registry.jakob-eberhardt.de/neighbor:default
+  core: 0
+  command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+first:
+  index: 1
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  core: 1
+  command: "sleep 15 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+second:
+  index: 2
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  core: 2
+  command: "sleep 30 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+third:
+  index: 3
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  core: 3
+  command: "sleep 45 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+fourth:
+  index: 4
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  core: 4
+  command: "sleep 60 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+fifth:
+  index: 5
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  core: 5
+  command: "sleep 75 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+sixth:
+  index: 6
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  core: 6
+  command: "sleep 90 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+seventh:
+  index: 7
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  core: 7
+  command: "sleep 105 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+eighth:
+  index: 8
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  core: 8
+  command: "sleep 120 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+ninth:
+  index: 9
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  core: 9
+  command: "sleep 135 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+tenth:
+  index: 10
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  core: 10
+  command: "sleep 150 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+eleventh:
+  index: 11
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  core: 11
+  command: "sleep 165 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+twelfth:
+  index: 12
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  core: 12
+  command: "sleep 180 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+thirteenth:
+  index: 13
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  core: 13
+  command: "sleep 195 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+fourteenth:
+  index: 14
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  core: 14
+  command: "sleep 210 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+fifteenth:
+  index: 15
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  core: 15
+  command: "sleep 225 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
