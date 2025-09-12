@@ -10,6 +10,7 @@ import (
 
 	"container-bench/internal/config"
 	"container-bench/internal/dataframe"
+	"container-bench/internal/dataparser"
 	"container-bench/internal/logging"
 	
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
@@ -170,7 +171,7 @@ func (idb *InfluxDBClient) GetLastBenchmarkID() (int, error) {
 	
 	query := fmt.Sprintf(`
 		from(bucket: "%s")
-		|> range(start: -30d)
+		|> range(start: -300d)
 		|> filter(fn: (r) => r._measurement == "benchmark_metrics")
 		|> distinct(column: "benchmark_id")
 		|> map(fn: (r) => ({_value: int(v: r.benchmark_id)}))
@@ -244,6 +245,59 @@ func (idb *InfluxDBClient) WriteDataFrames(benchmarkID int, benchmarkConfig *con
 	if len(points) > 0 {
 		if err := idb.writeAPI.WritePoint(ctx, points...); err != nil {
 			return fmt.Errorf("failed to write data points: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// WriteEnhancedDataFrames writes enhanced dataframes with derived columns to InfluxDB
+func (idb *InfluxDBClient) WriteEnhancedDataFrames(benchmarkID int, benchmarkConfig *config.BenchmarkConfig, enhancedDataframes *dataparser.EnhancedDataFrames, startTime, endTime time.Time) error {
+	ctx := context.Background()
+
+	// Create points for all container data
+	var points []*write.Point
+
+	containers := enhancedDataframes.GetAllContainers()
+	for containerIndex, containerDF := range containers {
+		containerConfig := idb.getContainerConfig(benchmarkConfig, containerIndex)
+		if containerConfig == nil {
+			continue
+		}
+
+		// Get the effective container name
+		containerName := containerConfig.GetContainerName(benchmarkID)
+
+		steps := containerDF.GetAllSteps()
+		for stepNumber, enhancedStep := range steps {
+			if enhancedStep == nil || enhancedStep.SamplingStep == nil {
+				continue
+			}
+
+			step := enhancedStep.SamplingStep
+
+			// Create base point with common tags
+			point := influxdb2.NewPoint("benchmark_metrics",
+				map[string]string{
+					"benchmark_id":     fmt.Sprintf("%d", benchmarkID),
+					"container_index":  fmt.Sprintf("%d", containerIndex),
+					"container_name":   containerName,
+					"container_image":  containerConfig.Image,
+					"container_core":   fmt.Sprintf("%d", containerConfig.Core),
+					"benchmark_started": startTime.Format(time.RFC3339),
+					"benchmark_finished": endTime.Format(time.RFC3339),
+				},
+				idb.createEnhancedFields(step, stepNumber, enhancedStep.RelativeTime),
+				step.Timestamp)
+
+			points = append(points, point)
+		}
+	}
+
+	// Write all points
+	if len(points) > 0 {
+		if err := idb.writeAPI.WritePoint(ctx, points...); err != nil {
+			return fmt.Errorf("failed to write enhanced data points: %w", err)
 		}
 	}
 
@@ -524,6 +578,17 @@ func (idb *InfluxDBClient) createFields(step *dataframe.SamplingStep, stepNumber
 		}
 	}
 
+	return fields
+}
+
+// createEnhancedFields creates fields map with all original fields plus derived fields like relative time
+func (idb *InfluxDBClient) createEnhancedFields(step *dataframe.SamplingStep, stepNumber int, relativeTime time.Duration) map[string]interface{} {
+	// Start with all the standard fields
+	fields := idb.createFields(step, stepNumber)
+	
+	// Add derived fields - using nanoseconds as the smallest/most precise unit
+	fields["relative_time_nanoseconds"] = relativeTime.Nanoseconds()
+	
 	return fields
 }
 

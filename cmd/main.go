@@ -1,6 +1,13 @@
 package main
 
 import (
+	"container-bench/internal/collectors"
+	"container-bench/internal/config"
+	"container-bench/internal/dataframe"
+	"container-bench/internal/dataparser"
+	"container-bench/internal/database"
+	"container-bench/internal/logging"
+	"container-bench/internal/scheduler"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -13,13 +20,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-	"container-bench/internal/collectors"
-	"container-bench/internal/config"
-	"container-bench/internal/database"
-	"container-bench/internal/dataframe"
-	"container-bench/internal/logging"
-	"container-bench/internal/scheduler"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -761,13 +761,7 @@ func (cb *ContainerBench) writeDatabaseData() error {
 	logger := logging.GetLogger()
 	logger.Info("Writing data to database")
 
-	// Export data to database
-	if err := cb.dbClient.WriteDataFrames(cb.benchmarkID, cb.config, cb.dataframes, cb.startTime, cb.endTime); err != nil {
-		logger.WithError(err).Error("Failed to export data")
-		return fmt.Errorf("failed to export data: %w", err)
-	}
-
-	// Collect and export metadata
+	// Collect metadata first to get the canonical benchmark start time
 	logger.Info("Collecting and exporting metadata")
 	metadata, err := database.CollectBenchmarkMetadata(cb.benchmarkID, cb.config, cb.configContent, cb.dataframes, cb.startTime, cb.endTime, Version)
 	if err != nil {
@@ -775,6 +769,28 @@ func (cb *ContainerBench) writeDatabaseData() error {
 		return fmt.Errorf("failed to collect metadata: %w", err)
 	}
 
+	// Parse the canonical benchmark start time from metadata
+	benchmarkStartTime, err := time.Parse(time.RFC3339, metadata.BenchmarkStarted)
+	if err != nil {
+		logger.WithError(err).Error("Failed to parse benchmark start time from metadata")
+		return fmt.Errorf("failed to parse benchmark start time: %w", err)
+	}
+
+	// Process dataframes through data parser using the canonical start time
+	logger.Info("Processing dataframes with derived columns")
+	enhancedDataframes, err := dataparser.ProcessDataFrames(cb.dataframes, benchmarkStartTime)
+	if err != nil {
+		logger.WithError(err).Error("Failed to process dataframes")
+		return fmt.Errorf("failed to process dataframes: %w", err)
+	}
+
+	// Export enhanced data to database
+	if err := cb.dbClient.WriteEnhancedDataFrames(cb.benchmarkID, cb.config, enhancedDataframes, cb.startTime, cb.endTime); err != nil {
+		logger.WithError(err).Error("Failed to export data")
+		return fmt.Errorf("failed to export data: %w", err)
+	}
+
+	// Write metadata to database
 	if err := cb.dbClient.WriteMetadata(metadata); err != nil {
 		logger.WithError(err).Error("Failed to export metadata")
 		return fmt.Errorf("failed to export metadata: %w", err)
