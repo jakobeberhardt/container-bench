@@ -3,5 +3,5 @@
 - Env variables in .yml file
 - Parallel start up and tear down
 - Bulk write to DBs
-- RDT support
-- Scheduler needs to run in goroutine
+- RDT Memory/s Field: Use Delta
+- Add relative time

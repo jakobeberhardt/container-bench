@@ -2,7 +2,7 @@ benchmark:
   name: Noisy neighbor on off
   description: Test which starts and stops a neighbor
   max_t: 30
-  log_level: debug
+  log_level: info
   scheduler:
     implementation: default
     rdt: false
@@ -28,16 +28,16 @@ victim:
     frequency: 100
     perf: true
     docker: true
-    rdt: false
+    rdt: true
 
 neighbor:
   index: 1
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 1
-  command: "/neighbor --duration 10 --buffer-size 10MB --pattern random && sleep 5 && /neighbor --duration 10 --buffer-size 10MB --pattern random && sleep 3600"
+  command: "/neighbor --duration 10 --buffer-size 500MB --pattern random && sleep 5 && /neighbor --duration 10 --buffer-size 500MB --pattern random && sleep 3600"
   data:
     frequency: 100
     perf: true
     docker: true
-    rdt: false
+    rdt: true
 
