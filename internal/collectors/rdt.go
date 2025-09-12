@@ -68,7 +68,7 @@ func NewRDTCollector(pid int) (*RDTCollector, error) {
 		"pid":            pid,
 		"mon_group":      monGroupName,
 		"ctrl_group":     ctrlGroup.Name(),
-	}).Info("RDT monitoring initialized for container")
+	}).Debug("RDT monitoring initialized for container")
 	
 	return &RDTCollector{
 		pid:          pid,
