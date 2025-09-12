@@ -63,7 +63,7 @@ func NewCacheAwareSchedulerWithRDT(enableRDTAllocation bool) *CacheAwareSchedule
 		version:            "1.0.0",
 		schedulerLogger:    logging.GetSchedulerLogger(),
 		rdtAllocator:       rdtAllocator,
-		cacheMissThreshold: 0.4, // 40% cache miss rate threshold
+		cacheMissThreshold: 0.1, // 40% cache miss rate threshold
 		highMissClassName:  "system/default", // High miss containers go to default class
 		lowMissClassName:   "system/default", // For now, use same class (would be separate in production)
 		containerStates:    make(map[int]*ContainerState),

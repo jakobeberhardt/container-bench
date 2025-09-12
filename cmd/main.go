@@ -92,17 +92,8 @@ func (cb *ContainerBench) cleanup() {
 }
 
 func (cb *ContainerBench) cleanupContainers(ctx context.Context) {
-	for _, collector := range cb.collectors {
-		if collector != nil && collector.ContainerID != "" {
-			cb.stopAndRemoveContainer(ctx, collector.ContainerID)
-		}
-	}
-}
-
-// cleanupContainersPhase10 handles the proper Phase 10 cleanup
-func (cb *ContainerBench) cleanupContainersPhase10(ctx context.Context) {
 	logger := logging.GetLogger()
-	logger.Info("Phase 10: Stopping and cleaning up containers")
+	logger.Info("Stopping and cleaning up containers")
 	
 	for containerIndex, containerID := range cb.containerIDs {
 		if containerID != "" {
@@ -402,7 +393,7 @@ func runBenchmark(configFile string) error {
 	return nil
 }
 
-// executeBenchmark orchestrates the benchmark execution in proper phases
+// executeBenchmark orchestrates the benchmark execution in proper order
 func (cb *ContainerBench) executeBenchmark() error {
 	logger := logging.GetLogger()
 	
@@ -419,51 +410,66 @@ func (cb *ContainerBench) executeBenchmark() error {
 		cancel()
 	}()
 	
-	// Phase 1: Pull all images
-	logger.Info("Phase 1: Pulling container images")
+	// Pull all container images
+	logger.Info("Pulling container images")
 	if err := cb.pullImages(ctx); err != nil {
 		return fmt.Errorf("failed to pull images: %w", err)
 	}
 	
-	// Phase 2: Create all containers (but don't start them)
-	logger.Info("Phase 2: Creating containers")
+	// Create all containers (but don't start them)
+	logger.Info("Creating containers")
 	if err := cb.createContainers(ctx); err != nil {
 		return fmt.Errorf("failed to create containers: %w", err)
 	}
-	// Ensure container cleanup happens regardless of how the function exits
-	defer cb.cleanupContainersPhase10(ctx)
 	
-	// Phase 3: Start all containers
-	logger.Info("Phase 3: Starting containers")
+	// Start all containers
+	logger.Info("Starting containers")
 	if err := cb.startContainers(ctx); err != nil {
 		return fmt.Errorf("failed to start containers: %w", err)
 	}
 	
-	// Phase 4: Start all collectors
-	logger.Info("Phase 4: Starting collectors")
+	// Start all collectors
+	logger.Info("Starting collectors")
 	if err := cb.startCollectors(ctx); err != nil {
 		return fmt.Errorf("failed to start collectors: %w", err)
 	}
-	defer cb.stopCollectors()
 	
-	// Phase 5: Start scheduler
-	logger.Info("Phase 5: Starting scheduler")
+	// Start scheduler
+	logger.Info("Starting scheduler")
 	if err := cb.startScheduler(); err != nil {
 		return fmt.Errorf("failed to start scheduler: %w", err)
 	}
-	defer cb.stopScheduler()
 	
-	// Phase 6: Run benchmark (main execution loop)
-	logger.Info("Phase 6: Running benchmark")
+	// Run benchmark (main execution loop)
+	logger.Info("Running benchmark")
 	if err := cb.runBenchmarkLoop(ctx); err != nil {
+		// Even if benchmark fails, we need to clean up properly
+		cb.cleanupInOrder(ctx)
 		return fmt.Errorf("benchmark execution failed: %w", err)
 	}
 	
-	// Phases 7-11 happen in finalizeBenchmark()
-	return cb.finalizeBenchmark()
+	// Normal cleanup and data writing in correct order
+	return cb.cleanupInOrder(ctx)
 }
 
-// Phase 1: Pull all container images
+// cleanupInOrder executes cleanup in the correct sequence
+func (cb *ContainerBench) cleanupInOrder(ctx context.Context) error {
+	// Stop scheduler
+	cb.stopScheduler()
+	
+	// Stop collectors
+	cb.stopCollectors()
+	
+	// RDT cleanup happens automatically when collectors stop
+	
+	// Stop and cleanup containers
+	cb.cleanupContainers(ctx)
+	
+	// Write data to database (last step)
+	return cb.writeDatabaseData()
+}
+
+// Pull all container images
 func (cb *ContainerBench) pullImages(ctx context.Context) error {
 	logger := logging.GetLogger()
 	containers := cb.config.GetContainersSorted()
@@ -513,7 +519,7 @@ func (cb *ContainerBench) pullImages(ctx context.Context) error {
 	return nil
 }
 
-// Phase 2: Create all containers (but don't start them)
+// Create all containers (but don't start them)
 func (cb *ContainerBench) createContainers(ctx context.Context) error {
 	logger := logging.GetLogger()
 	containers := cb.config.GetContainersSorted()
@@ -580,7 +586,7 @@ func (cb *ContainerBench) createContainers(ctx context.Context) error {
 			return fmt.Errorf("failed to create container %s: %w", containerName, err)
 		}
 
-		// Store container ID for later phases
+		// Store container ID for later use
 		cb.containerIDs[containerConfig.Index] = resp.ID
 
 		logger.WithFields(logrus.Fields{
@@ -592,7 +598,7 @@ func (cb *ContainerBench) createContainers(ctx context.Context) error {
 	return nil
 }
 
-// Phase 3: Start all containers and get their PIDs
+// Start all containers and get their PIDs
 func (cb *ContainerBench) startContainers(ctx context.Context) error {
 	logger := logging.GetLogger()
 	containers := cb.config.GetContainersSorted()
@@ -631,7 +637,7 @@ func (cb *ContainerBench) startContainers(ctx context.Context) error {
 	return nil
 }
 
-// Phase 4: Start all collectors
+// Start all collectors
 func (cb *ContainerBench) startCollectors(ctx context.Context) error {
 	logger := logging.GetLogger()
 	containers := cb.config.GetContainersSorted()
@@ -677,7 +683,7 @@ func (cb *ContainerBench) startCollectors(ctx context.Context) error {
 	return nil
 }
 
-// Phase 5: Start scheduler
+// Start scheduler
 func (cb *ContainerBench) startScheduler() error {
 	logger := logging.GetLogger()
 	containers := cb.config.GetContainersSorted()
@@ -694,7 +700,7 @@ func (cb *ContainerBench) startScheduler() error {
 	return nil
 }
 
-// Phase 6: Run benchmark main loop
+// Run benchmark main loop
 func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 	logger := logging.GetLogger()
 	
@@ -728,17 +734,17 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 	}
 }
 
-// Phase 7: Stop scheduler
+// Stop scheduler
 func (cb *ContainerBench) stopScheduler() {
 	logger := logging.GetLogger()
-	logger.Info("Phase 7: Stopping scheduler")
+	logger.Info("Stopping scheduler")
 	// Scheduler shutdown is handled by defer in main execution
 }
 
-// Phase 8: Stop collectors
+// Stop collectors
 func (cb *ContainerBench) stopCollectors() {
 	logger := logging.GetLogger()
-	logger.Info("Phase 8: Stopping collectors")
+	logger.Info("Stopping collectors")
 	for _, collector := range cb.collectors {
 		if err := collector.Stop(); err != nil {
 			logger.WithError(err).Warn("Error stopping collector")
@@ -746,20 +752,15 @@ func (cb *ContainerBench) stopCollectors() {
 	}
 }
 
-// Phase 9: Clean up RDT (handled in finalizeBenchmark)
-// Phase 10: Stop and cleanup containers handled by cleanupContainersPhase10
+// Clean up RDT (handled in finalizeBenchmark)
+// Stop and cleanup containers handled by cleanupContainers
 
-func (cb *ContainerBench) finalizeBenchmark() error {
+// Write data to database (happens after all cleanup)
+func (cb *ContainerBench) writeDatabaseData() error {
 	logger := logging.GetLogger()
-	logger.Info("Finalizing benchmark")
+	logger.Info("Writing data to database")
 
-	// Phase 7: Stop scheduler (already handled by defer)
-	// Phase 8: Stop collectors (already handled by defer)
-	// Phase 9: Clean up RDT (implicit in collector cleanup)
-	// Phase 10: Stop and remove containers (already handled by defer)
-
-	// Phase 11: Write data to database
-	logger.Info("Phase 11: Exporting data to database")
+	// Export data to database
 	if err := cb.dbClient.WriteDataFrames(cb.benchmarkID, cb.config, cb.dataframes, cb.startTime, cb.endTime); err != nil {
 		logger.WithError(err).Error("Failed to export data")
 		return fmt.Errorf("failed to export data: %w", err)
