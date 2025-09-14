@@ -280,28 +280,13 @@ func validateConfig(configFile string) error {
 func runBenchmark(configFile string) error {
 	logger := logging.GetLogger()
 	
-	// Initialize host configuration early
-	hostConfig, hostErr := host.GetHostConfig()
-	if hostErr != nil {
-		logger.WithError(hostErr).Error("Failed to initialize host configuration")
-		return hostErr
-	}
-	
-	logger.WithFields(logrus.Fields{
-		"hostname":        hostConfig.Hostname,
-		"cpu_model":       hostConfig.CPUModel,
-		"total_cores":     hostConfig.TotalCores,
-		"l3_cache_mb":     hostConfig.L3Cache.TotalSizeMB,
-		"rdt_supported":   hostConfig.RDT.Supported,
-	}).Info("Host configuration initialized")
-	
+	// Load configuration first to determine RDT requirements
 	bench := &ContainerBench{
 		dataframes:    dataframe.NewDataFrames(),
 		containerIDs:  make(map[int]string),
 		containerPIDs: make(map[int]int),
 	}
 
-	// Load configuration
 	var err error
 	bench.config, bench.configContent, err = config.LoadConfigWithContent(configFile)
 	if err != nil {
@@ -316,6 +301,43 @@ func runBenchmark(configFile string) error {
 	} else {
 		logger.WithField("log_level", bench.config.Benchmark.LogLevel).Debug("Log level set from configuration")
 	}
+
+	// Check if RDT is needed for any container or scheduler
+	rdtNeeded := false
+	for _, container := range bench.config.Containers {
+		if container.Data.RDT {
+			rdtNeeded = true
+			break
+		}
+	}
+	if bench.config.Benchmark.Scheduler.RDT {
+		rdtNeeded = true
+	}
+
+	// Initialize RDT early if needed
+	if rdtNeeded {
+		logger.Info("Initializing Intel RDT (required for monitoring or scheduler)")
+		if err := rdt.Initialize(""); err != nil {
+			logger.WithError(err).Warn("Failed to initialize RDT, RDT features will be disabled")
+		} else {
+			logger.Info("Intel RDT initialized successfully")
+		}
+	}
+
+	// Initialize host configuration after RDT is initialized
+	hostConfig, hostErr := host.GetHostConfig()
+	if hostErr != nil {
+		logger.WithError(hostErr).Error("Failed to initialize host configuration")
+		return hostErr
+	}
+	
+	logger.WithFields(logrus.Fields{
+		"hostname":        hostConfig.Hostname,
+		"cpu_model":       hostConfig.CPUModel,
+		"total_cores":     hostConfig.TotalCores,
+		"l3_cache_mb":     hostConfig.L3Cache.TotalSizeMB,
+		"rdt_supported":   hostConfig.RDT.Supported,
+	}).Info("Host configuration initialized")
 
 	// Initialize Docker client
 	bench.dockerClient, err = client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
@@ -343,27 +365,6 @@ func runBenchmark(configFile string) error {
 		return fmt.Errorf("failed to get last benchmark ID: %w", err)
 	}
 	bench.benchmarkID = lastID + 1
-
-	// Initialize RDT if any container has RDT monitoring enabled OR if scheduler needs RDT access
-	rdtNeeded := bench.config.Benchmark.Scheduler.RDT
-	if !rdtNeeded {
-		// Check if any container has RDT monitoring enabled
-		for _, containerConfig := range bench.config.GetContainersSorted() {
-			if containerConfig.Data.RDT {
-				rdtNeeded = true
-				break
-			}
-		}
-	}
-	
-	if rdtNeeded {
-		logger.Info("Initializing Intel RDT (required for monitoring or scheduler)")
-		if err := rdt.Initialize(""); err != nil {
-			logger.WithError(err).Warn("Failed to initialize RDT, RDT features will be disabled")
-		} else {
-			logger.Info("Intel RDT initialized successfully")
-		}
-	}
 
 	// Initialize scheduler based on configuration
 	schedulerImpl := bench.config.Benchmark.Scheduler.Implementation
