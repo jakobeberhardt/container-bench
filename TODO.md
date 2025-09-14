@@ -6,3 +6,4 @@
 - RDT Memory/s Field: Use Delta
 - Add relative time
 - Handle docker timeouts using context
+- Preallocation of Dataframes according to sice, e.g. if sampling rate is different

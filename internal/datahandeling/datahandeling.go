@@ -86,10 +86,38 @@ func NewDefaultDataHandler() *DefaultDataHandler {
 }
 
 // ProcessDataFrames converts raw dataframes to processed benchmark metrics
+// It uses a two-pass approach to ensure relative time starts from actual profiling start:
+// 1. First pass: Find the earliest timestamp across all containers (actual profiling start)
+// 2. Second pass: Calculate relative times using this reference point
 func (h *DefaultDataHandler) ProcessDataFrames(benchmarkID int, benchmarkConfig *config.BenchmarkConfig, dataframes *dataframe.DataFrames, startTime, endTime time.Time) (*BenchmarkMetrics, error) {
-	var containerMetrics []ContainerMetrics
+	// First pass: find the earliest timestamp across all data (actual profiling start)
+	// This ensures relative time starts from when data collection actually began,
+	// not from benchmark initialization time which includes setup overhead
+	var profilingStartTime time.Time
+	var hasData bool
 
 	containers := dataframes.GetAllContainers()
+	for _, containerDF := range containers {
+		stepMap := containerDF.GetAllSteps()
+		for _, step := range stepMap {
+			if step == nil {
+				continue
+			}
+			if !hasData || step.Timestamp.Before(profilingStartTime) {
+				profilingStartTime = step.Timestamp
+				hasData = true
+			}
+		}
+	}
+
+	// If no data found, fallback to benchmark start time
+	if !hasData {
+		profilingStartTime = startTime
+	}
+
+	// Second pass: process all container data using the actual profiling start time
+	var containerMetrics []ContainerMetrics
+
 	for containerIndex, containerDF := range containers {
 		containerConfig := h.getContainerConfig(benchmarkConfig, containerIndex)
 		if containerConfig == nil {
@@ -106,8 +134,8 @@ func (h *DefaultDataHandler) ProcessDataFrames(benchmarkID int, benchmarkConfig 
 				continue
 			}
 
-			// Calculate relative time from benchmark start
-			relativeTime := step.Timestamp.Sub(startTime).Nanoseconds()
+			// Calculate relative time from actual profiling start (first data point)
+			relativeTime := step.Timestamp.Sub(profilingStartTime).Nanoseconds()
 
 			// Create metric step with original data
 			metricStep := MetricStep{
