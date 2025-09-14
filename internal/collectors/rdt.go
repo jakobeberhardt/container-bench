@@ -166,12 +166,6 @@ func (rc *RDTCollector) calculateDerivedMetrics(metrics *dataframe.RDTMetrics) {
 	if metrics.L3CacheOccupancy != nil && rc.hostConfig != nil {
 		utilizationPercent := rc.hostConfig.GetL3CacheUtilizationPercent(*metrics.L3CacheOccupancy)
 		metrics.CacheLLCUtilizationPercent = &utilizationPercent
-		
-		// Also calculate cache occupancy in KB and MB for convenience
-		occupancyKB := float64(*metrics.L3CacheOccupancy) / 1024.0
-		occupancyMB := float64(*metrics.L3CacheOccupancy) / (1024.0 * 1024.0)
-		metrics.L3CacheOccupancyKB = &occupancyKB
-		metrics.L3CacheOccupancyMB = &occupancyMB
 	}
 	
 	// Calculate memory bandwidth in MB/s (approximation based on total bytes)

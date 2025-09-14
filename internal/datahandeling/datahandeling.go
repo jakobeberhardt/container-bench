@@ -62,8 +62,6 @@ type MetricStep struct {
 	RDTClassName                      *string  `json:"rdt_class_name,omitempty"`
 	RDTMonGroupName                   *string  `json:"rdt_mon_group_name,omitempty"`
 	RDTL3CacheOccupancy              *uint64  `json:"rdt_l3_cache_occupancy,omitempty"`
-	RDTL3CacheOccupancyKB            *float64 `json:"rdt_l3_cache_occupancy_kb,omitempty"`
-	RDTL3CacheOccupancyMB            *float64 `json:"rdt_l3_cache_occupancy_mb,omitempty"`
 	RDTMemoryBandwidthTotal          *uint64  `json:"rdt_memory_bandwidth_total,omitempty"`
 	RDTMemoryBandwidthLocal          *uint64  `json:"rdt_memory_bandwidth_local,omitempty"`
 	RDTMemoryBandwidthMBps           *float64 `json:"rdt_memory_bandwidth_mbps,omitempty"`
@@ -222,8 +220,6 @@ func (h *DefaultDataHandler) processRDTMetrics(rdt *dataframe.RDTMetrics, step *
 	step.RDTClassName = rdt.RDTClassName
 	step.RDTMonGroupName = rdt.MonGroupName
 	step.RDTL3CacheOccupancy = rdt.L3CacheOccupancy
-	step.RDTL3CacheOccupancyKB = rdt.L3CacheOccupancyKB
-	step.RDTL3CacheOccupancyMB = rdt.L3CacheOccupancyMB
 	step.RDTMemoryBandwidthTotal = rdt.MemoryBandwidthTotal
 	step.RDTMemoryBandwidthLocal = rdt.MemoryBandwidthLocal
 	step.RDTMemoryBandwidthMBps = rdt.MemoryBandwidthMBps
