@@ -74,6 +74,7 @@ type ContainerBench struct {
 	dataframes    *dataframe.DataFrames
 	dataHandler   datahandeling.DataHandler
 	scheduler     scheduler.Scheduler
+	hostConfig    *host.HostConfig
 	collectors    []*collectors.ContainerCollector
 	benchmarkID   int
 	startTime     time.Time
@@ -330,6 +331,7 @@ func runBenchmark(configFile string) error {
 		logger.WithError(hostErr).Error("Failed to initialize host configuration")
 		return hostErr
 	}
+	bench.hostConfig = hostConfig
 	
 	logger.WithFields(logrus.Fields{
 		"hostname":        hostConfig.Hostname,
@@ -396,10 +398,16 @@ func runBenchmark(configFile string) error {
 		}
 	}
 	
-	if err := bench.scheduler.Initialize(); err != nil {
-		logger.WithError(err).Error("Failed to initialize scheduler")
-		return fmt.Errorf("failed to initialize scheduler: %w", err)
-	}
+	// RDT management is now handled by allocator - remove old RDT manager setup
+	
+	// Set host config for scheduler
+	bench.scheduler.SetHostConfig(bench.hostConfig)
+	
+	// NOTE: Scheduler Initialize() will be called after containers start to provide PIDs
+	// if err := bench.scheduler.Initialize(); err != nil {
+	//	logger.WithError(err).Error("Failed to initialize scheduler")
+	//	return fmt.Errorf("failed to initialize scheduler: %w", err)
+	// }
 
 	logger.WithFields(logrus.Fields{
 		"benchmark_id": bench.benchmarkID,
@@ -450,6 +458,12 @@ func (cb *ContainerBench) executeBenchmark() error {
 	logger.Info("Starting containers")
 	if err := cb.startContainers(ctx); err != nil {
 		return fmt.Errorf("failed to start containers: %w", err)
+	}
+	
+	// Initialize scheduler now that we have container PIDs
+	logger.Info("Initializing scheduler with container PIDs")
+	if err := cb.initializeSchedulerWithPIDs(); err != nil {
+		return fmt.Errorf("failed to initialize scheduler: %w", err)
 	}
 	
 	// Start all collectors
@@ -658,6 +672,49 @@ func (cb *ContainerBench) startContainers(ctx context.Context) error {
 		}).Info("Container started")
 	}
 
+	return nil
+}
+
+// initializeSchedulerWithPIDs initializes the scheduler with container information including PIDs
+func (cb *ContainerBench) initializeSchedulerWithPIDs() error {
+	logger := logging.GetLogger()
+	
+	// Create container info list with PIDs
+	containers := cb.config.GetContainersSorted()
+	containerInfos := make([]scheduler.ContainerInfo, 0, len(containers))
+	
+	for _, containerConfig := range containers {
+		pid, exists := cb.containerPIDs[containerConfig.Index]
+		if !exists {
+			return fmt.Errorf("PID not found for container %d", containerConfig.Index)
+		}
+		
+		containerInfos = append(containerInfos, scheduler.ContainerInfo{
+			Index:  containerConfig.Index,
+			Config: &containerConfig,
+			PID:    pid,
+		})
+	}
+	
+	// Create RDT allocator if RDT is supported
+	var rdtAllocator scheduler.RDTAllocator
+	if cb.hostConfig.RDT.Supported && cb.config.Benchmark.Scheduler.RDT {
+		rdtAllocator = scheduler.NewDefaultRDTAllocator()
+		logger.Debug("RDT allocator created for scheduler")
+	} else {
+		logger.Debug("RDT allocator not created (RDT not supported or not enabled)")
+	}
+	
+	// Initialize scheduler with allocator and container information
+	if err := cb.scheduler.Initialize(rdtAllocator, containerInfos); err != nil {
+		return fmt.Errorf("failed to initialize scheduler: %w", err)
+	}
+	
+	logger.WithFields(logrus.Fields{
+		"containers": len(containerInfos),
+		"rdt_enabled": rdtAllocator != nil,
+	}).Info("Scheduler initialized with container PIDs")
+	
 	return nil
 }
 

@@ -1,12 +1,12 @@
 benchmark:
   name: Noisy neighbor
   description: Test which starts more and more neigbors
-  max_t: 60
+  max_t: 40
   log_level: info
   scheduler:
     implementation: fair
     rdt: true
-    log_level: info
+    log_level: warn
   data:
     db:
       host: ${INFLUXDB_HOST}
