@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"container-bench/internal/dataframe"
+	"container-bench/internal/host"
 	"container-bench/internal/logging"
 	"github.com/intel/goresctrl/pkg/rdt"
 	"github.com/sirupsen/logrus"
@@ -17,6 +18,7 @@ type RDTCollector struct {
 	className    string
 	rdtEnabled   bool
 	logger       *logrus.Logger
+	hostConfig   *host.HostConfig
 	
 	// RDT monitoring group for this container
 	monGroup     rdt.MonGroup
@@ -29,6 +31,12 @@ func NewRDTCollector(pid int) (*RDTCollector, error) {
 	// Check if RDT is supported and initialized
 	if !rdt.MonSupported() {
 		return nil, fmt.Errorf("RDT monitoring not supported on this system")
+	}
+	
+	// Get host configuration
+	hostConfig, err := host.GetHostConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get host configuration: %v", err)
 	}
 	
 	pidStr := strconv.Itoa(pid)
@@ -77,6 +85,7 @@ func NewRDTCollector(pid int) (*RDTCollector, error) {
 		className:    ctrlGroup.Name(),
 		rdtEnabled:   true,
 		logger:       logger,
+		hostConfig:   hostConfig,
 		monGroup:     monGroup,
 		ctrlGroup:    ctrlGroup,
 	}, nil
@@ -105,6 +114,12 @@ func (rc *RDTCollector) Collect() *dataframe.RDTMetrics {
 	monGroupName := rc.monGroupName
 	metrics.MonGroupName = &monGroupName
 	
+	// Calculate derived metrics using host configuration
+	rc.calculateDerivedMetrics(metrics)
+	
+	// Get allocation information if available
+	rc.getAllocationInfo(metrics)
+	
 	return metrics
 }
 
@@ -125,23 +140,16 @@ func (rc *RDTCollector) processL3MonitoringData(monData *rdt.MonData, metrics *d
 			}
 		}
 		
-		// Memory bandwidth monitoring
+		// Memory bandwidth monitoring - total bytes
 		if mbmTotal, exists := leafData["mbm_total_bytes"]; exists {
 			if metrics.MemoryBandwidthTotal == nil {
 				metrics.MemoryBandwidthTotal = &mbmTotal
 			} else {
 				*metrics.MemoryBandwidthTotal += mbmTotal
 			}
-			
-			// Convert bytes to MB for convenience (actual rate calculation in data handler)
-			bandwidthMBps := float64(mbmTotal) / (1024.0 * 1024.0)
-			if metrics.MemoryBandwidthMBps == nil {
-				metrics.MemoryBandwidthMBps = &bandwidthMBps
-			} else {
-				*metrics.MemoryBandwidthMBps += bandwidthMBps
-			}
 		}
 		
+		// Memory bandwidth monitoring - local bytes
 		if mbmLocal, exists := leafData["mbm_local_bytes"]; exists {
 			if metrics.MemoryBandwidthLocal == nil {
 				metrics.MemoryBandwidthLocal = &mbmLocal
@@ -149,6 +157,58 @@ func (rc *RDTCollector) processL3MonitoringData(monData *rdt.MonData, metrics *d
 				*metrics.MemoryBandwidthLocal += mbmLocal
 			}
 		}
+	}
+}
+
+// calculateDerivedMetrics calculates derived metrics using host configuration
+func (rc *RDTCollector) calculateDerivedMetrics(metrics *dataframe.RDTMetrics) {
+	// Calculate L3 cache utilization percentage
+	if metrics.L3CacheOccupancy != nil && rc.hostConfig != nil {
+		utilizationPercent := rc.hostConfig.GetL3CacheUtilizationPercent(*metrics.L3CacheOccupancy)
+		metrics.CacheLLCUtilizationPercent = &utilizationPercent
+		
+		// Also calculate cache occupancy in KB and MB for convenience
+		occupancyKB := float64(*metrics.L3CacheOccupancy) / 1024.0
+		occupancyMB := float64(*metrics.L3CacheOccupancy) / (1024.0 * 1024.0)
+		metrics.L3CacheOccupancyKB = &occupancyKB
+		metrics.L3CacheOccupancyMB = &occupancyMB
+	}
+	
+	// Calculate memory bandwidth in MB/s (approximation based on total bytes)
+	// Note: This is cumulative, real bandwidth calculation would need time deltas
+	if metrics.MemoryBandwidthTotal != nil {
+		bandwidthMBps := float64(*metrics.MemoryBandwidthTotal) / (1024.0 * 1024.0)
+		metrics.MemoryBandwidthMBps = &bandwidthMBps
+		
+		// Calculate bandwidth utilization percentage
+		if rc.hostConfig != nil {
+			bandwidthUtilization := rc.hostConfig.GetMemoryBandwidthUtilizationPercent(bandwidthMBps)
+			metrics.BandwidthUtilizationPercent = &bandwidthUtilization
+		}
+	}
+}
+
+// getAllocationInfo gets allocation information for the container
+func (rc *RDTCollector) getAllocationInfo(metrics *dataframe.RDTMetrics) {
+	// Try to get allocation information from the control group
+	// Note: This might require additional RDT API calls that aren't available in goresctrl
+	// For now, we'll attempt to get basic allocation information
+	
+	// The allocation information is typically managed by the scheduler
+	// and not directly accessible through monitoring APIs
+	// We'll leave these fields for the scheduler to populate if needed
+	
+	// If we have host config, we can provide some context
+	if rc.hostConfig != nil {
+		// Store cache allocation percentage if available
+		// This would typically be set by the scheduler when allocating resources
+		
+		// For debugging, log the available cache information
+		rc.logger.WithFields(logrus.Fields{
+			"pid":                 rc.pid,
+			"total_l3_cache_mb":   rc.hostConfig.L3Cache.TotalSizeMB,
+			"cache_ways":          rc.hostConfig.L3Cache.WaysPerCache,
+		}).Trace("Cache configuration available")
 	}
 }
 

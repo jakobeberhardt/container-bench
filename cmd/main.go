@@ -19,6 +19,7 @@ import (
 	"container-bench/internal/database"
 	"container-bench/internal/dataframe"
 	"container-bench/internal/datahandeling"
+	"container-bench/internal/host"
 	"container-bench/internal/logging"
 	"container-bench/internal/scheduler"
 
@@ -279,6 +280,21 @@ func validateConfig(configFile string) error {
 func runBenchmark(configFile string) error {
 	logger := logging.GetLogger()
 	
+	// Initialize host configuration early
+	hostConfig, hostErr := host.GetHostConfig()
+	if hostErr != nil {
+		logger.WithError(hostErr).Error("Failed to initialize host configuration")
+		return hostErr
+	}
+	
+	logger.WithFields(logrus.Fields{
+		"hostname":        hostConfig.Hostname,
+		"cpu_model":       hostConfig.CPUModel,
+		"total_cores":     hostConfig.TotalCores,
+		"l3_cache_mb":     hostConfig.L3Cache.TotalSizeMB,
+		"rdt_supported":   hostConfig.RDT.Supported,
+	}).Info("Host configuration initialized")
+	
 	bench := &ContainerBench{
 		dataframes:    dataframe.NewDataFrames(),
 		containerIDs:  make(map[int]string),
@@ -359,6 +375,9 @@ func runBenchmark(configFile string) error {
 	case "cache-aware":
 		logger.Info("Using cache-aware scheduler")
 		bench.scheduler = scheduler.NewCacheAwareSchedulerWithRDT(bench.config.Benchmark.Scheduler.RDT)
+	case "fair":
+		logger.Info("Using fair scheduler")
+		bench.scheduler = scheduler.NewFairScheduler()
 	case "default":
 		logger.Info("Using default scheduler")
 		bench.scheduler = scheduler.NewDefaultScheduler()
