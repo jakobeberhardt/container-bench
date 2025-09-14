@@ -39,7 +39,6 @@ type PerfMetrics struct {
 	LLCStoreMisses       *uint64 `json:"llc_store_misses,omitempty"`
 	LLCStores            *uint64 `json:"llc_stores,omitempty"`
 	CacheMissRate        *float64 `json:"cache_miss_rate,omitempty"`
-	BranchMissRate       *float64 `json:"branch_miss_rate,omitempty"`
 	InstructionsPerCycle *float64 `json:"instructions_per_cycle,omitempty"`
 }
 
@@ -57,19 +56,13 @@ type DockerMetrics struct {
 	MemoryUsagePercent  *float64 `json:"memory_usage_percent,omitempty"`
 	NetworkRxBytes      *uint64  `json:"network_rx_bytes,omitempty"`
 	NetworkTxBytes      *uint64  `json:"network_tx_bytes,omitempty"`
-	NetworkRxPackets    *uint64  `json:"network_rx_packets,omitempty"`
-	NetworkTxPackets    *uint64  `json:"network_tx_packets,omitempty"`
 	DiskReadBytes       *uint64  `json:"disk_read_bytes,omitempty"`
 	DiskWriteBytes      *uint64  `json:"disk_write_bytes,omitempty"`
-	DiskReadOps         *uint64  `json:"disk_read_ops,omitempty"`
-	DiskWriteOps        *uint64  `json:"disk_write_ops,omitempty"`
 }
 
 type RDTMetrics struct {
 	// L3 Cache Monitoring
 	L3CacheOccupancy     *uint64  `json:"l3_cache_occupancy,omitempty"`     // L3 cache occupancy in bytes
-	L3CacheOccupancyKB   *float64 `json:"l3_cache_occupancy_kb,omitempty"`  // L3 cache occupancy in KB
-	L3CacheOccupancyMB   *float64 `json:"l3_cache_occupancy_mb,omitempty"`  // L3 cache occupancy in MB
 	
 	// Memory Bandwidth Monitoring
 	MemoryBandwidthTotal *uint64  `json:"memory_bandwidth_total,omitempty"` // Total memory bandwidth in bytes/sec
@@ -88,8 +81,8 @@ type RDTMetrics struct {
 	MBAThrottle          *uint64  `json:"mba_throttle,omitempty"`           // Memory bandwidth throttle percentage
 	
 	// Derived Metrics
-	CacheUtilization     *float64 `json:"cache_utilization,omitempty"`     // Cache utilization percentage
-	BandwidthUtilization *float64 `json:"bandwidth_utilization,omitempty"` // Bandwidth utilization percentage
+	CacheLLCUtilizationPercent   *float64 `json:"cache_llc_utilization_percent,omitempty"`   // LLC cache utilization percentage
+	BandwidthUtilizationPercent  *float64 `json:"bandwidth_utilization_percent,omitempty"`  // Bandwidth utilization percentage
 }
 
 func NewDataFrames() *DataFrames {
