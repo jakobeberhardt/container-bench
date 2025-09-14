@@ -18,6 +18,7 @@ import (
 	"container-bench/internal/config"
 	"container-bench/internal/database"
 	"container-bench/internal/dataframe"
+	"container-bench/internal/datahandeling"
 	"container-bench/internal/logging"
 	"container-bench/internal/scheduler"
 
@@ -68,8 +69,9 @@ type ContainerBench struct {
 	config        *config.BenchmarkConfig
 	configContent string
 	dockerClient  *client.Client
-	dbClient      *database.InfluxDBClient
+	dbClient      database.DatabaseClient
 	dataframes    *dataframe.DataFrames
+	dataHandler   datahandeling.DataHandler
 	scheduler     scheduler.Scheduler
 	collectors    []*collectors.ContainerCollector
 	benchmarkID   int
@@ -314,6 +316,9 @@ func runBenchmark(configFile string) error {
 		return fmt.Errorf("failed to create database client: %w", err)
 	}
 	defer bench.dbClient.Close()
+
+	// Initialize data handler
+	bench.dataHandler = datahandeling.NewDefaultDataHandler()
 
 	// Get next benchmark ID
 	lastID, err := bench.dbClient.GetLastBenchmarkID()
@@ -761,8 +766,16 @@ func (cb *ContainerBench) writeDatabaseData() error {
 	logger := logging.GetLogger()
 	logger.Info("Writing data to database")
 
-	// Export data to database
-	if err := cb.dbClient.WriteDataFrames(cb.benchmarkID, cb.config, cb.dataframes, cb.startTime, cb.endTime); err != nil {
+	// Process dataframes through data handler
+	logger.Info("Processing dataframes through data handler")
+	processedMetrics, err := cb.dataHandler.ProcessDataFrames(cb.benchmarkID, cb.config, cb.dataframes, cb.startTime, cb.endTime)
+	if err != nil {
+		logger.WithError(err).Error("Failed to process dataframes")
+		return fmt.Errorf("failed to process dataframes: %w", err)
+	}
+
+	// Export processed data to database
+	if err := cb.dbClient.WriteBenchmarkMetrics(cb.benchmarkID, cb.config, processedMetrics, cb.startTime, cb.endTime); err != nil {
 		logger.WithError(err).Error("Failed to export data")
 		return fmt.Errorf("failed to export data: %w", err)
 	}
