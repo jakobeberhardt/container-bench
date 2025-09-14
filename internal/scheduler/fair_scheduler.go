@@ -102,16 +102,19 @@ func (fs *FairScheduler) updateFairAllocations(containers map[int]*dataframe.Con
 		return nil
 	}
 	
-	// Calculate fair allocation per container
-	waysPerContainer, _ := fs.hostConfig.GetFairL3Allocation(containerCount)
-	allocationPercent := float64(waysPerContainer) / float64(fs.hostConfig.L3Cache.WaysPerCache) * 100.0
+	// For testing: allocate exactly 5% to each container
+	allocationPercent := 5.0
+	waysPerContainer := uint64(float64(fs.hostConfig.L3Cache.WaysPerCache) * allocationPercent / 100.0)
+	if waysPerContainer == 0 {
+		waysPerContainer = 1 // Ensure at least 1 way
+	}
 	
 	fs.schedulerLogger.WithFields(logrus.Fields{
 		"total_containers":    containerCount,
 		"ways_per_container":  waysPerContainer,
 		"allocation_percent":  allocationPercent,
 		"total_cache_ways":    fs.hostConfig.L3Cache.WaysPerCache,
-	}).Info("Calculating fair L3 cache allocations")
+	}).Info("Calculating fixed 5% L3 cache allocations for testing")
 	
 	// For fair allocation, we'll create container-specific RDT classes
 	// Note: This is a simplified approach. In practice, you might want to use

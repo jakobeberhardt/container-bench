@@ -2,7 +2,9 @@ package collectors
 
 import (
 	"fmt"
+	"io/ioutil"
 	"strconv"
+	"strings"
 
 	"container-bench/internal/dataframe"
 	"container-bench/internal/host"
@@ -44,16 +46,24 @@ func NewRDTCollector(pid int) (*RDTCollector, error) {
 	// Create unique monitoring group name for this container
 	monGroupName := fmt.Sprintf("container-bench-mon-%d", pid)
 	
-	// Get or create the default control group
-	ctrlGroup, exists := rdt.GetClass("system/default")
-	if !exists {
-		// Try to get any available control group
-		classes := rdt.GetClasses()
-		if len(classes) == 0 {
-			return nil, fmt.Errorf("no RDT control groups available")
+	// Find which RDT class this PID belongs to
+	ctrlGroup, className, err := findRDTClassForPID(pidStr)
+	if err != nil {
+		logger.WithError(err).WithField("pid", pid).Warn("Could not find RDT class for PID, using default")
+		// Fall back to default class
+		ctrlGroup, exists := rdt.GetClass("system/default")
+		if !exists {
+			// Try to get any available control group
+			classes := rdt.GetClasses()
+			if len(classes) == 0 {
+				return nil, fmt.Errorf("no RDT control groups available")
+			}
+			ctrlGroup = classes[0]
+			className = ctrlGroup.Name()
+			logger.WithField("class", className).Warn("Using first available RDT class instead of system/default")
+		} else {
+			className = "system/default"
 		}
-		ctrlGroup = classes[0]
-		logger.WithField("class", ctrlGroup.Name()).Warn("Using first available RDT class instead of system/default")
 	}
 	
 	// Create monitoring group for this container
@@ -75,20 +85,119 @@ func NewRDTCollector(pid int) (*RDTCollector, error) {
 	logger.WithFields(logrus.Fields{
 		"pid":            pid,
 		"mon_group":      monGroupName,
-		"ctrl_group":     ctrlGroup.Name(),
+		"ctrl_group":     className,
 	}).Debug("RDT monitoring initialized for container")
 	
 	return &RDTCollector{
 		pid:          pid,
 		pidStr:       pidStr,
 		monGroupName: monGroupName,
-		className:    ctrlGroup.Name(),
+		className:    className,
 		rdtEnabled:   true,
 		logger:       logger,
 		hostConfig:   hostConfig,
 		monGroup:     monGroup,
 		ctrlGroup:    ctrlGroup,
 	}, nil
+}
+
+// findRDTClassForPID searches all RDT classes to find which one contains the given PID
+func findRDTClassForPID(pidStr string) (rdt.CtrlGroup, string, error) {
+	classes := rdt.GetClasses()
+	
+	for _, class := range classes {
+		pids, err := class.GetPids()
+		if err != nil {
+			continue // Skip this class if we can't get PIDs
+		}
+		
+		// Check if our PID is in this class
+		for _, classPid := range pids {
+			if classPid == pidStr {
+				return class, class.Name(), nil
+			}
+		}
+	}
+	
+	return nil, "", fmt.Errorf("PID %s not found in any RDT class", pidStr)
+}
+
+// readAllocationFromResctrl reads allocation information directly from the resctrl filesystem
+func (rc *RDTCollector) readAllocationFromResctrl() (uint64, float64, error) {
+	className := rc.ctrlGroup.Name()
+	
+	// Construct path to schemata file for this class
+	var schemataPath string
+	if className == "system/default" {
+		schemataPath = "/sys/fs/resctrl/schemata"
+	} else {
+		schemataPath = fmt.Sprintf("/sys/fs/resctrl/%s/schemata", className)
+	}
+	
+	// Read the schemata file
+	data, err := ioutil.ReadFile(schemataPath)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to read schemata file %s: %v", schemataPath, err)
+	}
+	
+	// Parse L3 cache allocation from schemata
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "L3:") {
+			// Parse L3 line: "L3:0=fff;1=fff"
+			return rc.parseL3Allocation(line)
+		}
+	}
+	
+	return 0, 0, fmt.Errorf("no L3 allocation found in schemata")
+}
+
+// parseL3Allocation parses the L3 allocation line and calculates ways and percentage
+func (rc *RDTCollector) parseL3Allocation(l3Line string) (uint64, float64, error) {
+	// Remove "L3:" prefix
+	allocStr := strings.TrimPrefix(l3Line, "L3:")
+	
+	// Split by cache domains: "0=fff;1=fff"
+	domains := strings.Split(allocStr, ";")
+	if len(domains) == 0 {
+		return 0, 0, fmt.Errorf("no cache domains found")
+	}
+	
+	// Take the first domain for calculation
+	firstDomain := strings.TrimSpace(domains[0])
+	parts := strings.Split(firstDomain, "=")
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("invalid domain format: %s", firstDomain)
+	}
+	
+	// Parse the bitmask (hex)
+	bitmask := strings.TrimSpace(parts[1])
+	maskValue, err := strconv.ParseUint(bitmask, 16, 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to parse bitmask %s: %v", bitmask, err)
+	}
+	
+	// Count the number of set bits (cache ways)
+	ways := countSetBits(maskValue)
+	
+	// Calculate percentage based on total cache ways
+	var percentage float64
+	if rc.hostConfig != nil && rc.hostConfig.L3Cache.WaysPerCache > 0 {
+		percentage = float64(ways) / float64(rc.hostConfig.L3Cache.WaysPerCache) * 100.0
+	}
+	
+	return ways, percentage, nil
+}
+
+// countSetBits counts the number of set bits in a uint64
+func countSetBits(mask uint64) uint64 {
+	count := uint64(0)
+	for mask != 0 {
+		count += mask & 1
+		mask >>= 1
+	}
+	return count
 }
 
 func (rc *RDTCollector) Collect() *dataframe.RDTMetrics {
@@ -182,25 +291,34 @@ func (rc *RDTCollector) calculateDerivedMetrics(metrics *dataframe.RDTMetrics) {
 
 // getAllocationInfo gets allocation information for the container
 func (rc *RDTCollector) getAllocationInfo(metrics *dataframe.RDTMetrics) {
-	// Try to get allocation information from the control group
-	// Note: This might require additional RDT API calls that aren't available in goresctrl
-	// For now, we'll attempt to get basic allocation information
+	if rc.ctrlGroup == nil {
+		return
+	}
 	
-	// The allocation information is typically managed by the scheduler
-	// and not directly accessible through monitoring APIs
-	// We'll leave these fields for the scheduler to populate if needed
+	// Set the RDT class name
+	className := rc.ctrlGroup.Name()
+	metrics.RDTClassName = &className
 	
-	// If we have host config, we can provide some context
-	if rc.hostConfig != nil {
-		// Store cache allocation percentage if available
-		// This would typically be set by the scheduler when allocating resources
+	// Set the monitoring group name
+	metrics.MonGroupName = &rc.monGroupName
+	
+	// Try to get allocation information from the resctrl filesystem
+	if allocation, percentage, err := rc.readAllocationFromResctrl(); err == nil {
+		metrics.L3CacheAllocation = &allocation
+		metrics.L3CacheAllocationPct = &percentage
 		
-		// For debugging, log the available cache information
 		rc.logger.WithFields(logrus.Fields{
-			"pid":                 rc.pid,
-			"total_l3_cache_mb":   rc.hostConfig.L3Cache.TotalSizeMB,
-			"cache_ways":          rc.hostConfig.L3Cache.WaysPerCache,
-		}).Trace("Cache configuration available")
+			"pid":                    rc.pid,
+			"rdt_class":             className,
+			"l3_allocation_ways":    allocation,
+			"l3_allocation_percent": percentage,
+		}).Debug("Retrieved RDT allocation information")
+	} else {
+		rc.logger.WithFields(logrus.Fields{
+			"pid":       rc.pid,
+			"rdt_class": className,
+			"error":     err,
+		}).Debug("Could not retrieve allocation information")
 	}
 }
 
