@@ -23,6 +23,7 @@ type RDTAllocator interface {
 	CreateAllRDTClasses(classes map[string]struct{
 		L3CachePercent    float64
 		MemBandwidthPercent float64
+		CacheBitMask       string
 	}) error
 	
 	// AssignContainerToClass assigns a container PID to an RDT class
@@ -91,6 +92,7 @@ func (a *DefaultRDTAllocator) CreateRDTClass(className string, l3CachePercent fl
 func (a *DefaultRDTAllocator) CreateAllRDTClasses(classes map[string]struct{
 	L3CachePercent    float64
 	MemBandwidthPercent float64
+	CacheBitMask       string
 }) error {
 	if !a.initialized {
 		return fmt.Errorf("RDT allocator not initialized")
@@ -115,7 +117,12 @@ func (a *DefaultRDTAllocator) CreateAllRDTClasses(classes map[string]struct{
 		}{
 			L3Allocation: rdt.CatConfig{
 				"0": rdt.CacheIdCatConfig{
-					Unified: rdt.CacheProportion(fmt.Sprintf("%.0f%%", classConfig.L3CachePercent)),
+					Unified: func() rdt.CacheProportion {
+						if classConfig.CacheBitMask != "" {
+							return rdt.CacheProportion(classConfig.CacheBitMask)
+						}
+						return rdt.CacheProportion(fmt.Sprintf("%.0f%%", classConfig.L3CachePercent))
+					}(),
 				},
 			},
 			MBAllocation: func() rdt.MbaConfig {

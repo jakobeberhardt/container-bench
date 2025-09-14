@@ -103,29 +103,59 @@ func (fs *FairScheduler) updateFairAllocations() error {
 	}
 	
 	// For fair allocation: create dedicated RDT class for each container
-	// Calculate fair cache allocation per container
-	cachePercentPerContainer := 5.0 //100.0 / float64(containerCount)
+	// Calculate exclusive cache bit allocation per container
+	totalCacheWays := 12 // From /sys/fs/resctrl/info/L3/cbm_mask = fff (12 bits)
+	waysPerContainer := totalCacheWays / containerCount
 	
 	fs.schedulerLogger.WithFields(logrus.Fields{
-		"total_containers":         containerCount,
-		"cache_percent_per_container": cachePercentPerContainer,
-	}).Info("Creating fair RDT allocations with dedicated classes")
+		"total_containers":    containerCount,
+		"total_cache_ways":    totalCacheWays,
+		"ways_per_container":  waysPerContainer,
+	}).Info("Creating fair RDT allocations with dedicated classes and exclusive cache ways")
 	
-	// Prepare all classes for batch creation
+	// Prepare all classes for batch creation with exclusive cache bit ranges
 	classes := make(map[string]struct{
 		L3CachePercent    float64
 		MemBandwidthPercent float64
+		CacheBitMask       string
 	})
 	
-	for _, container := range fs.containers {
+	for i, container := range fs.containers {
 		className := fmt.Sprintf("fair_container_%d", container.Index)
+		
+		// Calculate exclusive cache bit range for this container
+		startWay := i * waysPerContainer
+		endWay := startWay + waysPerContainer - 1
+		
+		// Ensure we don't exceed available cache ways
+		if endWay >= totalCacheWays {
+			endWay = totalCacheWays - 1
+		}
+		
+		// Create bit mask for this container's exclusive cache ways
+		var bitMask uint32 = 0
+		for way := startWay; way <= endWay; way++ {
+			bitMask |= (1 << way)
+		}
+		cacheBitMask := fmt.Sprintf("0x%x", bitMask)
+		
 		classes[className] = struct{
 			L3CachePercent    float64
 			MemBandwidthPercent float64
+			CacheBitMask       string
 		}{
-			L3CachePercent:    cachePercentPerContainer,
+			L3CachePercent:    0, // Not used when bit mask is specified
 			MemBandwidthPercent: 0, // No memory bandwidth allocation for now
+			CacheBitMask:       cacheBitMask,
 		}
+		
+		fs.schedulerLogger.WithFields(logrus.Fields{
+			"container":       container.Index,
+			"class":          className,
+			"start_way":      startWay,
+			"end_way":        endWay,
+			"cache_bit_mask": cacheBitMask,
+		}).Info("Assigned exclusive cache ways to container")
 	}
 	
 	// Create all RDT classes at once
@@ -154,7 +184,7 @@ func (fs *FairScheduler) updateFairAllocations() error {
 			"container":     container.Index,
 			"pid":           container.PID,
 			"class":         className,
-			"cache_percent": cachePercentPerContainer,
+			"cache_ways":    waysPerContainer,
 		}).Info("Assigned container to dedicated fair RDT class")
 	}
 	
