@@ -105,12 +105,6 @@ func (rc *RDTCollector) Collect() *dataframe.RDTMetrics {
 	monGroupName := rc.monGroupName
 	metrics.MonGroupName = &monGroupName
 	
-	// Get allocation information if available
-	rc.processAllocationData(metrics)
-	
-	// Calculate derived metrics
-	rc.calculateDerivedMetrics(metrics)
-	
 	return metrics
 }
 
@@ -139,7 +133,7 @@ func (rc *RDTCollector) processL3MonitoringData(monData *rdt.MonData, metrics *d
 				*metrics.MemoryBandwidthTotal += mbmTotal
 			}
 			
-			// Convert to MB/s (assuming measurement interval)
+			// Convert bytes to MB for convenience (actual rate calculation in data handler)
 			bandwidthMBps := float64(mbmTotal) / (1024.0 * 1024.0)
 			if metrics.MemoryBandwidthMBps == nil {
 				metrics.MemoryBandwidthMBps = &bandwidthMBps
@@ -156,20 +150,6 @@ func (rc *RDTCollector) processL3MonitoringData(monData *rdt.MonData, metrics *d
 			}
 		}
 	}
-}
-
-func (rc *RDTCollector) processAllocationData(metrics *dataframe.RDTMetrics) {
-	// For now, we don't have allocation data in monitoring mode
-	// This would be filled when the scheduler makes allocations
-	// and we can query the actual allocation from the control group
-}
-
-func (rc *RDTCollector) calculateDerivedMetrics(metrics *dataframe.RDTMetrics) {
-	// Cache utilization percentage (would need total cache size for accurate calculation)
-	// For now, we can't calculate this without knowing the total L3 cache size
-	
-	// Bandwidth utilization percentage (would need system max bandwidth)
-	// For now, we can't calculate this without knowing the system's max memory bandwidth
 }
 
 func (rc *RDTCollector) GetMonGroup() rdt.MonGroup {
