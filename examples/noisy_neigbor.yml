@@ -6,7 +6,7 @@ benchmark:
   scheduler:
     implementation: fair
     rdt: true
-    log_level: warn
+    log_level: info
   data:
     db:
       host: ${INFLUXDB_HOST}
