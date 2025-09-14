@@ -185,8 +185,10 @@ func (fs *FairScheduler) monitorContainerPerformance(containers map[int]*datafra
 			if latest.RDT.CacheLLCUtilizationPercent != nil {
 				fields["llc_utilization_percent"] = *latest.RDT.CacheLLCUtilizationPercent
 			}
-			if latest.RDT.L3CacheOccupancyMB != nil {
-				fields["cache_occupancy_mb"] = *latest.RDT.L3CacheOccupancyMB
+			if latest.RDT.L3CacheOccupancy != nil {
+				// Convert to MB for logging
+				occupancyMB := float64(*latest.RDT.L3CacheOccupancy) / (1024.0 * 1024.0)
+				fields["cache_occupancy_mb"] = occupancyMB
 			}
 		}
 		

@@ -631,12 +631,6 @@ func (idb *InfluxDBClient) createFieldsFromMetricStep(step *datahandeling.Metric
 	if step.RDTL3CacheOccupancy != nil {
 		fields["rdt_l3_cache_occupancy"] = *step.RDTL3CacheOccupancy
 	}
-	if step.RDTL3CacheOccupancyKB != nil {
-		fields["rdt_l3_cache_occupancy_kb"] = *step.RDTL3CacheOccupancyKB
-	}
-	if step.RDTL3CacheOccupancyMB != nil {
-		fields["rdt_l3_cache_occupancy_mb"] = *step.RDTL3CacheOccupancyMB
-	}
 	if step.RDTMemoryBandwidthTotal != nil {
 		fields["rdt_memory_bandwidth_total"] = *step.RDTMemoryBandwidthTotal
 	}
