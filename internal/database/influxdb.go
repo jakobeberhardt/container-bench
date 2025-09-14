@@ -10,6 +10,7 @@ import (
 
 	"container-bench/internal/config"
 	"container-bench/internal/dataframe"
+	"container-bench/internal/datahandeling"
 	"container-bench/internal/logging"
 	
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
@@ -17,6 +18,14 @@ import (
 	"github.com/influxdata/influxdb-client-go/v2/api/write"
 	"github.com/sirupsen/logrus"
 )
+
+// DatabaseClient defines the interface for database operations
+type DatabaseClient interface {
+	GetLastBenchmarkID() (int, error)
+	WriteBenchmarkMetrics(benchmarkID int, benchmarkConfig *config.BenchmarkConfig, metrics *datahandeling.BenchmarkMetrics, startTime, endTime time.Time) error
+	WriteMetadata(metadata *BenchmarkMetadata) error
+	Close()
+}
 
 // BenchmarkMetadata contains all metadata about a benchmark run
 type BenchmarkMetadata struct {
@@ -200,40 +209,26 @@ func (idb *InfluxDBClient) GetLastBenchmarkID() (int, error) {
 	return maxID, nil
 }
 
-func (idb *InfluxDBClient) WriteDataFrames(benchmarkID int, benchmarkConfig *config.BenchmarkConfig, dataframes *dataframe.DataFrames, startTime, endTime time.Time) error {
+func (idb *InfluxDBClient) WriteBenchmarkMetrics(benchmarkID int, benchmarkConfig *config.BenchmarkConfig, metrics *datahandeling.BenchmarkMetrics, startTime, endTime time.Time) error {
 	ctx := context.Background()
 
 	// Create points for all container data
 	var points []*write.Point
 
-	containers := dataframes.GetAllContainers()
-	for containerIndex, containerDF := range containers {
-		containerConfig := idb.getContainerConfig(benchmarkConfig, containerIndex)
-		if containerConfig == nil {
-			continue
-		}
-
-		// Get the effective container name
-		containerName := containerConfig.GetContainerName(benchmarkID)
-
-		steps := containerDF.GetAllSteps()
-		for stepNumber, step := range steps {
-			if step == nil {
-				continue
-			}
-
+	for _, containerMetrics := range metrics.ContainerMetrics {
+		for _, step := range containerMetrics.Steps {
 			// Create base point with common tags
 			point := influxdb2.NewPoint("benchmark_metrics",
 				map[string]string{
 					"benchmark_id":     fmt.Sprintf("%d", benchmarkID),
-					"container_index":  fmt.Sprintf("%d", containerIndex),
-					"container_name":   containerName,
-					"container_image":  containerConfig.Image,
-					"container_core":   fmt.Sprintf("%d", containerConfig.Core),
+					"container_index":  fmt.Sprintf("%d", containerMetrics.ContainerIndex),
+					"container_name":   containerMetrics.ContainerName,
+					"container_image":  containerMetrics.ContainerImage,
+					"container_core":   fmt.Sprintf("%d", containerMetrics.ContainerCore),
 					"benchmark_started": startTime.Format(time.RFC3339),
 					"benchmark_finished": endTime.Format(time.RFC3339),
 				},
-				idb.createFields(step, stepNumber),
+				idb.createFieldsFromMetricStep(&step),
 				step.Timestamp)
 
 			points = append(points, point)
@@ -522,6 +517,133 @@ func (idb *InfluxDBClient) createFields(step *dataframe.SamplingStep, stepNumber
 		if step.RDT.BandwidthUtilization != nil {
 			fields["rdt_bandwidth_utilization"] = *step.RDT.BandwidthUtilization
 		}
+	}
+
+	return fields
+}
+
+// createFieldsFromMetricStep creates InfluxDB fields from a processed MetricStep
+func (idb *InfluxDBClient) createFieldsFromMetricStep(step *datahandeling.MetricStep) map[string]interface{} {
+	fields := make(map[string]interface{})
+
+	// Add step number
+	fields["step_number"] = step.StepNumber
+
+	// Add relative time (new derived field)
+	fields["relative_time"] = step.RelativeTime
+
+	// Add Perf metrics
+	if step.PerfCacheMisses != nil {
+		fields["perf_cache_misses"] = *step.PerfCacheMisses
+	}
+	if step.PerfCacheReferences != nil {
+		fields["perf_cache_references"] = *step.PerfCacheReferences
+	}
+	if step.PerfInstructions != nil {
+		fields["perf_instructions"] = *step.PerfInstructions
+	}
+	if step.PerfCycles != nil {
+		fields["perf_cycles"] = *step.PerfCycles
+	}
+	if step.PerfBranchInstructions != nil {
+		fields["perf_branch_instructions"] = *step.PerfBranchInstructions
+	}
+	if step.PerfBranchMisses != nil {
+		fields["perf_branch_misses"] = *step.PerfBranchMisses
+	}
+	if step.PerfBusCycles != nil {
+		fields["perf_bus_cycles"] = *step.PerfBusCycles
+	}
+	if step.PerfCacheMissRate != nil {
+		fields["perf_cache_miss_rate"] = *step.PerfCacheMissRate
+	}
+	if step.PerfBranchMissRate != nil {
+		fields["perf_branch_miss_rate"] = *step.PerfBranchMissRate
+	}
+	if step.PerfInstructionsPerCycle != nil {
+		fields["perf_instructions_per_cycle"] = *step.PerfInstructionsPerCycle
+	}
+
+	// Add Docker metrics
+	if step.DockerCPUUsageTotal != nil {
+		fields["docker_cpu_usage_total"] = *step.DockerCPUUsageTotal
+	}
+	if step.DockerCPUUsageKernel != nil {
+		fields["docker_cpu_usage_kernel"] = *step.DockerCPUUsageKernel
+	}
+	if step.DockerCPUUsageUser != nil {
+		fields["docker_cpu_usage_user"] = *step.DockerCPUUsageUser
+	}
+	if step.DockerCPUUsagePercent != nil {
+		fields["docker_cpu_usage_percent"] = *step.DockerCPUUsagePercent
+	}
+	if step.DockerCPUThrottling != nil {
+		fields["docker_cpu_throttling"] = *step.DockerCPUThrottling
+	}
+	if step.DockerMemoryUsage != nil {
+		fields["docker_memory_usage"] = *step.DockerMemoryUsage
+	}
+	if step.DockerMemoryLimit != nil {
+		fields["docker_memory_limit"] = *step.DockerMemoryLimit
+	}
+	if step.DockerMemoryCache != nil {
+		fields["docker_memory_cache"] = *step.DockerMemoryCache
+	}
+	if step.DockerMemoryRSS != nil {
+		fields["docker_memory_rss"] = *step.DockerMemoryRSS
+	}
+	if step.DockerMemorySwap != nil {
+		fields["docker_memory_swap"] = *step.DockerMemorySwap
+	}
+	if step.DockerMemoryUsagePercent != nil {
+		fields["docker_memory_usage_percent"] = *step.DockerMemoryUsagePercent
+	}
+	if step.DockerNetworkRxBytes != nil {
+		fields["docker_network_rx_bytes"] = *step.DockerNetworkRxBytes
+	}
+	if step.DockerNetworkTxBytes != nil {
+		fields["docker_network_tx_bytes"] = *step.DockerNetworkTxBytes
+	}
+	if step.DockerNetworkRxPackets != nil {
+		fields["docker_network_rx_packets"] = *step.DockerNetworkRxPackets
+	}
+	if step.DockerNetworkTxPackets != nil {
+		fields["docker_network_tx_packets"] = *step.DockerNetworkTxPackets
+	}
+	if step.DockerDiskReadBytes != nil {
+		fields["docker_disk_read_bytes"] = *step.DockerDiskReadBytes
+	}
+	if step.DockerDiskWriteBytes != nil {
+		fields["docker_disk_write_bytes"] = *step.DockerDiskWriteBytes
+	}
+	if step.DockerDiskReadOps != nil {
+		fields["docker_disk_read_ops"] = *step.DockerDiskReadOps
+	}
+	if step.DockerDiskWriteOps != nil {
+		fields["docker_disk_write_ops"] = *step.DockerDiskWriteOps
+	}
+
+	// Add RDT metrics
+	if step.RDTClassName != nil {
+		fields["rdt_class_name"] = *step.RDTClassName
+	}
+	if step.RDTL3CacheOccupancy != nil {
+		fields["rdt_l3_cache_occupancy"] = *step.RDTL3CacheOccupancy
+	}
+	if step.RDTL3CacheOccupancyKB != nil {
+		fields["rdt_l3_cache_occupancy_kb"] = *step.RDTL3CacheOccupancyKB
+	}
+	if step.RDTL3CacheOccupancyMB != nil {
+		fields["rdt_l3_cache_occupancy_mb"] = *step.RDTL3CacheOccupancyMB
+	}
+	if step.RDTMemoryBandwidthTotal != nil {
+		fields["rdt_memory_bandwidth_total"] = *step.RDTMemoryBandwidthTotal
+	}
+	if step.RDTMemoryBandwidthLocal != nil {
+		fields["rdt_memory_bandwidth_local"] = *step.RDTMemoryBandwidthLocal
+	}
+	if step.RDTMemoryBandwidthMBps != nil {
+		fields["rdt_memory_bandwidth_mbps"] = *step.RDTMemoryBandwidthMBps
 	}
 
 	return fields
