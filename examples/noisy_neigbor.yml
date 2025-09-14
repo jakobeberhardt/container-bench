@@ -4,9 +4,9 @@ benchmark:
   max_t: 60
   log_level: info
   scheduler:
-    implementation: default
-    rdt: false
-    log_level: warn
+    implementation: fair
+    rdt: true
+    log_level: debug
   data:
     db:
       host: ${INFLUXDB_HOST}

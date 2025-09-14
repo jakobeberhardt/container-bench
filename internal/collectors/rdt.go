@@ -168,11 +168,9 @@ func (rc *RDTCollector) calculateDerivedMetrics(metrics *dataframe.RDTMetrics) {
 		metrics.CacheLLCUtilizationPercent = &utilizationPercent
 	}
 	
-	// Calculate memory bandwidth in MB/s (approximation based on total bytes)
-	// Note: This is cumulative, real bandwidth calculation would need time deltas
+	// Calculate memory bandwidth utilization percentage
 	if metrics.MemoryBandwidthTotal != nil {
 		bandwidthMBps := float64(*metrics.MemoryBandwidthTotal) / (1024.0 * 1024.0)
-		metrics.MemoryBandwidthMBps = &bandwidthMBps
 		
 		// Calculate bandwidth utilization percentage
 		if rc.hostConfig != nil {

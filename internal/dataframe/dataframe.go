@@ -67,7 +67,6 @@ type RDTMetrics struct {
 	// Memory Bandwidth Monitoring
 	MemoryBandwidthTotal *uint64  `json:"memory_bandwidth_total,omitempty"` // Total memory bandwidth in bytes/sec
 	MemoryBandwidthLocal *uint64  `json:"memory_bandwidth_local,omitempty"` // Local memory bandwidth in bytes/sec
-	MemoryBandwidthMBps  *float64 `json:"memory_bandwidth_mbps,omitempty"`  // Memory bandwidth in MB/s
 	
 	// RDT Class Information
 	RDTClassName         *string `json:"rdt_class_name,omitempty"`         // Name of the RDT class/CLOS group

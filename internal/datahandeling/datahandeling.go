@@ -64,7 +64,6 @@ type MetricStep struct {
 	RDTL3CacheOccupancy              *uint64  `json:"rdt_l3_cache_occupancy,omitempty"`
 	RDTMemoryBandwidthTotal          *uint64  `json:"rdt_memory_bandwidth_total,omitempty"`
 	RDTMemoryBandwidthLocal          *uint64  `json:"rdt_memory_bandwidth_local,omitempty"`
-	RDTMemoryBandwidthMBps           *float64 `json:"rdt_memory_bandwidth_mbps,omitempty"`
 	RDTL3CacheAllocation             *uint64  `json:"rdt_l3_cache_allocation,omitempty"`
 	RDTL3CacheAllocationPct          *float64 `json:"rdt_l3_cache_allocation_pct,omitempty"`
 	RDTMBAThrottle                   *uint64  `json:"rdt_mba_throttle,omitempty"`
@@ -222,7 +221,6 @@ func (h *DefaultDataHandler) processRDTMetrics(rdt *dataframe.RDTMetrics, step *
 	step.RDTL3CacheOccupancy = rdt.L3CacheOccupancy
 	step.RDTMemoryBandwidthTotal = rdt.MemoryBandwidthTotal
 	step.RDTMemoryBandwidthLocal = rdt.MemoryBandwidthLocal
-	step.RDTMemoryBandwidthMBps = rdt.MemoryBandwidthMBps
 	step.RDTL3CacheAllocation = rdt.L3CacheAllocation
 	step.RDTL3CacheAllocationPct = rdt.L3CacheAllocationPct
 	step.RDTMBAThrottle = rdt.MBAThrottle
