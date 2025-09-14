@@ -12,6 +12,7 @@ import (
 	"container-bench/internal/config"
 	"container-bench/internal/dataframe"
 	"container-bench/internal/datahandeling"
+	"container-bench/internal/host"
 	"container-bench/internal/logging"
 	
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
@@ -318,10 +319,10 @@ func (idb *InfluxDBClient) WriteMetadata(metadata *BenchmarkMetadata) error {
 }
 
 func CollectBenchmarkMetadata(benchmarkID int, config *config.BenchmarkConfig, configContent string, dataframes *dataframe.DataFrames, startTime, endTime time.Time, driverVersion string) (*BenchmarkMetadata, error) {
-	// Collect system information
-	sysInfo, err := collectSystemInfo()
+	// Get host configuration (unified system info)
+	hostConfig, err := host.GetHostConfig()
 	if err != nil {
-		return nil, fmt.Errorf("failed to collect system info: %w", err)
+		return nil, fmt.Errorf("failed to get host config: %w", err)
 	}
 
 	// Calculate metrics from dataframes
@@ -376,16 +377,16 @@ func CollectBenchmarkMetadata(benchmarkID int, config *config.BenchmarkConfig, c
 		DriverVersion:          driverVersion,
 		UsedScheduler:          config.Benchmark.Scheduler.Implementation,
 		SchedulerVersion:       "1.0.0", // Default scheduler version
-		Hostname:               sysInfo.Hostname,
-		ExecutionHost:          sysInfo.Hostname, // Same as hostname for now
-		OSInfo:                 sysInfo.OSInfo,
-		KernelVersion:          sysInfo.KernelVersion,
-		CPUVendor:              sysInfo.CPUVendor,
-		CPUModel:               sysInfo.CPUModel,
-		TotalCPUCores:          sysInfo.CPUCores,
-		CPUThreads:             sysInfo.CPUThreads,
-		L3CacheSizeBytes:       sysInfo.L3CacheSizeBytes,
-		MaxMemoryBandwidthMBps: sysInfo.MaxMemoryBandwidthMBps,
+		Hostname:               hostConfig.Hostname,
+		ExecutionHost:          hostConfig.Hostname, // Same as hostname for now
+		OSInfo:                 hostConfig.OSInfo,
+		KernelVersion:          hostConfig.KernelVersion,
+		CPUVendor:              hostConfig.CPUVendor,
+		CPUModel:               hostConfig.CPUModel,
+		TotalCPUCores:          hostConfig.TotalCores,
+		CPUThreads:             hostConfig.TotalThreads,
+		L3CacheSizeBytes:       hostConfig.L3Cache.TotalSizeBytes,
+		MaxMemoryBandwidthMBps: hostConfig.RDT.MaxMemoryBandwidthMBps,
 		MaxDurationSeconds:     config.Benchmark.MaxT,
 		SamplingFrequencyMS:    avgFrequency,
 		TotalSamplingSteps:     totalSteps,
@@ -502,9 +503,6 @@ func (idb *InfluxDBClient) createFields(step *dataframe.SamplingStep, stepNumber
 		}
 		if step.RDT.MemoryBandwidthLocal != nil {
 			fields["rdt_memory_bandwidth_local"] = *step.RDT.MemoryBandwidthLocal
-		}
-		if step.RDT.MemoryBandwidthMBps != nil {
-			fields["rdt_memory_bandwidth_mbps"] = *step.RDT.MemoryBandwidthMBps
 		}
 		if step.RDT.RDTClassName != nil {
 			fields["rdt_class_name"] = *step.RDT.RDTClassName
@@ -636,9 +634,6 @@ func (idb *InfluxDBClient) createFieldsFromMetricStep(step *datahandeling.Metric
 	}
 	if step.RDTMemoryBandwidthLocal != nil {
 		fields["rdt_memory_bandwidth_local"] = *step.RDTMemoryBandwidthLocal
-	}
-	if step.RDTMemoryBandwidthMBps != nil {
-		fields["rdt_memory_bandwidth_mbps"] = *step.RDTMemoryBandwidthMBps
 	}
 	if step.RDTL3CacheAllocation != nil {
 		fields["rdt_l3_cache_allocation"] = *step.RDTL3CacheAllocation

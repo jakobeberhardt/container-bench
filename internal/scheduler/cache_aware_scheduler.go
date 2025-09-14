@@ -275,8 +275,9 @@ func (s *CacheAwareScheduler) logRDTMetrics(containerIndex int, rdtMetrics *data
 		cacheMB := float64(*rdtMetrics.L3CacheOccupancy) / (1024 * 1024)
 		fields["l3_cache_mb"] = cacheMB
 	}
-	if rdtMetrics.MemoryBandwidthMBps != nil {
-		fields["memory_bw_mbps"] = *rdtMetrics.MemoryBandwidthMBps
+	if rdtMetrics.MemoryBandwidthTotal != nil {
+		bandwidthMBps := float64(*rdtMetrics.MemoryBandwidthTotal) / (1024 * 1024)
+		fields["memory_bw_mbps"] = bandwidthMBps
 	}
 	if rdtMetrics.RDTClassName != nil {
 		fields["rdt_class"] = *rdtMetrics.RDTClassName
