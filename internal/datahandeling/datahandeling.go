@@ -55,21 +55,17 @@ type MetricStep struct {
 	DockerMemoryUsagePercent *float64 `json:"docker_memory_usage_percent,omitempty"`
 	DockerNetworkRxBytes     *uint64  `json:"docker_network_rx_bytes,omitempty"`
 	DockerNetworkTxBytes     *uint64  `json:"docker_network_tx_bytes,omitempty"`
-	DockerNetworkRxPackets   *uint64  `json:"docker_network_rx_packets,omitempty"`
-	DockerNetworkTxPackets   *uint64  `json:"docker_network_tx_packets,omitempty"`
 	DockerDiskReadBytes      *uint64  `json:"docker_disk_read_bytes,omitempty"`
 	DockerDiskWriteBytes     *uint64  `json:"docker_disk_write_bytes,omitempty"`
-	DockerDiskReadOps        *uint64  `json:"docker_disk_read_ops,omitempty"`
-	DockerDiskWriteOps       *uint64  `json:"docker_disk_write_ops,omitempty"`
 
 	// RDT metrics
-	RDTClassName               *string  `json:"rdt_class_name,omitempty"`
-	RDTL3CacheOccupancy        *uint64  `json:"rdt_l3_cache_occupancy,omitempty"`
-	RDTL3CacheOccupancyKB      *float64 `json:"rdt_l3_cache_occupancy_kb,omitempty"`
-	RDTL3CacheOccupancyMB      *float64 `json:"rdt_l3_cache_occupancy_mb,omitempty"`
-	RDTMemoryBandwidthTotal    *uint64  `json:"rdt_memory_bandwidth_total,omitempty"`
-	RDTMemoryBandwidthLocal    *uint64  `json:"rdt_memory_bandwidth_local,omitempty"`
-	RDTMemoryBandwidthMBps     *float64 `json:"rdt_memory_bandwidth_mbps,omitempty"`
+	RDTClassName                      *string  `json:"rdt_class_name,omitempty"`
+	RDTL3CacheOccupancy              *uint64  `json:"rdt_l3_cache_occupancy,omitempty"`
+	RDTMemoryBandwidthTotal          *uint64  `json:"rdt_memory_bandwidth_total,omitempty"`
+	RDTMemoryBandwidthLocal          *uint64  `json:"rdt_memory_bandwidth_local,omitempty"`
+	RDTMemoryBandwidthMBps           *float64 `json:"rdt_memory_bandwidth_mbps,omitempty"`
+	RDTCacheLLCUtilizationPercent    *float64 `json:"rdt_cache_llc_utilization_percent,omitempty"`
+	RDTBandwidthUtilizationPercent   *float64 `json:"rdt_bandwidth_utilization_percent,omitempty"`
 }
 
 // DataHandler processes raw dataframes into structured benchmark metrics
@@ -211,23 +207,21 @@ func (h *DefaultDataHandler) processDockerMetrics(docker *dataframe.DockerMetric
 	step.DockerMemoryUsagePercent = docker.MemoryUsagePercent
 	step.DockerNetworkRxBytes = docker.NetworkRxBytes
 	step.DockerNetworkTxBytes = docker.NetworkTxBytes
-	step.DockerNetworkRxPackets = docker.NetworkRxPackets
-	step.DockerNetworkTxPackets = docker.NetworkTxPackets
 	step.DockerDiskReadBytes = docker.DiskReadBytes
 	step.DockerDiskWriteBytes = docker.DiskWriteBytes
-	step.DockerDiskReadOps = docker.DiskReadOps
-	step.DockerDiskWriteOps = docker.DiskWriteOps
 }
 
-// processRDTMetrics copies RDT metrics
+// processRDTMetrics copies RDT metrics and calculates derived values
 func (h *DefaultDataHandler) processRDTMetrics(rdt *dataframe.RDTMetrics, step *MetricStep) {
 	step.RDTClassName = rdt.RDTClassName
 	step.RDTL3CacheOccupancy = rdt.L3CacheOccupancy
-	step.RDTL3CacheOccupancyKB = rdt.L3CacheOccupancyKB
-	step.RDTL3CacheOccupancyMB = rdt.L3CacheOccupancyMB
 	step.RDTMemoryBandwidthTotal = rdt.MemoryBandwidthTotal
 	step.RDTMemoryBandwidthLocal = rdt.MemoryBandwidthLocal
 	step.RDTMemoryBandwidthMBps = rdt.MemoryBandwidthMBps
+	
+	// Copy derived metrics from dataframe (calculated by collectors)
+	step.RDTCacheLLCUtilizationPercent = rdt.CacheLLCUtilizationPercent
+	step.RDTBandwidthUtilizationPercent = rdt.BandwidthUtilizationPercent
 }
 
 // getContainerConfig returns the container configuration for a given index

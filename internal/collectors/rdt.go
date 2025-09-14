@@ -129,20 +129,6 @@ func (rc *RDTCollector) processL3MonitoringData(monData *rdt.MonData, metrics *d
 			} else {
 				*metrics.L3CacheOccupancy += occupancy
 			}
-			
-			// Convert to KB and MB
-			occupancyKB := float64(occupancy) / 1024.0
-			occupancyMB := occupancyKB / 1024.0
-			if metrics.L3CacheOccupancyKB == nil {
-				metrics.L3CacheOccupancyKB = &occupancyKB
-			} else {
-				*metrics.L3CacheOccupancyKB += occupancyKB
-			}
-			if metrics.L3CacheOccupancyMB == nil {
-				metrics.L3CacheOccupancyMB = &occupancyMB
-			} else {
-				*metrics.L3CacheOccupancyMB += occupancyMB
-			}
 		}
 		
 		// Memory bandwidth monitoring

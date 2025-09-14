@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -47,6 +48,8 @@ type BenchmarkMetadata struct {
 	CPUModel               string `json:"cpu_model"`
 	TotalCPUCores          int    `json:"total_cpu_cores"`
 	CPUThreads             int    `json:"cpu_threads"`
+	L3CacheSizeBytes       int64  `json:"l3_cache_size_bytes"`
+	MaxMemoryBandwidthMBps int64  `json:"max_memory_bandwidth_mbps"`
 	MaxDurationSeconds     int    `json:"max_duration_seconds"`
 	SamplingFrequencyMS    int    `json:"sampling_frequency_ms"`
 	TotalSamplingSteps     int    `json:"total_sampling_steps"`
@@ -57,13 +60,15 @@ type BenchmarkMetadata struct {
 
 // SystemInfo contains host system information
 type SystemInfo struct {
-	Hostname      string
-	OSInfo        string
-	KernelVersion string
-	CPUVendor     string
-	CPUModel      string
-	CPUCores      int
-	CPUThreads    int
+	Hostname               string
+	OSInfo                 string
+	KernelVersion          string
+	CPUVendor              string
+	CPUModel               string
+	CPUCores               int
+	CPUThreads             int
+	L3CacheSizeBytes       int64
+	MaxMemoryBandwidthMBps int64
 }
 
 // collectSystemInfo gathers host system information
@@ -120,6 +125,28 @@ func collectSystemInfo() (*SystemInfo, error) {
 	// Get CPU core/thread count
 	info.CPUCores = runtime.NumCPU()
 	info.CPUThreads = runtime.NumCPU() // This might be the same as cores in some cases
+	
+	// Try to collect L3 cache size from /sys/devices/system/cpu/cpu0/cache/index3/size
+	if data, err := os.ReadFile("/sys/devices/system/cpu/cpu0/cache/index3/size"); err == nil {
+		sizeStr := strings.TrimSpace(string(data))
+		if strings.HasSuffix(sizeStr, "K") {
+			if size, err := strconv.ParseInt(strings.TrimSuffix(sizeStr, "K"), 10, 64); err == nil {
+				info.L3CacheSizeBytes = size * 1024
+			}
+		} else if strings.HasSuffix(sizeStr, "M") {
+			if size, err := strconv.ParseInt(strings.TrimSuffix(sizeStr, "M"), 10, 64); err == nil {
+				info.L3CacheSizeBytes = size * 1024 * 1024
+			}
+		}
+	}
+	
+	// For memory bandwidth, we'll set a reasonable default based on CPU type
+	// This could be enhanced to read from system specifications or benchmark
+	if strings.Contains(strings.ToLower(info.CPUModel), "xeon") {
+		info.MaxMemoryBandwidthMBps = 100000 // 100 GB/s typical for modern Xeon
+	} else {
+		info.MaxMemoryBandwidthMBps = 50000  // 50 GB/s typical for consumer CPUs
+	}
 	
 	return info, nil
 }
@@ -254,29 +281,31 @@ func (idb *InfluxDBClient) WriteMetadata(metadata *BenchmarkMetadata) error {
 			"benchmark_id": fmt.Sprintf("%d", metadata.BenchmarkID),
 		},
 		map[string]interface{}{
-			"benchmark_name":          metadata.BenchmarkName,
-			"description":             metadata.Description,
-			"duration_seconds":        metadata.DurationSeconds,
-			"benchmark_started":       metadata.BenchmarkStarted,
-			"benchmark_finished":      metadata.BenchmarkFinished,
-			"total_containers":        metadata.TotalContainers,
-			"driver_version":          metadata.DriverVersion,
-			"used_scheduler":          metadata.UsedScheduler,
-			"scheduler_version":       metadata.SchedulerVersion,
-			"hostname":                metadata.Hostname,
-			"execution_host":          metadata.ExecutionHost,
-			"os_info":                 metadata.OSInfo,
-			"kernel_version":          metadata.KernelVersion,
-			"cpu_vendor":              metadata.CPUVendor,
-			"cpu_model":               metadata.CPUModel,
-			"total_cpu_cores":         metadata.TotalCPUCores,
-			"cpu_threads":             metadata.CPUThreads,
-			"max_duration_seconds":    metadata.MaxDurationSeconds,
-			"sampling_frequency_ms":   metadata.SamplingFrequencyMS,
-			"total_sampling_steps":    metadata.TotalSamplingSteps,
-			"total_measurements":      metadata.TotalMeasurements,
-			"total_data_size_bytes":   metadata.TotalDataSizeBytes,
-			"config_file":             metadata.ConfigFile,
+			"benchmark_name":            metadata.BenchmarkName,
+			"description":               metadata.Description,
+			"duration_seconds":          metadata.DurationSeconds,
+			"benchmark_started":         metadata.BenchmarkStarted,
+			"benchmark_finished":        metadata.BenchmarkFinished,
+			"total_containers":          metadata.TotalContainers,
+			"driver_version":            metadata.DriverVersion,
+			"used_scheduler":            metadata.UsedScheduler,
+			"scheduler_version":         metadata.SchedulerVersion,
+			"hostname":                  metadata.Hostname,
+			"execution_host":            metadata.ExecutionHost,
+			"os_info":                   metadata.OSInfo,
+			"kernel_version":            metadata.KernelVersion,
+			"cpu_vendor":                metadata.CPUVendor,
+			"cpu_model":                 metadata.CPUModel,
+			"total_cpu_cores":           metadata.TotalCPUCores,
+			"cpu_threads":               metadata.CPUThreads,
+			"l3_cache_size_bytes":       metadata.L3CacheSizeBytes,
+			"max_memory_bandwidth_mbps": metadata.MaxMemoryBandwidthMBps,
+			"max_duration_seconds":      metadata.MaxDurationSeconds,
+			"sampling_frequency_ms":     metadata.SamplingFrequencyMS,
+			"total_sampling_steps":      metadata.TotalSamplingSteps,
+			"total_measurements":        metadata.TotalMeasurements,
+			"total_data_size_bytes":     metadata.TotalDataSizeBytes,
+			"config_file":               metadata.ConfigFile,
 		},
 		time.Now())
 
@@ -337,30 +366,32 @@ func CollectBenchmarkMetadata(benchmarkID int, config *config.BenchmarkConfig, c
 	estimatedDataSize := int64(totalMeasurements * 16)
 
 	metadata := &BenchmarkMetadata{
-		BenchmarkID:         benchmarkID,
-		BenchmarkName:       config.Benchmark.Name,
-		Description:         config.Benchmark.Description,
-		DurationSeconds:     int64(endTime.Sub(startTime).Seconds()),
-		BenchmarkStarted:    startTime.Format(time.RFC3339),
-		BenchmarkFinished:   endTime.Format(time.RFC3339),
-		TotalContainers:     len(config.Containers),
-		DriverVersion:       driverVersion,
-		UsedScheduler:       config.Benchmark.Scheduler.Implementation,
-		SchedulerVersion:    "1.0.0", // Default scheduler version
-		Hostname:            sysInfo.Hostname,
-		ExecutionHost:       sysInfo.Hostname, // Same as hostname for now
-		OSInfo:              sysInfo.OSInfo,
-		KernelVersion:       sysInfo.KernelVersion,
-		CPUVendor:           sysInfo.CPUVendor,
-		CPUModel:            sysInfo.CPUModel,
-		TotalCPUCores:       sysInfo.CPUCores,
-		CPUThreads:          sysInfo.CPUThreads,
-		MaxDurationSeconds:  config.Benchmark.MaxT,
-		SamplingFrequencyMS: avgFrequency,
-		TotalSamplingSteps:  totalSteps,
-		TotalMeasurements:   totalMeasurements,
-		TotalDataSizeBytes:  estimatedDataSize,
-		ConfigFile:          configContent,
+		BenchmarkID:            benchmarkID,
+		BenchmarkName:          config.Benchmark.Name,
+		Description:            config.Benchmark.Description,
+		DurationSeconds:        int64(endTime.Sub(startTime).Seconds()),
+		BenchmarkStarted:       startTime.Format(time.RFC3339),
+		BenchmarkFinished:      endTime.Format(time.RFC3339),
+		TotalContainers:        len(config.Containers),
+		DriverVersion:          driverVersion,
+		UsedScheduler:          config.Benchmark.Scheduler.Implementation,
+		SchedulerVersion:       "1.0.0", // Default scheduler version
+		Hostname:               sysInfo.Hostname,
+		ExecutionHost:          sysInfo.Hostname, // Same as hostname for now
+		OSInfo:                 sysInfo.OSInfo,
+		KernelVersion:          sysInfo.KernelVersion,
+		CPUVendor:              sysInfo.CPUVendor,
+		CPUModel:               sysInfo.CPUModel,
+		TotalCPUCores:          sysInfo.CPUCores,
+		CPUThreads:             sysInfo.CPUThreads,
+		L3CacheSizeBytes:       sysInfo.L3CacheSizeBytes,
+		MaxMemoryBandwidthMBps: sysInfo.MaxMemoryBandwidthMBps,
+		MaxDurationSeconds:     config.Benchmark.MaxT,
+		SamplingFrequencyMS:    avgFrequency,
+		TotalSamplingSteps:     totalSteps,
+		TotalMeasurements:      totalMeasurements,
+		TotalDataSizeBytes:     estimatedDataSize,
+		ConfigFile:             configContent,
 	}
 
 	return metadata, nil
@@ -406,9 +437,6 @@ func (idb *InfluxDBClient) createFields(step *dataframe.SamplingStep, stepNumber
 		}
 		if step.Perf.CacheMissRate != nil {
 			fields["perf_cache_miss_rate"] = *step.Perf.CacheMissRate
-		}
-		if step.Perf.BranchMissRate != nil {
-			fields["perf_branch_miss_rate"] = *step.Perf.BranchMissRate
 		}
 		if step.Perf.InstructionsPerCycle != nil {
 			fields["perf_instructions_per_cycle"] = *step.Perf.InstructionsPerCycle
@@ -456,23 +484,11 @@ func (idb *InfluxDBClient) createFields(step *dataframe.SamplingStep, stepNumber
 		if step.Docker.NetworkTxBytes != nil {
 			fields["docker_network_tx_bytes"] = *step.Docker.NetworkTxBytes
 		}
-		if step.Docker.NetworkRxPackets != nil {
-			fields["docker_network_rx_packets"] = *step.Docker.NetworkRxPackets
-		}
-		if step.Docker.NetworkTxPackets != nil {
-			fields["docker_network_tx_packets"] = *step.Docker.NetworkTxPackets
-		}
 		if step.Docker.DiskReadBytes != nil {
 			fields["docker_disk_read_bytes"] = *step.Docker.DiskReadBytes
 		}
 		if step.Docker.DiskWriteBytes != nil {
 			fields["docker_disk_write_bytes"] = *step.Docker.DiskWriteBytes
-		}
-		if step.Docker.DiskReadOps != nil {
-			fields["docker_disk_read_ops"] = *step.Docker.DiskReadOps
-		}
-		if step.Docker.DiskWriteOps != nil {
-			fields["docker_disk_write_ops"] = *step.Docker.DiskWriteOps
 		}
 	}
 
@@ -480,12 +496,6 @@ func (idb *InfluxDBClient) createFields(step *dataframe.SamplingStep, stepNumber
 	if step.RDT != nil {
 		if step.RDT.L3CacheOccupancy != nil {
 			fields["rdt_l3_cache_occupancy"] = *step.RDT.L3CacheOccupancy
-		}
-		if step.RDT.L3CacheOccupancyKB != nil {
-			fields["rdt_l3_cache_occupancy_kb"] = *step.RDT.L3CacheOccupancyKB
-		}
-		if step.RDT.L3CacheOccupancyMB != nil {
-			fields["rdt_l3_cache_occupancy_mb"] = *step.RDT.L3CacheOccupancyMB
 		}
 		if step.RDT.MemoryBandwidthTotal != nil {
 			fields["rdt_memory_bandwidth_total"] = *step.RDT.MemoryBandwidthTotal
@@ -511,11 +521,11 @@ func (idb *InfluxDBClient) createFields(step *dataframe.SamplingStep, stepNumber
 		if step.RDT.MBAThrottle != nil {
 			fields["rdt_mba_throttle"] = *step.RDT.MBAThrottle
 		}
-		if step.RDT.CacheUtilization != nil {
-			fields["rdt_cache_utilization"] = *step.RDT.CacheUtilization
+		if step.RDT.CacheLLCUtilizationPercent != nil {
+			fields["rdt_cache_llc_utilization_percent"] = *step.RDT.CacheLLCUtilizationPercent
 		}
-		if step.RDT.BandwidthUtilization != nil {
-			fields["rdt_bandwidth_utilization"] = *step.RDT.BandwidthUtilization
+		if step.RDT.BandwidthUtilizationPercent != nil {
+			fields["rdt_bandwidth_utilization_percent"] = *step.RDT.BandwidthUtilizationPercent
 		}
 	}
 
@@ -604,23 +614,11 @@ func (idb *InfluxDBClient) createFieldsFromMetricStep(step *datahandeling.Metric
 	if step.DockerNetworkTxBytes != nil {
 		fields["docker_network_tx_bytes"] = *step.DockerNetworkTxBytes
 	}
-	if step.DockerNetworkRxPackets != nil {
-		fields["docker_network_rx_packets"] = *step.DockerNetworkRxPackets
-	}
-	if step.DockerNetworkTxPackets != nil {
-		fields["docker_network_tx_packets"] = *step.DockerNetworkTxPackets
-	}
 	if step.DockerDiskReadBytes != nil {
 		fields["docker_disk_read_bytes"] = *step.DockerDiskReadBytes
 	}
 	if step.DockerDiskWriteBytes != nil {
 		fields["docker_disk_write_bytes"] = *step.DockerDiskWriteBytes
-	}
-	if step.DockerDiskReadOps != nil {
-		fields["docker_disk_read_ops"] = *step.DockerDiskReadOps
-	}
-	if step.DockerDiskWriteOps != nil {
-		fields["docker_disk_write_ops"] = *step.DockerDiskWriteOps
 	}
 
 	// Add RDT metrics
@@ -630,12 +628,6 @@ func (idb *InfluxDBClient) createFieldsFromMetricStep(step *datahandeling.Metric
 	if step.RDTL3CacheOccupancy != nil {
 		fields["rdt_l3_cache_occupancy"] = *step.RDTL3CacheOccupancy
 	}
-	if step.RDTL3CacheOccupancyKB != nil {
-		fields["rdt_l3_cache_occupancy_kb"] = *step.RDTL3CacheOccupancyKB
-	}
-	if step.RDTL3CacheOccupancyMB != nil {
-		fields["rdt_l3_cache_occupancy_mb"] = *step.RDTL3CacheOccupancyMB
-	}
 	if step.RDTMemoryBandwidthTotal != nil {
 		fields["rdt_memory_bandwidth_total"] = *step.RDTMemoryBandwidthTotal
 	}
@@ -644,6 +636,12 @@ func (idb *InfluxDBClient) createFieldsFromMetricStep(step *datahandeling.Metric
 	}
 	if step.RDTMemoryBandwidthMBps != nil {
 		fields["rdt_memory_bandwidth_mbps"] = *step.RDTMemoryBandwidthMBps
+	}
+	if step.RDTCacheLLCUtilizationPercent != nil {
+		fields["rdt_cache_llc_utilization_percent"] = *step.RDTCacheLLCUtilizationPercent
+	}
+	if step.RDTBandwidthUtilizationPercent != nil {
+		fields["rdt_bandwidth_utilization_percent"] = *step.RDTBandwidthUtilizationPercent
 	}
 
 	return fields

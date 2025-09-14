@@ -154,18 +154,10 @@ func (dc *DockerCollector) parseDockerStats(dockerStats *types.StatsJSON, curren
 			txBytes := netStats.TxBytes
 			metrics.NetworkTxBytes = &txBytes
 		}
-		if netStats.RxPackets > 0 {
-			rxPackets := netStats.RxPackets
-			metrics.NetworkRxPackets = &rxPackets
-		}
-		if netStats.TxPackets > 0 {
-			txPackets := netStats.TxPackets
-			metrics.NetworkTxPackets = &txPackets
-		}
 		break // Use first network interface
 	}
 
-	// Block I/O metrics
+	// Block I/O metrics - only bytes, not ops
 	for _, blkioStats := range dockerStats.BlkioStats.IoServiceBytesRecursive {
 		if blkioStats.Op == "Read" && blkioStats.Value > 0 {
 			readBytes := blkioStats.Value
@@ -174,17 +166,6 @@ func (dc *DockerCollector) parseDockerStats(dockerStats *types.StatsJSON, curren
 		if blkioStats.Op == "Write" && blkioStats.Value > 0 {
 			writeBytes := blkioStats.Value
 			metrics.DiskWriteBytes = &writeBytes
-		}
-	}
-
-	for _, blkioStats := range dockerStats.BlkioStats.IoServicedRecursive {
-		if blkioStats.Op == "Read" && blkioStats.Value > 0 {
-			readOps := blkioStats.Value
-			metrics.DiskReadOps = &readOps
-		}
-		if blkioStats.Op == "Write" && blkioStats.Value > 0 {
-			writeOps := blkioStats.Value
-			metrics.DiskWriteOps = &writeOps
 		}
 	}
 
