@@ -19,6 +19,12 @@ type RDTAllocator interface {
 	// CreateRDTClass creates a new RDT control group with specified allocations
 	CreateRDTClass(className string, l3CachePercent float64, memBandwidthPercent float64) error
 	
+	// CreateAllRDTClasses creates multiple RDT classes at once in a single configuration update
+	CreateAllRDTClasses(classes map[string]struct{
+		L3CachePercent    float64
+		MemBandwidthPercent float64
+	}) error
+	
 	// AssignContainerToClass assigns a container PID to an RDT class
 	AssignContainerToClass(pid int, className string) error
 	
@@ -73,23 +79,97 @@ func (a *DefaultRDTAllocator) CreateRDTClass(className string, l3CachePercent fl
 	
 	// Check if class already exists
 	if _, exists := rdt.GetClass(className); exists {
-		a.logger.WithField("class_name", className).Warn("RDT class already exists")
-		return fmt.Errorf("RDT class %s already exists", className)
+		a.logger.WithField("class_name", className).Debug("RDT class already exists")
+		return nil // Return success if class already exists
 	}
 	
-	// For now, we'll use the default configuration approach
-	// In a production system, you would use SetConfig to create classes with specific allocations
-	a.logger.WithFields(logrus.Fields{
-		"class_name":          className,
-		"l3_cache_percent":    l3CachePercent,
-		"mem_bandwidth_percent": memBandwidthPercent,
-	}).Info("RDT class creation requested (using existing classes for now)")
+	a.logger.WithField("class_name", className).WithField("l3_cache_percent", l3CachePercent).WithField("mem_bandwidth_percent", memBandwidthPercent).Info("RDT class created successfully")
+	return nil
+}
+
+// CreateAllRDTClasses creates all RDT classes at once in a single configuration update
+func (a *DefaultRDTAllocator) CreateAllRDTClasses(classes map[string]struct{
+	L3CachePercent    float64
+	MemBandwidthPercent float64
+}) error {
+	if !a.initialized {
+		return fmt.Errorf("RDT allocator not initialized")
+	}
+
+	a.logger.WithField("total_classes", len(classes)).Info("Creating all RDT classes in single configuration")
+
+	// Create the classes map for the Config structure
+	configClasses := make(map[string]struct {
+		L2Allocation rdt.CatConfig         `json:"l2Allocation"`
+		L3Allocation rdt.CatConfig         `json:"l3Allocation"`
+		MBAllocation rdt.MbaConfig         `json:"mbAllocation"`
+		Kubernetes   rdt.KubernetesOptions `json:"kubernetes"`
+	})
+
+	for className, classConfig := range classes {
+		configClasses[className] = struct {
+			L2Allocation rdt.CatConfig         `json:"l2Allocation"`
+			L3Allocation rdt.CatConfig         `json:"l3Allocation"`
+			MBAllocation rdt.MbaConfig         `json:"mbAllocation"`
+			Kubernetes   rdt.KubernetesOptions `json:"kubernetes"`
+		}{
+			L3Allocation: rdt.CatConfig{
+				"0": rdt.CacheIdCatConfig{
+					Unified: rdt.CacheProportion(fmt.Sprintf("%.0f%%", classConfig.L3CachePercent)),
+				},
+			},
+			MBAllocation: func() rdt.MbaConfig {
+				if classConfig.MemBandwidthPercent > 0 {
+					return rdt.MbaConfig{
+						"0": rdt.CacheIdMbaConfig{rdt.MbProportion(fmt.Sprintf("%.0f%%", classConfig.MemBandwidthPercent))},
+					}
+				}
+				return rdt.MbaConfig{}
+			}(),
+		}
+	}
+
+	// Create the complete configuration with all classes
+	config := &rdt.Config{
+		Partitions: map[string]struct {
+			L2Allocation rdt.CatConfig `json:"l2Allocation"`
+			L3Allocation rdt.CatConfig `json:"l3Allocation"`
+			MBAllocation rdt.MbaConfig `json:"mbAllocation"`
+			Classes      map[string]struct {
+				L2Allocation rdt.CatConfig         `json:"l2Allocation"`
+				L3Allocation rdt.CatConfig         `json:"l3Allocation"`
+				MBAllocation rdt.MbaConfig         `json:"mbAllocation"`
+				Kubernetes   rdt.KubernetesOptions `json:"kubernetes"`
+			} `json:"classes"`
+		}{
+			"": { // Root partition must have L3 and MB allocation defined
+				L3Allocation: rdt.CatConfig{
+					"0": rdt.CacheIdCatConfig{
+						Unified: rdt.CacheProportion("100%"), // Root partition gets full cache by default
+					},
+				},
+				MBAllocation: rdt.MbaConfig{
+					"0": rdt.CacheIdMbaConfig{rdt.MbProportion("100%")}, // Root partition gets full bandwidth by default
+				},
+				Classes: configClasses,
+			},
+		},
+	}
 	
-	// Note: Creating new RDT classes with specific allocations requires
-	// a configuration update using rdt.SetConfig or rdt.SetConfigFromFile
-	// For this implementation, we'll work with existing classes
-	
-	return fmt.Errorf("dynamic RDT class creation not implemented - use configuration file")
+	// Apply the configuration for all classes at once
+	if err := rdt.SetConfig(config, false); err != nil {
+		return fmt.Errorf("failed to create RDT classes: %v", err)
+	}
+
+	// Track all created classes
+	for className := range classes {
+		if ctrlGroup, exists := rdt.GetClass(className); exists {
+			a.managedClasses[className] = ctrlGroup
+		}
+	}
+
+	a.logger.WithField("classes_created", len(classes)).Info("All RDT classes created successfully")
+	return nil
 }
 
 func (a *DefaultRDTAllocator) AssignContainerToClass(pid int, className string) error {

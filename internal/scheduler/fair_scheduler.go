@@ -19,9 +19,9 @@ type FairScheduler struct {
 	rdtAllocator    RDTAllocator
 	initialized     bool
 	
-	// Track containers and their allocations
+	// Container information provided by orchestration
+	containers       []ContainerInfo
 	containerClasses map[int]string  // container index -> RDT class name
-	totalContainers  int
 }
 
 // NewFairScheduler creates a new fair scheduler instance
@@ -34,27 +34,28 @@ func NewFairScheduler() *FairScheduler {
 	}
 }
 
-func (fs *FairScheduler) Initialize() error {
-	fs.schedulerLogger.Info("Initializing fair scheduler")
+func (fs *FairScheduler) Initialize(allocator RDTAllocator, containers []ContainerInfo) error {
+	fs.schedulerLogger.WithField("containers", len(containers)).Info("Initializing fair scheduler")
 	
-	// Get host configuration
-	hostConfig, err := host.GetHostConfig()
-	if err != nil {
-		return fmt.Errorf("failed to get host configuration: %v", err)
+	fs.rdtAllocator = allocator
+	fs.containers = containers
+	
+	if fs.rdtAllocator != nil {
+		if err := fs.rdtAllocator.Initialize(); err != nil {
+			fs.schedulerLogger.WithError(err).Warn("RDT allocator initialization failed, fair allocation disabled")
+			fs.rdtAllocator = nil
+		}
 	}
-	fs.hostConfig = hostConfig
 	
-	// Initialize RDT allocator
-	fs.rdtAllocator = NewDefaultRDTAllocator()
-	if err := fs.rdtAllocator.Initialize(); err != nil {
-		fs.schedulerLogger.WithError(err).Warn("RDT allocator initialization failed, fair allocation disabled")
-		fs.rdtAllocator = nil
+	// Perform initial fair allocation setup
+	if err := fs.updateFairAllocations(); err != nil {
+		return fmt.Errorf("failed to setup fair allocations: %w", err)
 	}
 	
 	fs.schedulerLogger.WithFields(logrus.Fields{
-		"l3_cache_mb":     fs.hostConfig.L3Cache.TotalSizeMB,
-		"cache_ways":      fs.hostConfig.L3Cache.WaysPerCache,
-		"rdt_supported":   fs.hostConfig.RDT.Supported,
+		"scheduler":       fs.name,
+		"version":         fs.version,
+		"containers":      len(fs.containers),
 		"rdt_allocator":   fs.rdtAllocator != nil,
 	}).Info("Fair scheduler initialized")
 	
@@ -67,163 +68,104 @@ func (fs *FairScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) err
 		return fmt.Errorf("fair scheduler not initialized")
 	}
 	
+	// Fair scheduler uses allocator for resource allocation - no dynamic reallocation needed
+	// Container allocation was done during initialization
+	
+	// Log current container metrics for monitoring
 	containers := dataframes.GetAllContainers()
-	currentContainerCount := len(containers)
-	
-	// Check if we need to update allocations due to container count change
-	if currentContainerCount != fs.totalContainers {
-		fs.schedulerLogger.WithFields(logrus.Fields{
-			"previous_containers": fs.totalContainers,
-			"current_containers":  currentContainerCount,
-		}).Info("Container count changed, updating fair allocations")
-		
-		if err := fs.updateFairAllocations(containers); err != nil {
-			fs.schedulerLogger.WithError(err).Error("Failed to update fair allocations")
-			return err
-		}
-		
-		fs.totalContainers = currentContainerCount
-	}
-	
-	// Monitor container performance and log allocation effectiveness
-	fs.monitorContainerPerformance(containers)
-	
-	return nil
-}
-
-func (fs *FairScheduler) updateFairAllocations(containers map[int]*dataframe.ContainerDataFrame) error {
-	if fs.rdtAllocator == nil || !fs.hostConfig.RDT.Supported {
-		fs.schedulerLogger.Debug("RDT not available, skipping fair allocation")
-		return nil
-	}
-	
-	containerCount := len(containers)
-	if containerCount == 0 {
-		return nil
-	}
-	
-	// For testing: allocate exactly 5% to each container
-	allocationPercent := 5.0
-	waysPerContainer := uint64(float64(fs.hostConfig.L3Cache.WaysPerCache) * allocationPercent / 100.0)
-	if waysPerContainer == 0 {
-		waysPerContainer = 1 // Ensure at least 1 way
-	}
-	
-	fs.schedulerLogger.WithFields(logrus.Fields{
-		"total_containers":    containerCount,
-		"ways_per_container":  waysPerContainer,
-		"allocation_percent":  allocationPercent,
-		"total_cache_ways":    fs.hostConfig.L3Cache.WaysPerCache,
-	}).Info("Calculating fixed 5% L3 cache allocations for testing")
-	
-	// For fair allocation, we'll create container-specific RDT classes
-	// Note: This is a simplified approach. In practice, you might want to use
-	// existing classes or a more sophisticated allocation strategy
-	
-	containerIndex := 0
-	for containerIdx, containerDF := range containers {
-		// Get the latest step to find container PID
-		latestStep := containerDF.GetLatestStep()
-		if latestStep == nil || latestStep.RDT == nil {
-			fs.schedulerLogger.WithField("container", containerIdx).Debug("No RDT data available for container")
-			continue
-		}
-		
-		// For this implementation, we'll assign containers to existing classes
-		// In a full implementation, you would create dedicated classes with specific allocations
-		className := fs.selectRDTClassForContainer(containerIndex, containerCount)
-		
-		if className != "" {
-			// Try to get PID from RDT collector or other means
-			// This is a simplified approach - in practice, you'd track PIDs properly
-			fs.schedulerLogger.WithFields(logrus.Fields{
-				"container":       containerIdx,
-				"assigned_class":  className,
-				"allocation_pct":  allocationPercent,
-			}).Info("Assigned container to RDT class for fair allocation")
-			
-			fs.containerClasses[containerIdx] = className
-		}
-		
-		containerIndex++
-	}
-	
-	return nil
-}
-
-func (fs *FairScheduler) selectRDTClassForContainer(containerIndex, totalContainers int) string {
-	// Get available RDT classes
-	availableClasses := fs.rdtAllocator.ListAvailableClasses()
-	if len(availableClasses) == 0 {
-		return ""
-	}
-	
-	// For fair allocation, we'll cycle through available classes
-	// In a production system, you would create dedicated classes with specific allocations
-	classIndex := containerIndex % len(availableClasses)
-	return availableClasses[classIndex]
-}
-
-func (fs *FairScheduler) monitorContainerPerformance(containers map[int]*dataframe.ContainerDataFrame) {
 	for containerIndex, containerDF := range containers {
 		latest := containerDF.GetLatestStep()
 		if latest == nil {
 			continue
 		}
 		
-		fields := logrus.Fields{
-			"container": containerIndex,
-		}
-		
-		// Log cache performance metrics
 		if latest.Perf != nil && latest.Perf.CacheMissRate != nil {
-			fields["cache_miss_rate"] = *latest.Perf.CacheMissRate
-		}
-		
-		// Log RDT metrics
-		if latest.RDT != nil {
-			if latest.RDT.RDTClassName != nil {
-				fields["rdt_class"] = *latest.RDT.RDTClassName
-			}
-			if latest.RDT.CacheLLCUtilizationPercent != nil {
-				fields["llc_utilization_percent"] = *latest.RDT.CacheLLCUtilizationPercent
-			}
-			if latest.RDT.L3CacheOccupancy != nil {
-				// Convert to MB for logging
-				occupancyMB := float64(*latest.RDT.L3CacheOccupancy) / (1024.0 * 1024.0)
-				fields["cache_occupancy_mb"] = occupancyMB
-			}
-		}
-		
-		// Log CPU usage
-		if latest.Docker != nil && latest.Docker.CPUUsagePercent != nil {
-			fields["cpu_percent"] = *latest.Docker.CPUUsagePercent
-		}
-		
-		fs.schedulerLogger.WithFields(fields).Debug("Container performance metrics")
-		
-		// Check if cache miss rate is high and log recommendation
-		if latest.Perf != nil && latest.Perf.CacheMissRate != nil && *latest.Perf.CacheMissRate > 40.0 {
 			fs.schedulerLogger.WithFields(logrus.Fields{
-				"container":       containerIndex,
+				"container":        containerIndex,
 				"cache_miss_rate": *latest.Perf.CacheMissRate,
-			}).Warn("High cache miss rate detected - container may benefit from more cache allocation")
+				"rdt_class":       fs.containerClasses[containerIndex],
+			}).Debug("Container cache performance")
 		}
 	}
+	
+	return nil
+}
+
+func (fs *FairScheduler) updateFairAllocations() error {
+	if fs.rdtAllocator == nil || fs.hostConfig == nil || !fs.hostConfig.RDT.Supported {
+		fs.schedulerLogger.Debug("RDT not available, skipping fair allocation")
+		return nil
+	}
+	
+	containerCount := len(fs.containers)
+	if containerCount == 0 {
+		return nil
+	}
+	
+	// For fair allocation: create dedicated RDT class for each container
+	// Calculate fair cache allocation per container
+	cachePercentPerContainer := 5.0 //100.0 / float64(containerCount)
+	
+	fs.schedulerLogger.WithFields(logrus.Fields{
+		"total_containers":         containerCount,
+		"cache_percent_per_container": cachePercentPerContainer,
+	}).Info("Creating fair RDT allocations with dedicated classes")
+	
+	// Prepare all classes for batch creation
+	classes := make(map[string]struct{
+		L3CachePercent    float64
+		MemBandwidthPercent float64
+	})
+	
+	for _, container := range fs.containers {
+		className := fmt.Sprintf("fair_container_%d", container.Index)
+		classes[className] = struct{
+			L3CachePercent    float64
+			MemBandwidthPercent float64
+		}{
+			L3CachePercent:    cachePercentPerContainer,
+			MemBandwidthPercent: 0, // No memory bandwidth allocation for now
+		}
+	}
+	
+	// Create all RDT classes at once
+	if err := fs.rdtAllocator.CreateAllRDTClasses(classes); err != nil {
+		return fmt.Errorf("failed to create fair RDT classes: %w", err)
+	}
+	
+	// Assign each container to its dedicated class
+	for _, container := range fs.containers {
+		className := fmt.Sprintf("fair_container_%d", container.Index)
+		
+		// Assign container PID to its dedicated class
+		if err := fs.rdtAllocator.AssignContainerToClass(container.PID, className); err != nil {
+			fs.schedulerLogger.WithError(err).WithFields(logrus.Fields{
+				"container": container.Index,
+				"pid":       container.PID,
+				"class":     className,
+			}).Error("Failed to assign container to its dedicated RDT class")
+			continue
+		}
+		
+		// Track the assignment
+		fs.containerClasses[container.Index] = className
+		
+		fs.schedulerLogger.WithFields(logrus.Fields{
+			"container":     container.Index,
+			"pid":           container.PID,
+			"class":         className,
+			"cache_percent": cachePercentPerContainer,
+		}).Info("Assigned container to dedicated fair RDT class")
+	}
+	
+	return nil
 }
 
 func (fs *FairScheduler) Shutdown() error {
 	fs.schedulerLogger.Info("Shutting down fair scheduler")
 	
-	if fs.rdtAllocator != nil {
-		if err := fs.rdtAllocator.Cleanup(); err != nil {
-			fs.schedulerLogger.WithError(err).Warn("Failed to cleanup RDT allocator")
-		}
-	}
-	
 	// Clear container tracking
 	fs.containerClasses = make(map[int]string)
-	fs.totalContainers = 0
 	fs.initialized = false
 	
 	return nil
@@ -240,4 +182,8 @@ func (fs *FairScheduler) SetLogLevel(level string) error {
 	}
 	fs.schedulerLogger.SetLevel(logLevel)
 	return nil
+}
+
+func (fs *FairScheduler) SetHostConfig(hostConfig *host.HostConfig) {
+	fs.hostConfig = hostConfig
 }

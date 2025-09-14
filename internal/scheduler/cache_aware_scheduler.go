@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"container-bench/internal/dataframe"
+	"container-bench/internal/host"
 	"container-bench/internal/logging"
 	"github.com/sirupsen/logrus"
 )
@@ -16,11 +17,15 @@ type CacheAwareScheduler struct {
 	version            string
 	schedulerLogger    *logrus.Logger
 	rdtAllocator       RDTAllocator
+	hostConfig         *host.HostConfig
 	
 	// Configuration
 	cacheMissThreshold float64 // Cache miss rate threshold (e.g., 0.4 for 40%)
 	highMissClassName  string  // RDT class for high cache miss containers
 	lowMissClassName   string  // RDT class for low cache miss containers
+	
+	// Container information provided by orchestration
+	containers         []ContainerInfo
 	
 	// State tracking
 	containerStates    map[int]*ContainerState
@@ -70,8 +75,24 @@ func NewCacheAwareSchedulerWithRDT(enableRDTAllocation bool) *CacheAwareSchedule
 	}
 }
 
-func (s *CacheAwareScheduler) Initialize() error {
-	s.schedulerLogger.Info("Initializing cache-aware scheduler")
+func (s *CacheAwareScheduler) Initialize(allocator RDTAllocator, containers []ContainerInfo) error {
+	s.schedulerLogger.WithField("containers", len(containers)).Info("Initializing cache-aware scheduler")
+	
+	s.rdtAllocator = allocator
+	s.containers = containers
+	
+	// Initialize container states
+	for _, container := range containers {
+		s.containerStates[container.Index] = &ContainerState{
+			PID:                    container.PID,
+			ContainerIndex:         container.Index,
+			CurrentRDTClass:        "system/default",
+			CacheMissRateHistory:   make([]float64, 0, CacheMissHistoryLength),
+			ConsecutiveHighMisses:  0,
+			ConsecutiveLowMisses:   0,
+			AllocationDecisionsMade: 0,
+		}
+	}
 	
 	// Initialize RDT allocator only if enabled
 	if s.rdtAllocator != nil {
@@ -96,11 +117,13 @@ func (s *CacheAwareScheduler) Initialize() error {
 			"high_miss_class":      s.highMissClassName,
 			"low_miss_class":       s.lowMissClassName,
 			"rdt_allocation":       "enabled",
+			"containers":           len(s.containers),
 		}).Info("Cache-aware scheduler configuration")
 	} else {
 		s.schedulerLogger.WithFields(logrus.Fields{
 			"cache_miss_threshold": s.cacheMissThreshold,
 			"rdt_allocation":       "disabled (monitoring only)",
+			"containers":           len(s.containers),
 		}).Info("Cache-aware scheduler configuration")
 	}
 	
@@ -347,6 +370,18 @@ func (s *CacheAwareScheduler) SetLogLevel(level string) error {
 	}
 	s.schedulerLogger.SetLevel(logLevel)
 	return nil
+}
+
+func (s *CacheAwareScheduler) SetRDTManager(rdtManager RDTManager) {
+	// Cache-aware scheduler uses its own RDT allocator, not the centralized manager
+	// This method exists to satisfy the interface but doesn't change behavior
+	s.schedulerLogger.Debug("SetRDTManager called on cache-aware scheduler (using internal allocator)")
+}
+
+func (s *CacheAwareScheduler) SetHostConfig(hostConfig *host.HostConfig) {
+	// Cache-aware scheduler manages its own host config initialization
+	// This method exists to satisfy the interface but doesn't change behavior
+	s.schedulerLogger.Debug("SetHostConfig called on cache-aware scheduler (using internal configuration)")
 }
 
 // GetRDTAllocator returns the RDT allocator for external use if needed

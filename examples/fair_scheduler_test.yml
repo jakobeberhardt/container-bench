@@ -20,7 +20,7 @@ container0:
   core: 0
   command: "while :; do dd if=/dev/zero of=/dev/null bs=1M count=100 2>/dev/null; sleep 0.1; done"
   data:
-    frequency: 500 # every 500ms
+    frequency: 100 # every 500ms
     perf: true
     docker: true
     rdt: true
@@ -31,7 +31,7 @@ container1:
   core: 1
   command: "while :; do dd if=/dev/urandom of=/dev/null bs=1M count=50 2>/dev/null; sleep 0.1; done"
   data:
-    frequency: 500 # every 500ms
+    frequency: 100 # every 500ms
     perf: true
     docker: true
     rdt: true
@@ -42,7 +42,7 @@ container2:
   core: 2
   command: "while :; do find /usr -name '*.so' 2>/dev/null | head -1000 > /dev/null; sleep 0.1; done"
   data:
-    frequency: 500 # every 500ms
+    frequency: 100 # every 500ms
     perf: true
     docker: true
     rdt: true

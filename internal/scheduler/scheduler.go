@@ -1,23 +1,38 @@
 package scheduler
 
 import (
+	"container-bench/internal/config"
 	"container-bench/internal/dataframe"
+	"container-bench/internal/host"
 	"container-bench/internal/logging"
 	"github.com/sirupsen/logrus"
 )
 
+// ContainerInfo holds complete information about a container including its PID
+type ContainerInfo struct {
+	Index  int
+	Config *config.ContainerConfig
+	PID    int
+}
+
 type Scheduler interface {
-	Initialize() error
+	Initialize(allocator RDTAllocator, containers []ContainerInfo) error
 	ProcessDataFrames(dataframes *dataframe.DataFrames) error
 	Shutdown() error
 	GetVersion() string
 	SetLogLevel(level string) error
+	
+	// Host configuration for scheduler decisions
+	SetHostConfig(hostConfig *host.HostConfig)
 }
 
 type DefaultScheduler struct {
 	name            string
 	version         string
 	schedulerLogger *logrus.Logger
+	hostConfig      *host.HostConfig
+	containers      []ContainerInfo
+	rdtAllocator    RDTAllocator
 }
 
 func NewDefaultScheduler() *DefaultScheduler {
@@ -28,8 +43,11 @@ func NewDefaultScheduler() *DefaultScheduler {
 	}
 }
 
-func (ds *DefaultScheduler) Initialize() error {
-	// Default scheduler doesn't need initialization
+func (ds *DefaultScheduler) Initialize(allocator RDTAllocator, containers []ContainerInfo) error {
+	ds.rdtAllocator = allocator
+	ds.containers = containers
+	
+	ds.schedulerLogger.WithField("containers", len(containers)).Info("Default scheduler initialized")
 	return nil
 }
 
@@ -77,4 +95,8 @@ func (ds *DefaultScheduler) SetLogLevel(level string) error {
 	}
 	ds.schedulerLogger.SetLevel(logLevel)
 	return nil
+}
+
+func (ds *DefaultScheduler) SetHostConfig(hostConfig *host.HostConfig) {
+	ds.hostConfig = hostConfig
 }
