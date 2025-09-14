@@ -625,8 +625,17 @@ func (idb *InfluxDBClient) createFieldsFromMetricStep(step *datahandeling.Metric
 	if step.RDTClassName != nil {
 		fields["rdt_class_name"] = *step.RDTClassName
 	}
+	if step.RDTMonGroupName != nil {
+		fields["rdt_mon_group_name"] = *step.RDTMonGroupName
+	}
 	if step.RDTL3CacheOccupancy != nil {
 		fields["rdt_l3_cache_occupancy"] = *step.RDTL3CacheOccupancy
+	}
+	if step.RDTL3CacheOccupancyKB != nil {
+		fields["rdt_l3_cache_occupancy_kb"] = *step.RDTL3CacheOccupancyKB
+	}
+	if step.RDTL3CacheOccupancyMB != nil {
+		fields["rdt_l3_cache_occupancy_mb"] = *step.RDTL3CacheOccupancyMB
 	}
 	if step.RDTMemoryBandwidthTotal != nil {
 		fields["rdt_memory_bandwidth_total"] = *step.RDTMemoryBandwidthTotal
@@ -636,6 +645,15 @@ func (idb *InfluxDBClient) createFieldsFromMetricStep(step *datahandeling.Metric
 	}
 	if step.RDTMemoryBandwidthMBps != nil {
 		fields["rdt_memory_bandwidth_mbps"] = *step.RDTMemoryBandwidthMBps
+	}
+	if step.RDTL3CacheAllocation != nil {
+		fields["rdt_l3_cache_allocation"] = *step.RDTL3CacheAllocation
+	}
+	if step.RDTL3CacheAllocationPct != nil {
+		fields["rdt_l3_cache_allocation_pct"] = *step.RDTL3CacheAllocationPct
+	}
+	if step.RDTMBAThrottle != nil {
+		fields["rdt_mba_throttle"] = *step.RDTMBAThrottle
 	}
 	if step.RDTCacheLLCUtilizationPercent != nil {
 		fields["rdt_cache_llc_utilization_percent"] = *step.RDTCacheLLCUtilizationPercent

@@ -63,6 +63,8 @@ type DockerMetrics struct {
 type RDTMetrics struct {
 	// L3 Cache Monitoring
 	L3CacheOccupancy     *uint64  `json:"l3_cache_occupancy,omitempty"`     // L3 cache occupancy in bytes
+	L3CacheOccupancyKB   *float64 `json:"l3_cache_occupancy_kb,omitempty"`  // L3 cache occupancy in KB
+	L3CacheOccupancyMB   *float64 `json:"l3_cache_occupancy_mb,omitempty"`  // L3 cache occupancy in MB
 	
 	// Memory Bandwidth Monitoring
 	MemoryBandwidthTotal *uint64  `json:"memory_bandwidth_total,omitempty"` // Total memory bandwidth in bytes/sec
