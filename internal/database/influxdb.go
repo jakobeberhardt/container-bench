@@ -21,7 +21,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// DatabaseClient defines the interface for database operations
+// defines the interface for database operations
 type DatabaseClient interface {
 	GetLastBenchmarkID() (int, error)
 	WriteBenchmarkMetrics(benchmarkID int, benchmarkConfig *config.BenchmarkConfig, metrics *datahandeling.BenchmarkMetrics, startTime, endTime time.Time) error
@@ -29,14 +29,14 @@ type DatabaseClient interface {
 	Close()
 }
 
-// BenchmarkMetadata contains all metadata about a benchmark run
+// contains all metadata about a benchmark run
 type BenchmarkMetadata struct {
 	BenchmarkID            int    `json:"benchmark_id"`
 	BenchmarkName          string `json:"benchmark_name"`
 	Description            string `json:"description"`
 	DurationSeconds        int64  `json:"duration_seconds"`
-	BenchmarkStarted       string `json:"benchmark_started"`       // RFC3339 timestamp
-	BenchmarkFinished      string `json:"benchmark_finished"`      // RFC3339 timestamp
+	BenchmarkStarted       string `json:"benchmark_started"`       
+	BenchmarkFinished      string `json:"benchmark_finished"`      
 	TotalContainers        int    `json:"total_containers"`
 	DriverVersion          string `json:"driver_version"`
 	UsedScheduler          string `json:"used_scheduler"`
@@ -59,7 +59,7 @@ type BenchmarkMetadata struct {
 	ConfigFile             string `json:"config_file"`
 }
 
-// SystemInfo contains host system information
+// contains host system information
 type SystemInfo struct {
 	Hostname               string
 	OSInfo                 string
@@ -73,17 +73,16 @@ type SystemInfo struct {
 }
 
 // collectSystemInfo gathers host system information
+// TODO: We should use the hostconfig here for consistency
 func collectSystemInfo() (*SystemInfo, error) {
 	info := &SystemInfo{}
 	
-	// Get hostname
 	hostname, err := os.Hostname()
 	if err != nil {
 		hostname = "unknown"
 	}
 	info.Hostname = hostname
 	
-	// Get OS info
 	info.OSInfo = runtime.GOOS + "/" + runtime.GOARCH
 	
 	// Get kernel version from /proc/version
@@ -125,7 +124,7 @@ func collectSystemInfo() (*SystemInfo, error) {
 	
 	// Get CPU core/thread count
 	info.CPUCores = runtime.NumCPU()
-	info.CPUThreads = runtime.NumCPU() // This might be the same as cores in some cases
+	info.CPUThreads = runtime.NumCPU()
 	
 	// Try to collect L3 cache size from /sys/devices/system/cpu/cpu0/cache/index3/size
 	if data, err := os.ReadFile("/sys/devices/system/cpu/cpu0/cache/index3/size"); err == nil {
@@ -141,13 +140,6 @@ func collectSystemInfo() (*SystemInfo, error) {
 		}
 	}
 	
-	// For memory bandwidth, we'll set a reasonable default based on CPU type
-	// This could be enhanced to read from system specifications or benchmark
-	if strings.Contains(strings.ToLower(info.CPUModel), "xeon") {
-		info.MaxMemoryBandwidthMBps = 100000 // 100 GB/s typical for modern Xeon
-	} else {
-		info.MaxMemoryBandwidthMBps = 50000  // 50 GB/s typical for consumer CPUs
-	}
 	
 	return info, nil
 }
@@ -165,7 +157,6 @@ func NewInfluxDBClient(config config.DatabaseConfig) (*InfluxDBClient, error) {
 	
 	client := influxdb2.NewClient(config.Host, config.Password)
 	
-	// Test connection
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	
@@ -335,6 +326,7 @@ func CollectBenchmarkMetadata(benchmarkID int, config *config.BenchmarkConfig, c
 		totalSteps += len(steps)
 		
 		// Count measurements (each step with data counts as multiple measurements)
+		// TODO: We should use sizeof()
 		for _, step := range steps {
 			if step != nil {
 				measurements := 0
@@ -362,8 +354,7 @@ func CollectBenchmarkMetadata(benchmarkID int, config *config.BenchmarkConfig, c
 		avgFrequency = totalFreq / len(config.Containers)
 	}
 
-	// Estimate data size (rough calculation)
-	// Each measurement is approximately 16 bytes (8 bytes timestamp + 8 bytes value)
+	// Estimate data size
 	estimatedDataSize := int64(totalMeasurements * 16)
 
 	metadata := &BenchmarkMetadata{
@@ -376,9 +367,9 @@ func CollectBenchmarkMetadata(benchmarkID int, config *config.BenchmarkConfig, c
 		TotalContainers:        len(config.Containers),
 		DriverVersion:          driverVersion,
 		UsedScheduler:          config.Benchmark.Scheduler.Implementation,
-		SchedulerVersion:       "1.0.0", // Default scheduler version
+		SchedulerVersion:       "1.0.0", 
 		Hostname:               hostConfig.Hostname,
-		ExecutionHost:          hostConfig.Hostname, // Same as hostname for now
+		ExecutionHost:          hostConfig.Hostname, 
 		OSInfo:                 hostConfig.OSInfo,
 		KernelVersion:          hostConfig.KernelVersion,
 		CPUVendor:              hostConfig.CPUVendor,
@@ -530,14 +521,14 @@ func (idb *InfluxDBClient) createFields(step *dataframe.SamplingStep, stepNumber
 	return fields
 }
 
-// createFieldsFromMetricStep creates InfluxDB fields from a processed MetricStep
+//  creates InfluxDB fields from a processed MetricStep
 func (idb *InfluxDBClient) createFieldsFromMetricStep(step *datahandeling.MetricStep) map[string]interface{} {
 	fields := make(map[string]interface{})
 
 	// Add step number
 	fields["step_number"] = step.StepNumber
 
-	// Add relative time (new derived field)
+	// Add relative time 
 	fields["relative_time"] = step.RelativeTime
 
 	// Add Perf metrics

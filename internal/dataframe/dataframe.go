@@ -61,27 +61,17 @@ type DockerMetrics struct {
 }
 
 type RDTMetrics struct {
-	// L3 Cache Monitoring
-	L3CacheOccupancy     *uint64  `json:"l3_cache_occupancy,omitempty"`     // L3 cache occupancy in bytes
+	L3CacheOccupancy     *uint64  `json:"l3_cache_occupancy,omitempty"`     
+	MemoryBandwidthTotal *uint64  `json:"memory_bandwidth_total,omitempty"` 
+	MemoryBandwidthLocal *uint64  `json:"memory_bandwidth_local,omitempty"` 
+	RDTClassName         *string `json:"rdt_class_name,omitempty"`         
+	MonGroupName         *string `json:"mon_group_name,omitempty"`         
+	L3CacheAllocation    *uint64  `json:"l3_cache_allocation,omitempty"`    
+	L3CacheAllocationPct *float64 `json:"l3_cache_allocation_pct,omitempty"` 
+	MBAThrottle          *uint64  `json:"mba_throttle,omitempty"`           
 	
-	// Memory Bandwidth Monitoring
-	MemoryBandwidthTotal *uint64  `json:"memory_bandwidth_total,omitempty"` // Total memory bandwidth in bytes/sec
-	MemoryBandwidthLocal *uint64  `json:"memory_bandwidth_local,omitempty"` // Local memory bandwidth in bytes/sec
-	
-	// RDT Class Information
-	RDTClassName         *string `json:"rdt_class_name,omitempty"`         // Name of the RDT class/CLOS group
-	MonGroupName         *string `json:"mon_group_name,omitempty"`         // Name of the monitoring group
-	
-	// Cache Allocation Information (if available)
-	L3CacheAllocation    *uint64  `json:"l3_cache_allocation,omitempty"`    // Allocated L3 cache ways/percentage
-	L3CacheAllocationPct *float64 `json:"l3_cache_allocation_pct,omitempty"` // L3 cache allocation percentage
-	
-	// Memory Bandwidth Allocation (if available)
-	MBAThrottle          *uint64  `json:"mba_throttle,omitempty"`           // Memory bandwidth throttle percentage
-	
-	// Derived Metrics
-	CacheLLCUtilizationPercent   *float64 `json:"cache_llc_utilization_percent,omitempty"`   // LLC cache utilization percentage
-	BandwidthUtilizationPercent  *float64 `json:"bandwidth_utilization_percent,omitempty"`  // Bandwidth utilization percentage
+	CacheLLCUtilizationPercent   *float64 `json:"cache_llc_utilization_percent,omitempty"`   
+	BandwidthUtilizationPercent  *float64 `json:"bandwidth_utilization_percent,omitempty"`  
 }
 
 func NewDataFrames() *DataFrames {
@@ -144,7 +134,6 @@ func (cdf *ContainerDataFrame) AddOrMergeStep(stepNumber int, step *SamplingStep
 			existing.Timestamp = step.Timestamp
 		}
 	} else {
-		// Create new step
 		cdf.steps[stepNumber] = step
 	}
 }

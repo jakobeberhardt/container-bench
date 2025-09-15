@@ -17,7 +17,6 @@ type DockerCollector struct {
 	containerID    string
 	containerIndex int
 	
-	// Store previous stats for CPU percentage calculation
 	lastCPUStats   *types.CPUStats
 	lastTimestamp  time.Time
 	mutex          sync.Mutex
@@ -44,7 +43,8 @@ func NewDockerCollector(containerID string, containerIndex int) (*DockerCollecto
 func (dc *DockerCollector) Collect() *dataframe.DockerMetrics {
 	logger := logging.GetLogger()
 	
-	// Use one-shot stats collection for fresh data every call
+	// Use one-shot
+	// TODO: Use the actual context
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	
@@ -92,7 +92,7 @@ func (dc *DockerCollector) parseDockerStats(dockerStats *types.StatsJSON, curren
 		metrics.CPUUsageUser = &userUsage
 	}
 
-	// CPU percentage calculation using our own previous stats
+	// CPU percentage
 	if dc.lastCPUStats != nil && dockerStats.CPUStats.CPUUsage.TotalUsage > 0 {
 		cpuDelta := float64(dockerStats.CPUStats.CPUUsage.TotalUsage - dc.lastCPUStats.CPUUsage.TotalUsage)
 		systemDelta := float64(dockerStats.CPUStats.SystemUsage - dc.lastCPUStats.SystemUsage)
@@ -154,10 +154,10 @@ func (dc *DockerCollector) parseDockerStats(dockerStats *types.StatsJSON, curren
 			txBytes := netStats.TxBytes
 			metrics.NetworkTxBytes = &txBytes
 		}
-		break // Use first network interface
+		break // Uses first network interface
 	}
 
-	// Block I/O metrics - only bytes, not ops
+	// Block I/O metrics
 	for _, blkioStats := range dockerStats.BlkioStats.IoServiceBytesRecursive {
 		if blkioStats.Op == "Read" && blkioStats.Value > 0 {
 			readBytes := blkioStats.Value

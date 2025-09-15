@@ -24,7 +24,7 @@ default:
   index: 0
   image: nginx:alpine 
   core: 0
-  command: "while :; do dd if=/dev/zero of=/dev/null bs=1M count=100 2>/dev/null; done"
+  command: "sleep 1 &&  while :; do dd if=/dev/zero of=/dev/null bs=1M count=100 2>/dev/null; done"
   data:
     frequency: 100
     perf: true
@@ -35,7 +35,7 @@ install:
   index: 1
   image: nginx:alpine   
   core: 1
-  command: "apk add --no-cache firefox chromium libreoffice gimp inkscape blender thunderbird nodejs rust llvm17 texlive-full"
+  command: "sleep 1 &&  apk add --no-cache firefox chromium libreoffice gimp inkscape blender thunderbird nodejs rust llvm17 texlive-full"
   data:
     frequency: 100
     perf: true
@@ -46,7 +46,7 @@ sequential:
   index: 2
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 2
-  command: "/neighbor --duration 3600 --buffer-size 5MB --pattern sequential"
+  command: "sleep 1 &&  /neighbor --duration 3600 --buffer-size 5MB --pattern sequential"
   data:
     frequency: 100
     perf: true
@@ -57,7 +57,7 @@ random:
   index: 3
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 3
-  command: "/neighbor --duration 3600 --buffer-size 20MB --pattern random"
+  command: "sleep 1 && /neighbor --duration 3600 --buffer-size 20MB --pattern random"
   data:
     frequency: 100
     perf: true

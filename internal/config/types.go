@@ -111,14 +111,14 @@ func (c *BenchmarkConfig) GetContainersSorted() []ContainerConfig {
 	return containers
 }
 
-// GetContainerName returns the effective container name for a given container config
+// returns the effective container name for a given container config
 func (c *ContainerConfig) GetContainerName(benchmarkID int) string {
 	if c.Name != "" {
-		// Use explicit name if specified
+		// Use explicit name if specified in yml
 		return c.Name
 	}
 	if c.KeyName != "" {
-		// Use the YAML key name directly (e.g., default, sequential, stride, random)
+		// Use the YAML key name directly 
 		return c.KeyName
 	}
 	// Fallback to generated name if neither is available

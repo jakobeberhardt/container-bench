@@ -17,13 +17,11 @@ func init() {
 	})
 	logger.SetLevel(logrus.InfoLevel)
 	
-	// Initialize scheduler logger with distinct formatting
 	schedulerLogger = logrus.New()
 	schedulerLogger.SetOutput(os.Stdout)
 	schedulerLogger.SetFormatter(&logrus.TextFormatter{
 		FullTimestamp: true,
 		DisableColors: false,
-		// Add prefix to distinguish scheduler logs
 		FieldMap: logrus.FieldMap{
 			logrus.FieldKeyTime:  "time",
 			logrus.FieldKeyLevel: "level",
@@ -59,7 +57,6 @@ func SetSchedulerLogLevel(level string) error {
 	return nil
 }
 
-// SetFormatter sets the log formatter
 func SetFormatter(formatter logrus.Formatter) {
 	logger.SetFormatter(formatter)
 }

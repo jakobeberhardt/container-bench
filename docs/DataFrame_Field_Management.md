@@ -1,6 +1,6 @@
 # DataFrame Field Management Guide
 
-This document explains how to add, remove, or modify fields in the container-bench data pipeline, which consists of: **Collectors** → **DataFrames** → **Data Handler** → **Database**.
+This document explains how to add, remove, or modify fields in the container-bench data pipeline, which consists of: **Collectors** to **DataFrames** to **Data Handler** to**Database**.
 
 ## Architecture Overview
 
