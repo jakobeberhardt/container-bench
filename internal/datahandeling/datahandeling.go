@@ -7,7 +7,7 @@ import (
 	"container-bench/internal/dataframe"
 )
 
-// BenchmarkMetrics represents processed metrics ready for database storage
+// processed metrics ready for database storage
 type BenchmarkMetrics struct {
 	ContainerMetrics []ContainerMetrics `json:"container_metrics"`
 }
@@ -21,13 +21,12 @@ type ContainerMetrics struct {
 	Steps          []MetricStep  `json:"steps"`
 }
 
-// MetricStep represents processed metrics for a single sampling step
+// processed metrics for a single sampling step
 type MetricStep struct {
 	StepNumber   int       `json:"step_number"`
 	Timestamp    time.Time `json:"timestamp"`
 	RelativeTime int64     `json:"relative_time"` // Time from benchmark start in nanoseconds
 
-	// Perf metrics (original)
 	PerfCacheMisses          *uint64  `json:"perf_cache_misses,omitempty"`
 	PerfCacheReferences      *uint64  `json:"perf_cache_references,omitempty"`
 	PerfInstructions         *uint64  `json:"perf_instructions,omitempty"`
@@ -41,7 +40,6 @@ type MetricStep struct {
 	// Derived perf metrics
 	PerfBranchMissRate *float64 `json:"perf_branch_miss_rate,omitempty"`
 
-	// Docker metrics
 	DockerCPUUsageTotal      *uint64  `json:"docker_cpu_usage_total,omitempty"`
 	DockerCPUUsageKernel     *uint64  `json:"docker_cpu_usage_kernel,omitempty"`
 	DockerCPUUsageUser       *uint64  `json:"docker_cpu_usage_user,omitempty"`
@@ -58,7 +56,6 @@ type MetricStep struct {
 	DockerDiskReadBytes      *uint64  `json:"docker_disk_read_bytes,omitempty"`
 	DockerDiskWriteBytes     *uint64  `json:"docker_disk_write_bytes,omitempty"`
 
-	// RDT metrics
 	RDTClassName                      *string  `json:"rdt_class_name,omitempty"`
 	RDTMonGroupName                   *string  `json:"rdt_mon_group_name,omitempty"`
 	RDTL3CacheOccupancy              *uint64  `json:"rdt_l3_cache_occupancy,omitempty"`
@@ -71,15 +68,13 @@ type MetricStep struct {
 	RDTBandwidthUtilizationPercent   *float64 `json:"rdt_bandwidth_utilization_percent,omitempty"`
 }
 
-// DataHandler processes raw dataframes into structured benchmark metrics
+// process raw dataframes into structured benchmark metrics
 type DataHandler interface {
 	ProcessDataFrames(benchmarkID int, benchmarkConfig *config.BenchmarkConfig, dataframes *dataframe.DataFrames, startTime, endTime time.Time) (*BenchmarkMetrics, error)
 }
 
-// DefaultDataHandler implements the DataHandler interface
 type DefaultDataHandler struct{}
 
-// NewDefaultDataHandler creates a new DefaultDataHandler
 func NewDefaultDataHandler() *DefaultDataHandler {
 	return &DefaultDataHandler{}
 }
@@ -89,9 +84,6 @@ func NewDefaultDataHandler() *DefaultDataHandler {
 // 1. First pass: Find the earliest timestamp across all containers (actual profiling start)
 // 2. Second pass: Calculate relative times using this reference point
 func (h *DefaultDataHandler) ProcessDataFrames(benchmarkID int, benchmarkConfig *config.BenchmarkConfig, dataframes *dataframe.DataFrames, startTime, endTime time.Time) (*BenchmarkMetrics, error) {
-	// First pass: find the earliest timestamp across all data (actual profiling start)
-	// This ensures relative time starts from when data collection actually began,
-	// not from benchmark initialization time which includes setup overhead
 	var profilingStartTime time.Time
 	var hasData bool
 
@@ -143,17 +135,14 @@ func (h *DefaultDataHandler) ProcessDataFrames(benchmarkID int, benchmarkConfig 
 				RelativeTime: relativeTime,
 			}
 
-			// Process Perf metrics
 			if step.Perf != nil {
 				h.processPerfMetrics(step.Perf, &metricStep)
 			}
 
-			// Process Docker metrics  
 			if step.Docker != nil {
 				h.processDockerMetrics(step.Docker, &metricStep)
 			}
 
-			// Process RDT metrics
 			if step.RDT != nil {
 				h.processRDTMetrics(step.RDT, &metricStep)
 			}
@@ -175,9 +164,8 @@ func (h *DefaultDataHandler) ProcessDataFrames(benchmarkID int, benchmarkConfig 
 	}, nil
 }
 
-// processPerfMetrics copies perf metrics and calculates derived values
+// copy perf metrics and calculates derived values
 func (h *DefaultDataHandler) processPerfMetrics(perf *dataframe.PerfMetrics, step *MetricStep) {
-	// Copy original metrics
 	step.PerfCacheMisses = perf.CacheMisses
 	step.PerfCacheReferences = perf.CacheReferences
 	step.PerfInstructions = perf.Instructions
@@ -195,7 +183,6 @@ func (h *DefaultDataHandler) processPerfMetrics(perf *dataframe.PerfMetrics, ste
 	}
 }
 
-// processDockerMetrics copies docker metrics
 func (h *DefaultDataHandler) processDockerMetrics(docker *dataframe.DockerMetrics, step *MetricStep) {
 	step.DockerCPUUsageTotal = docker.CPUUsageTotal
 	step.DockerCPUUsageKernel = docker.CPUUsageKernel
@@ -230,7 +217,7 @@ func (h *DefaultDataHandler) processRDTMetrics(rdt *dataframe.RDTMetrics, step *
 	step.RDTBandwidthUtilizationPercent = rdt.BandwidthUtilizationPercent
 }
 
-// getContainerConfig returns the container configuration for a given index
+// returns the container configuration for a given index
 func (h *DefaultDataHandler) getContainerConfig(benchmarkConfig *config.BenchmarkConfig, containerIndex int) *config.ContainerConfig {
 	for _, container := range benchmarkConfig.Containers {
 		if container.Index == containerIndex {

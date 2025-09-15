@@ -16,7 +16,6 @@ type PerfCollector struct {
 	cgroupFd     int
 	cpuCore      int
 	
-	// Store previous values for delta calculation
 	lastValues   map[int]uint64
 	mutex        sync.Mutex
 }
@@ -39,11 +38,12 @@ func NewPerfCollector(pid int, cgroupPath string, cpuCore int) (*PerfCollector, 
 
 	collector := &PerfCollector{
 		cgroupFd:   int(cgroupFd.Fd()),
-		cpuCore:    cpuCore, // Use the specific CPU core assigned to the container
+		cpuCore:    cpuCore, // Use the specific CPU core assigned to the container TODO: Check if we can use all, e.g like -1 in case a container is migrated
 		lastValues: make(map[int]uint64),
 	}
 
 	// Define the hardware events we want to monitor using proper go-perf constants
+	// TODO: Extend these
 	hardwareCounters := []perf.HardwareCounter{
 		perf.CacheMisses,
 		perf.CacheReferences,
@@ -96,7 +96,6 @@ func (pc *PerfCollector) Collect() *dataframe.PerfMetrics {
 	for i, event := range pc.events {
 		count, err := event.ReadCount()
 		if err != nil {
-			// If we can't read this event, continue with others
 			continue
 		}
 
@@ -126,11 +125,9 @@ func (pc *PerfCollector) Collect() *dataframe.PerfMetrics {
 			}
 		}
 		
-		// Store current value for next delta calculation
 		pc.lastValues[i] = currentValue
 	}
 	
-	// If we couldn't read any events at all, return nil
 	if !hasAnyData {
 		return nil
 	}

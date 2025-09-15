@@ -19,7 +19,7 @@ type RDTCollector struct {
 	monGroupName string
 	className    string
 	rdtEnabled   bool
-	logger       *logrus.Logger
+	logger       *logrus.Logger // TODO: Perhaps remove this logger
 	hostConfig   *host.HostConfig
 	
 	// RDT monitoring group for this container
@@ -36,6 +36,7 @@ func NewRDTCollector(pid int) (*RDTCollector, error) {
 	}
 	
 	// Get host configuration
+	// TODO: Check the host info implementation
 	hostConfig, err := host.GetHostConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get host configuration: %v", err)
@@ -101,14 +102,14 @@ func NewRDTCollector(pid int) (*RDTCollector, error) {
 	}, nil
 }
 
-// findRDTClassForPID searches all RDT classes to find which one contains the given PID
+// searches all RDT classes to find which one contains the given PID
 func findRDTClassForPID(pidStr string) (rdt.CtrlGroup, string, error) {
 	classes := rdt.GetClasses()
 	
 	for _, class := range classes {
 		pids, err := class.GetPids()
 		if err != nil {
-			continue // Skip this class if we can't get PIDs
+			continue // Skip this class if we cant get PIDs
 		}
 		
 		// Check if our PID is in this class
@@ -122,9 +123,11 @@ func findRDTClassForPID(pidStr string) (rdt.CtrlGroup, string, error) {
 	return nil, "", fmt.Errorf("PID %s not found in any RDT class", pidStr)
 }
 
-// readAllocationFromResctrl reads allocation information directly from the resctrl filesystem
+// Reads allocation information directly from the resctrl filesystem
+// TODO: We should do this using gorestctl
 func (rc *RDTCollector) readAllocationFromResctrl() (uint64, float64, error) {
 	className := rc.ctrlGroup.Name()
+	
 	
 	// Construct path to schemata file for this class
 	var schemataPath string
@@ -153,7 +156,7 @@ func (rc *RDTCollector) readAllocationFromResctrl() (uint64, float64, error) {
 	return 0, 0, fmt.Errorf("no L3 allocation found in schemata")
 }
 
-// parseL3Allocation parses the L3 allocation line and calculates ways and percentage
+// parses the L3 allocation line and calculates ways and percentage
 func (rc *RDTCollector) parseL3Allocation(l3Line string) (uint64, float64, error) {
 	// Remove "L3:" prefix
 	allocStr := strings.TrimPrefix(l3Line, "L3:")
@@ -171,7 +174,7 @@ func (rc *RDTCollector) parseL3Allocation(l3Line string) (uint64, float64, error
 		return 0, 0, fmt.Errorf("invalid domain format: %s", firstDomain)
 	}
 	
-	// Parse the bitmask (hex)
+	// Parse the bitmask 
 	bitmask := strings.TrimSpace(parts[1])
 	maskValue, err := strconv.ParseUint(bitmask, 16, 64)
 	if err != nil {
@@ -182,6 +185,7 @@ func (rc *RDTCollector) parseL3Allocation(l3Line string) (uint64, float64, error
 	ways := countSetBits(maskValue)
 	
 	// Calculate percentage based on total cache ways
+	// TODO: check the host info 
 	var percentage float64
 	if rc.hostConfig != nil && rc.hostConfig.L3Cache.WaysPerCache > 0 {
 		percentage = float64(ways) / float64(rc.hostConfig.L3Cache.WaysPerCache) * 100.0
@@ -223,10 +227,8 @@ func (rc *RDTCollector) Collect() *dataframe.RDTMetrics {
 	monGroupName := rc.monGroupName
 	metrics.MonGroupName = &monGroupName
 	
-	// Calculate derived metrics using host configuration
 	rc.calculateDerivedMetrics(metrics)
 	
-	// Get allocation information if available
 	rc.getAllocationInfo(metrics)
 	
 	return metrics
@@ -240,7 +242,7 @@ func (rc *RDTCollector) processL3MonitoringData(monData *rdt.MonData, metrics *d
 			"cache_id": cacheID,
 		}).Trace("Processing L3 monitoring data")
 		
-		// L3 cache occupancy (usually in bytes)
+		// L3 cache occupancy 
 		if occupancy, exists := leafData["llc_occupancy"]; exists {
 			if metrics.L3CacheOccupancy == nil {
 				metrics.L3CacheOccupancy = &occupancy
@@ -249,7 +251,7 @@ func (rc *RDTCollector) processL3MonitoringData(monData *rdt.MonData, metrics *d
 			}
 		}
 		
-		// Memory bandwidth monitoring - total bytes
+		// Memory bandwidth monitoring 
 		if mbmTotal, exists := leafData["mbm_total_bytes"]; exists {
 			if metrics.MemoryBandwidthTotal == nil {
 				metrics.MemoryBandwidthTotal = &mbmTotal
@@ -258,7 +260,7 @@ func (rc *RDTCollector) processL3MonitoringData(monData *rdt.MonData, metrics *d
 			}
 		}
 		
-		// Memory bandwidth monitoring - local bytes
+		// Memory bandwidth monitoring 
 		if mbmLocal, exists := leafData["mbm_local_bytes"]; exists {
 			if metrics.MemoryBandwidthLocal == nil {
 				metrics.MemoryBandwidthLocal = &mbmLocal
@@ -269,7 +271,6 @@ func (rc *RDTCollector) processL3MonitoringData(monData *rdt.MonData, metrics *d
 	}
 }
 
-// calculateDerivedMetrics calculates derived metrics using host configuration
 func (rc *RDTCollector) calculateDerivedMetrics(metrics *dataframe.RDTMetrics) {
 	// Calculate L3 cache utilization percentage
 	if metrics.L3CacheOccupancy != nil && rc.hostConfig != nil {
@@ -289,7 +290,7 @@ func (rc *RDTCollector) calculateDerivedMetrics(metrics *dataframe.RDTMetrics) {
 	}
 }
 
-// getAllocationInfo gets allocation information for the container
+// gets allocation information for the container
 func (rc *RDTCollector) getAllocationInfo(metrics *dataframe.RDTMetrics) {
 	if rc.ctrlGroup == nil {
 		return
@@ -338,8 +339,7 @@ func (rc *RDTCollector) Close() {
 	if rc.rdtEnabled && rc.ctrlGroup != nil && rc.monGroupName != "" {
 		// Remove PID from monitoring group
 		if rc.monGroup != nil {
-			// Note: We don't remove the PID here as it might be handled by the scheduler
-			// or other components that need the PID in the group
+			// TODO: Make sure this happens after the scheduler finished 
 		}
 		
 		// Delete the monitoring group

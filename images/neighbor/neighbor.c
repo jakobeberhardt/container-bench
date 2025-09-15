@@ -58,7 +58,6 @@ void random_access(char *buffer, long size, int duration) {
         // Access multiple random locations per iteration for intensive memory pressure
         for (int burst = 0; burst < 10000 && running; burst++) {
             long offset = rand() % size;
-            // Both read and write to create memory pressure
             volatile char temp = buffer[offset];
             buffer[offset] = (char)((temp + offset) % 256);
             operations++;
@@ -79,7 +78,6 @@ void stride_access(char *buffer, long size, int duration) {
     while (running && (time(NULL) - start_time) < duration) {
         // Access multiple stride locations per iteration
         for (int burst = 0; burst < 1000 && running; burst++) {
-            // Both read and write to create memory pressure
             volatile char temp = buffer[pos];
             buffer[pos] = (char)((temp + pos) % 256);
             pos = (pos + stride) % size;

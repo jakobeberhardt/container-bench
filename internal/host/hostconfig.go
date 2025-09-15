@@ -15,22 +15,18 @@ import (
 )
 
 // HostConfig contains host system configuration information
-// This is initialized once at startup and used throughout the application
+// TODO: This should be done using a tested package as errors may propagate into all other components, e.g. scheduler assumption
 type HostConfig struct {
-	// CPU Information
 	CPUVendor       string
 	CPUModel        string
 	TotalCores      int
 	TotalThreads    int
 	NumSockets      int
 	
-	// Cache Information
 	L3Cache         L3CacheConfig
 	
-	// RDT Information
 	RDT             RDTConfig
 	
-	// System Information
 	Hostname        string
 	OSInfo          string
 	KernelVersion   string
@@ -40,9 +36,9 @@ type HostConfig struct {
 
 // L3CacheConfig contains L3 cache configuration
 type L3CacheConfig struct {
-	TotalSizeBytes     int64            // Total L3 cache size in bytes
-	TotalSizeKB        float64          // Total L3 cache size in KB
-	TotalSizeMB        float64          // Total L3 cache size in MB
+	TotalSizeBytes     int64            
+	TotalSizeKB        float64          
+	TotalSizeMB        float64          
 	CacheIDs           []uint64         // Available cache IDs
 	WaysPerCache       int              // Number of ways per cache
 	BytesPerWay        int64            // Bytes per cache way
@@ -64,8 +60,8 @@ var (
 	hostConfigOnce   sync.Once
 )
 
-// GetHostConfig returns the global host configuration
-// It initializes the configuration on first call
+
+// It initializes the configuration on first call so we can cache it
 func GetHostConfig() (*HostConfig, error) {
 	var err error
 	hostConfigOnce.Do(func() {
@@ -83,23 +79,19 @@ func initializeHostConfig() (*HostConfig, error) {
 		logger: logger,
 	}
 	
-	// Initialize basic system info
 	if err := config.initSystemInfo(); err != nil {
 		return nil, fmt.Errorf("failed to initialize system info: %v", err)
 	}
 	
-	// Initialize CPU info
 	if err := config.initCPUInfo(); err != nil {
 		return nil, fmt.Errorf("failed to initialize CPU info: %v", err)
 	}
 	
-	// Initialize L3 cache info
 	if err := config.initL3CacheInfo(); err != nil {
 		logger.WithError(err).Warn("Failed to initialize L3 cache info, using defaults")
 		config.setDefaultL3CacheInfo()
 	}
 	
-	// Initialize RDT info
 	if err := config.initRDTInfo(); err != nil {
 		logger.WithError(err).Warn("Failed to initialize RDT info, RDT features disabled")
 		config.RDT.Supported = false
@@ -116,14 +108,12 @@ func initializeHostConfig() (*HostConfig, error) {
 }
 
 func (hc *HostConfig) initSystemInfo() error {
-	// Get hostname
 	hostname, err := os.Hostname()
 	if err != nil {
 		return fmt.Errorf("failed to get hostname: %v", err)
 	}
 	hc.Hostname = hostname
 	
-	// Get OS info
 	hc.OSInfo = runtime.GOOS + "/" + runtime.GOARCH
 	
 	// Get kernel version from /proc/version
@@ -229,7 +219,8 @@ func (hc *HostConfig) initL3CacheInfo() error {
 	} else {
 		// Set default values
 		hc.L3Cache.CacheIDs = []uint64{0}
-		hc.L3Cache.WaysPerCache = 20  // Common default for modern CPUs
+		// TODO: Hotfix, we need to populate this
+		hc.L3Cache.WaysPerCache = 20  
 		hc.L3Cache.BytesPerWay = cacheSize / int64(hc.L3Cache.WaysPerCache)
 		hc.L3Cache.MaxBitmask = (1 << 20) - 1  // 20 ways default
 	}
@@ -241,14 +232,14 @@ func (hc *HostConfig) getL3CacheSizeFromSysfs() (int64, error) {
 	// Try multiple possible locations for L3 cache size
 	cachePaths := []string{
 		"/sys/devices/system/cpu/cpu0/cache/index3/size",
-		"/sys/devices/system/cpu/cpu0/cache/index2/size", // Some systems use index2 for L3
+		"/sys/devices/system/cpu/cpu0/cache/index2/size", 
 	}
 	
 	for _, path := range cachePaths {
 		if data, err := os.ReadFile(path); err == nil {
 			sizeStr := strings.TrimSpace(string(data))
 			
-			// Parse size (format like "8192K" or "8388608")
+			// Parse size 
 			if strings.HasSuffix(sizeStr, "K") {
 				if sizeKB, err := strconv.ParseInt(sizeStr[:len(sizeStr)-1], 10, 64); err == nil {
 					return sizeKB * 1024, nil
@@ -269,8 +260,7 @@ func (hc *HostConfig) getL3CacheSizeFromSysfs() (int64, error) {
 }
 
 func (hc *HostConfig) initRDTCacheInfo() {
-	// This would require parsing resctrl filesystem or using RDT APIs
-	// For now, set reasonable defaults based on cache size
+	// TODO: Hotfix, we need to populate this 
 	hc.L3Cache.CacheIDs = []uint64{0}
 	
 	// Estimate ways based on cache size (typical Intel configuration)
@@ -288,7 +278,7 @@ func (hc *HostConfig) initRDTCacheInfo() {
 }
 
 func (hc *HostConfig) setDefaultL3CacheInfo() {
-	// Set reasonable defaults based on CPU type
+	// TODO: We need to populate this
 	defaultSizeMB := int64(8) // 8MB default
 	
 	if strings.Contains(strings.ToLower(hc.CPUModel), "xeon") {
@@ -314,7 +304,6 @@ func (hc *HostConfig) initRDTInfo() error {
 		return nil
 	}
 	
-	// Get available classes
 	classes := rdt.GetClasses()
 	for _, class := range classes {
 		hc.RDT.AvailableClasses = append(hc.RDT.AvailableClasses, class.Name())
@@ -327,20 +316,20 @@ func (hc *HostConfig) initRDTInfo() error {
 		hc.RDT.MonitoringFeatures[string(resource)] = features
 	}
 	
-	// Check if allocation is supported (approximate)
+	// Check if allocation is supported 
 	hc.RDT.AllocationSupported = len(hc.RDT.AvailableClasses) > 0
 	
 	// Set default memory bandwidth based on CPU type
 	if strings.Contains(strings.ToLower(hc.CPUModel), "xeon") {
-		hc.RDT.MaxMemoryBandwidthMBps = 100000 // 100 GB/s
+		hc.RDT.MaxMemoryBandwidthMBps = 100000
 	} else {
-		hc.RDT.MaxMemoryBandwidthMBps = 50000  // 50 GB/s
+		hc.RDT.MaxMemoryBandwidthMBps = 50000 
 	}
 	
 	return nil
 }
 
-// GetL3CacheUtilizationPercent calculates L3 cache utilization percentage
+// calculates L3 cache utilization percentage
 func (hc *HostConfig) GetL3CacheUtilizationPercent(occupancyBytes uint64) float64 {
 	if hc.L3Cache.TotalSizeBytes == 0 {
 		return 0.0
@@ -348,7 +337,7 @@ func (hc *HostConfig) GetL3CacheUtilizationPercent(occupancyBytes uint64) float6
 	return float64(occupancyBytes) / float64(hc.L3Cache.TotalSizeBytes) * 100.0
 }
 
-// GetMemoryBandwidthUtilizationPercent calculates memory bandwidth utilization percentage
+// calculates memory bandwidth utilization percentage
 func (hc *HostConfig) GetMemoryBandwidthUtilizationPercent(bandwidthMBps float64) float64 {
 	if hc.RDT.MaxMemoryBandwidthMBps == 0 {
 		return 0.0
@@ -356,7 +345,7 @@ func (hc *HostConfig) GetMemoryBandwidthUtilizationPercent(bandwidthMBps float64
 	return bandwidthMBps / float64(hc.RDT.MaxMemoryBandwidthMBps) * 100.0
 }
 
-// GetFairL3Allocation calculates fair L3 cache allocation for a given number of containers
+// TODO: Move to scheduler common interface. fair L3 cache allocation for a given number of containers
 func (hc *HostConfig) GetFairL3Allocation(totalContainers int) (waysPerContainer int, bitmaskPerContainer uint64) {
 	if totalContainers == 0 || hc.L3Cache.WaysPerCache == 0 {
 		return 0, 0

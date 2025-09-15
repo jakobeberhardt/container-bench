@@ -55,7 +55,6 @@ func (cc *ContainerCollector) SetContainerInfo(pid int, cgroupPath string, cpuCo
 }
 
 func (cc *ContainerCollector) Start(ctx context.Context) error {
-	// Initialize collectors based on config
 	var err error
 	
 	if cc.config.EnablePerf {
@@ -89,7 +88,7 @@ func (cc *ContainerCollector) Start(ctx context.Context) error {
 		}
 	}
 	
-	// Start collection goroutine
+	// Start the collector process
 	go cc.collect(ctx)
 	
 	return nil
