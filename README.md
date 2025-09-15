@@ -13,7 +13,7 @@ A configurable and flexible tool for defining and profiling Docker-based contain
 - **Flexible Scheduling**: Scheduler interface for implementing resource management policies
 - **Database Integration**: Export time-series data to InfluxDB 2.7
 - **Metadata Collection**: Automatic collection of benchmark metadata for reporting
-- **YAML Configuration**: Human-readable benchmark definitions
+- **YAML Configuration**: Easily define and run benchmarks
 
 ## Installation
 
