@@ -15,6 +15,18 @@ A configurable and flexible tool for defining and profiling Docker-based contain
 - **Metadata Collection**: Automatic collection of benchmark metadata for reporting
 - **YAML Configuration**: Human-readable benchmark definitions
 
+## Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/jakobeberhardt/container-bench
+cd container-bench
+# optional: install go
+bash setup/install-go.sh
+# Build the application
+make build
+./container-bench help
+```
 ## Prerequisites
 
 - Go 1.23 or later
@@ -22,20 +34,6 @@ A configurable and flexible tool for defining and profiling Docker-based contain
 - Linux kernel with perf events support
 - Intel RDT support (optional, for cache allocation monitoring)
 - InfluxDB 2.7+ instance
-
-## Installation
-
-```bash
-# Clone the repository
-git clone <repository-url>
-cd container-bench
-
-# Build the application
-make build
-
-# Install system-wide (optional)
-make install
-```
 
 ## Configuration
 
@@ -131,7 +129,7 @@ Container-bench automatically collects comprehensive metadata for each benchmark
 - Data collection statistics (sampling steps, measurements, data size)
 - Original configuration file content
 
-Metadata is exported to the `benchmark_meta` table for generating detailed reports. See [METADATA.md](METADATA.md) for complete details.
+Metadata is exported to the `benchmark_meta` table for generating detailed reports. 
 
 ## Architecture
 
@@ -145,7 +143,7 @@ container-bench/
 │   ├── scheduler/         # Scheduler interface and implementations
 │   └── database/          # InfluxDB integration
 ├── examples/              # Example benchmark configurations
-└── host/                  # Host setup scripts
+└── setup/                  # Host setup scripts
 ```
 
 ### Key Components
@@ -175,15 +173,11 @@ for containerIndex, containerDF := range dataframes.GetAllContainers() {
 ## Development
 
 ### Building
-
+```bash
+sudo setup/install-go.sh
+```
 ```bash
 make build
-```
-
-### Testing
-
-```bash
-make test
 ```
 
 ### Formatting
@@ -195,12 +189,12 @@ make vet
 
 ## Host Setup
 
-The `host/` directory contains scripts for setting up Intel RDT and other system requirements:
+The `setup/` directory contains scripts for setting up Intel RDT and other system requirements:
 
 ```bash
-cd host
-sudo ./setup-intel-rdt.sh
-sudo ./fix-msr-access.sh
+cd setup/
+sudo install-collectors.sh # Installs perf / RDT
+sudo install-docker.sh 
 ```
 
 ## Database Schema
@@ -220,10 +214,3 @@ Data is exported to InfluxDB with the following structure:
 - **Tags**: `benchmark_id`
 - **Fields**: Comprehensive metadata including system info, configuration, and statistics
 
-## License
-
-[Add your license here]
-
-## Contributing
-
-[Add contribution guidelines here]
