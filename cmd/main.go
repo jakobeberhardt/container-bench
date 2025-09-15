@@ -36,17 +36,17 @@ import (
 
 const Version = "1.0.0"
 
-// isPrivateRegistryImage checks if an image belongs to a private registry
+// checks if an image belongs to a private registry
 func isPrivateRegistryImage(image string, registryHost string) bool {
 	if registryHost == "" {
 		return false
 	}
 	
-	// If image starts with the registry host, it's from the private registry
+	// If image starts with the registry host, its from the private registry
 	return strings.HasPrefix(image, registryHost)
 }
 
-// createRegistryAuth creates a base64-encoded auth string for Docker registry
+// creates a base64-encoded auth string for Docker registry
 func createRegistryAuth(registryConfig *config.RegistryConfig) (string, error) {
 	if registryConfig == nil {
 		return "", nil
@@ -86,7 +86,7 @@ type ContainerBench struct {
 }
 
 func (cb *ContainerBench) cleanup() {
-	// Emergency cleanup - only stop collectors
+	// Emergency cleanup, only stop collectors
 	// Containers cleanup is handled properly in cleanupContainers()
 	for _, collector := range cb.collectors {
 		if collector != nil {
@@ -142,7 +142,7 @@ func (cb *ContainerBench) stopAndRemoveContainer(ctx context.Context, containerI
 		// Container is running as expected - stop it
 		logger.WithField("container_id", containerID[:12]).Info("Stopping container")
 		
-		timeout := 10 // 10 seconds
+		timeout := 10
 		stopOptions := container.StopOptions{Timeout: &timeout}
 		if err := cb.dockerClient.ContainerStop(ctx, containerID, stopOptions); err != nil {
 			if !client.IsErrNotFound(err) {
@@ -221,7 +221,6 @@ func main() {
 	// Initialize logging
 	logger := logging.GetLogger()
 	
-	// Load environment variables from .env file if it exists
 	loadEnvironment()
 
 	var configFile string
@@ -398,16 +397,11 @@ func runBenchmark(configFile string) error {
 		}
 	}
 	
-	// RDT management is now handled by allocator - remove old RDT manager setup
 	
 	// Set host config for scheduler
 	bench.scheduler.SetHostConfig(bench.hostConfig)
 	
 	// NOTE: Scheduler Initialize() will be called after containers start to provide PIDs
-	// if err := bench.scheduler.Initialize(); err != nil {
-	//	logger.WithError(err).Error("Failed to initialize scheduler")
-	//	return fmt.Errorf("failed to initialize scheduler: %w", err)
-	// }
 
 	logger.WithFields(logrus.Fields{
 		"benchmark_id": bench.benchmarkID,
@@ -425,7 +419,7 @@ func runBenchmark(configFile string) error {
 	return nil
 }
 
-// executeBenchmark orchestrates the benchmark execution in proper order
+// orchestrates the benchmark execution in proper order
 func (cb *ContainerBench) executeBenchmark() error {
 	logger := logging.GetLogger()
 	
@@ -675,7 +669,7 @@ func (cb *ContainerBench) startContainers(ctx context.Context) error {
 	return nil
 }
 
-// initializeSchedulerWithPIDs initializes the scheduler with container information including PIDs
+// initializes the scheduler with container information including PIDs
 func (cb *ContainerBench) initializeSchedulerWithPIDs() error {
 	logger := logging.GetLogger()
 	
@@ -696,7 +690,7 @@ func (cb *ContainerBench) initializeSchedulerWithPIDs() error {
 		})
 	}
 	
-	// Create RDT allocator if RDT is supported
+	// Create RDT allocator if supported
 	var rdtAllocator scheduler.RDTAllocator
 	if cb.hostConfig.RDT.Supported && cb.config.Benchmark.Scheduler.RDT {
 		rdtAllocator = scheduler.NewDefaultRDTAllocator()
@@ -740,7 +734,7 @@ func (cb *ContainerBench) startCollectors(ctx context.Context) error {
 
 		collector := collectors.NewContainerCollector(containerConfig.Index, containerID, collectorConfig, containerDF)
 		
-		// Fix cgroup path - use the correct systemd cgroup structure
+		// Fix cgroup path and use the correct systemd cgroup structure
 		cgroupPath := fmt.Sprintf("/sys/fs/cgroup/system.slice/docker-%s.scope", containerID)
 		collector.SetContainerInfo(pid, cgroupPath, containerConfig.Core)
 		
@@ -770,6 +764,7 @@ func (cb *ContainerBench) startScheduler() error {
 	containers := cb.config.GetContainersSorted()
 
 	// Notify scheduler of container PIDs for cache-aware scheduling
+	// Make this the general case for RDT-enabled schedulers
 	if cacheAwareScheduler, ok := cb.scheduler.(*scheduler.CacheAwareScheduler); ok {
 		for _, containerConfig := range containers {
 			pid := cb.containerPIDs[containerConfig.Index]
@@ -835,8 +830,6 @@ func (cb *ContainerBench) stopCollectors() {
 	}
 }
 
-// Clean up RDT (handled in finalizeBenchmark)
-// Stop and cleanup containers handled by cleanupContainers
 
 // Write data to database (happens after all cleanup)
 func (cb *ContainerBench) writeDatabaseData() error {
