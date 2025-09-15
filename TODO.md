@@ -7,3 +7,4 @@
 - Add relative time
 - Handle docker timeouts using context
 - Preallocation of Dataframes according to sice, e.g. if sampling rate is different
+- Start collectors faster and earlier (we want to see the cache warming up)
