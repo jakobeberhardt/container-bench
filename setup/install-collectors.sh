@@ -1,6 +1,7 @@
 sudo apt -y install intel-cmt-cat
 
 sudo apt -y install linux-tools-common linux-tools-generic linux-tools-`uname -r`
+sudo sysctl kernel.perf_event_paranoid=-1
 
 modprobe msr
 umount /sys/fs/resctrl 2>/dev/null

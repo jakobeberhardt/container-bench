@@ -1,12 +1,12 @@
 benchmark:
-  name: Noisy neighbor
-  description: Test which starts more and more neigbors
+  name: Fair Noisy Neighbor
+  description: Test which starts more and more neigbors and uses the fair allocator
   max_t: 60
   log_level: info
   scheduler:
-    implementation: default
-    rdt: false
-    log_level: warn
+    implementation: fair
+    rdt: true
+    log_level: info
   data:
     db:
       host: ${INFLUXDB_HOST}

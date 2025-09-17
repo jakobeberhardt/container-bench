@@ -1,6 +1,6 @@
 benchmark:
-  name: Noisy neighbor
-  description: Test which starts more and more neigbors
+  name: Baseline
+  description: Test which starts a baseline, a victim and multiple neighbors
   max_t: 60
   log_level: info
   scheduler:
@@ -20,11 +20,22 @@ benchmark:
       username: ${DOCKER_REGISTRY_USERNAME}
       password: ${DOCKER_REGISTRY_PASSWORD}
 
-victim:
+baseline:
   index: 0
-  image: registry.jakob-eberhardt.de/neighbor:default
+  image: nginx:alpine
   core: 0
-  command: "/neighbor --duration 3600 --buffer-size 12MB --pattern random"
+  command: "sleep 2 && while :; do dd if=/dev/zero of=/dev/null bs=1M count=100 2>/dev/null; done"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+victim:
+  index: 1
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  core: 1
+  command: "sleep 2 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
   data:
     frequency: 100
     perf: true
@@ -32,10 +43,10 @@ victim:
     rdt: true
 
 first:
-  index: 1
+  index: 2
   image: registry.jakob-eberhardt.de/neighbor:default  
-  core: 1
-  command: "sleep 15 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
+  core: 2
+  command: "sleep 20 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
   data:
     frequency: 100
     perf: true
@@ -43,9 +54,9 @@ first:
     rdt: true
 
 second:
-  index: 2
+  index: 3
   image: registry.jakob-eberhardt.de/neighbor:default  
-  core: 2
+  core: 3
   command: "sleep 30 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
   data:
     frequency: 100
@@ -54,10 +65,10 @@ second:
     rdt: true
 
 third:
-  index: 3
+  index: 4
   image: registry.jakob-eberhardt.de/neighbor:default  
-  core: 3
-  command: "sleep 45 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
+  core: 4
+  command: "sleep 40 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
   data:
     frequency: 100
     perf: true
