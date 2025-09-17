@@ -9,8 +9,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// FairScheduler implements a scheduler that allocates proportional L3 cache resources
-// to all containers participating in the benchmark
 type FairScheduler struct {
 	name            string
 	version         string
@@ -21,10 +19,9 @@ type FairScheduler struct {
 	
 	// Container information provided by orchestration
 	containers       []ContainerInfo
-	containerClasses map[int]string  // container index -> RDT class name
+	containerClasses map[int]string  // container index to RDT class name
 }
 
-// NewFairScheduler creates a new fair scheduler instance
 func NewFairScheduler() *FairScheduler {
 	return &FairScheduler{
 		name:             "fair",
@@ -68,10 +65,6 @@ func (fs *FairScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) err
 		return fmt.Errorf("fair scheduler not initialized")
 	}
 	
-	// Fair scheduler uses allocator for resource allocation - no dynamic reallocation needed
-	// Container allocation was done during initialization
-	
-	// Log current container metrics for monitoring
 	containers := dataframes.GetAllContainers()
 	for containerIndex, containerDF := range containers {
 		latest := containerDF.GetLatestStep()
@@ -127,12 +120,12 @@ func (fs *FairScheduler) updateFairAllocations() error {
 		startWay := i * waysPerContainer
 		endWay := startWay + waysPerContainer - 1
 		
-		// Ensure we don't exceed available cache ways
+		// Ensure we do not exceed available cache ways
 		if endWay >= totalCacheWays {
 			endWay = totalCacheWays - 1
 		}
 		
-		// Create bit mask for this container's exclusive cache ways
+		// Create bit mask for this container exclusive cache ways
 		var bitMask uint32 = 0
 		for way := startWay; way <= endWay; way++ {
 			bitMask |= (1 << way)
@@ -144,8 +137,8 @@ func (fs *FairScheduler) updateFairAllocations() error {
 			MemBandwidthPercent float64
 			CacheBitMask       string
 		}{
-			L3CachePercent:    0, // Not used when bit mask is specified
-			MemBandwidthPercent: 0, // No memory bandwidth allocation for now
+			L3CachePercent:    0, 
+			MemBandwidthPercent: 0, 
 			CacheBitMask:       cacheBitMask,
 		}
 		
