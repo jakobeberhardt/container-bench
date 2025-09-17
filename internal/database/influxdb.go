@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"runtime"
 	"strconv"
@@ -145,11 +146,14 @@ func collectSystemInfo() (*SystemInfo, error) {
 }
 
 type InfluxDBClient struct {
-	client   influxdb2.Client
-	writeAPI api.WriteAPIBlocking
-	queryAPI api.QueryAPI
-	bucket   string
-	org      string
+	client     influxdb2.Client
+	writeAPI   api.WriteAPIBlocking
+	queryAPI   api.QueryAPI
+	bucket     string
+	org        string
+	config     config.DatabaseConfig
+	maxRetries int
+	batchSize  int
 }
 
 func NewInfluxDBClient(config config.DatabaseConfig) (*InfluxDBClient, error) {
@@ -185,51 +189,171 @@ func NewInfluxDBClient(config config.DatabaseConfig) (*InfluxDBClient, error) {
 	}).Info("Connected to InfluxDB")
 
 	return &InfluxDBClient{
-		client:   client,
-		writeAPI: writeAPI,
-		queryAPI: queryAPI,
-		bucket:   config.Name,
-		org:      config.Org,
+		client:     client,
+		writeAPI:   writeAPI,
+		queryAPI:   queryAPI,
+		bucket:     config.Name,
+		org:        config.Org,
+		config:     config,
+		maxRetries: 5,     
+		batchSize:  1000,  
 	}, nil
 }
 
 func (idb *InfluxDBClient) GetLastBenchmarkID() (int, error) {
-	ctx := context.Background()
+	logger := logging.GetLogger()
+	var result int
 	
-	query := fmt.Sprintf(`
-		from(bucket: "%s")
-		|> range(start: -300d)
-		|> filter(fn: (r) => r._measurement == "benchmark_metrics")
-		|> distinct(column: "benchmark_id")
-		|> map(fn: (r) => ({_value: int(v: r.benchmark_id)}))
-		|> max()
-		|> yield(name: "max_benchmark_id")
-	`, idb.bucket)
+	operation := func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		
+		query := fmt.Sprintf(`
+			from(bucket: "%s")
+			|> range(start: -300d)
+			|> filter(fn: (r) => r._measurement == "benchmark_metrics")
+			|> distinct(column: "benchmark_id")
+			|> map(fn: (r) => ({_value: int(v: r.benchmark_id)}))
+			|> max()
+			|> yield(name: "max_benchmark_id")
+		`, idb.bucket)
 
-	result, err := idb.queryAPI.Query(ctx, query)
-	if err != nil {
-		return 0, fmt.Errorf("failed to query last benchmark ID: %w", err)
-	}
-	defer result.Close()
+		queryResult, err := idb.queryAPI.Query(ctx, query)
+		if err != nil {
+			return fmt.Errorf("failed to query last benchmark ID: %w", err)
+		}
+		defer queryResult.Close()
 
-	maxID := 0
-	for result.Next() {
-		if result.Record().Value() != nil {
-			if id, ok := result.Record().Value().(int64); ok {
-				maxID = int(id)
+		maxID := 0
+		for queryResult.Next() {
+			if queryResult.Record().Value() != nil {
+				if id, ok := queryResult.Record().Value().(int64); ok {
+					maxID = int(id)
+				}
 			}
 		}
-	}
 
-	if result.Err() != nil {
-		return 0, fmt.Errorf("error reading query results: %w", result.Err())
-	}
+		if queryResult.Err() != nil {
+			return fmt.Errorf("error reading query results: %w", queryResult.Err())
+		}
 
-	return maxID, nil
+		result = maxID
+		return nil
+	}
+	
+	err := idb.retryWithBackoff(operation, "get_last_benchmark_id")
+	if err != nil {
+		logger.WithError(err).Warn("Failed to get last benchmark ID, defaulting to 0")
+		return 0, nil 
+	}
+	
+	logger.WithField("last_benchmark_id", result).Debug("Retrieved last benchmark ID")
+	return result, nil
+}
+
+// checks if the InfluxDB connection is still healthy
+func (idb *InfluxDBClient) validateConnection() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	
+	health, err := idb.client.Health(ctx)
+	if err != nil {
+		return fmt.Errorf("health check failed: %w", err)
+	}
+	
+	if health.Status != "pass" {
+		return fmt.Errorf("health check failed: status %s, message: %s", health.Status, health.Message)
+	}
+	
+	return nil
+}
+
+// recreates the InfluxDB client and APIs
+func (idb *InfluxDBClient) refreshConnection() error {
+	logger := logging.GetLogger()
+	logger.Info("Refreshing InfluxDB connection")
+	
+	if idb.client != nil {
+		idb.client.Close()
+	}
+	
+	idb.client = influxdb2.NewClient(idb.config.Host, idb.config.Password)
+	idb.writeAPI = idb.client.WriteAPIBlocking(idb.config.Org, idb.config.Name)
+	idb.queryAPI = idb.client.QueryAPI(idb.config.Org)
+	
+	return idb.validateConnection()
+}
+
+// executes a function with exponential backoff retry logic
+func (idb *InfluxDBClient) retryWithBackoff(operation func() error, operationName string) error {
+	logger := logging.GetLogger()
+	var lastErr error
+	
+	for attempt := 0; attempt < idb.maxRetries; attempt++ {
+		if attempt > 0 {
+			delay := time.Duration(math.Pow(2, float64(attempt))) * time.Second
+			logger.WithFields(logrus.Fields{
+				"operation": operationName,
+				"attempt":   attempt + 1,
+				"delay":     delay,
+			}).Warn("Retrying operation after delay")
+			time.Sleep(delay)
+		}
+		
+		if err := idb.validateConnection(); err != nil {
+			logger.WithField("operation", operationName).WithError(err).Warn("Connection validation failed, refreshing")
+			if refreshErr := idb.refreshConnection(); refreshErr != nil {
+				lastErr = fmt.Errorf("failed to refresh connection: %w", refreshErr)
+				continue
+			}
+		}
+		
+		if err := operation(); err != nil {
+			lastErr = err
+			logger.WithFields(logrus.Fields{
+				"operation": operationName,
+				"attempt":   attempt + 1,
+				"error":     err,
+			}).Warn("Operation failed")
+			continue
+		}
+		
+		// Success
+		if attempt > 0 {
+			logger.WithFields(logrus.Fields{
+				"operation": operationName,
+				"attempt":   attempt + 1,
+			}).Info("Operation succeeded after retry")
+		}
+		return nil
+	}
+	
+	return fmt.Errorf("operation %s failed after %d attempts: %w", operationName, idb.maxRetries, lastErr)
+}
+
+// writes a batch of points with timeout and retry logic
+func (idb *InfluxDBClient) writePointsBatch(points []*write.Point, batchNum, totalBatches int) error {
+	logger := logging.GetLogger()
+	
+	operation := func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second) // 60s timeout for writes
+		defer cancel()
+		
+		logger.WithFields(logrus.Fields{
+			"batch_num":     batchNum,
+			"total_batches": totalBatches,
+			"points_count":  len(points),
+		}).Debug("Writing batch to InfluxDB")
+		
+		return idb.writeAPI.WritePoint(ctx, points...)
+	}
+	
+	operationName := fmt.Sprintf("write_batch_%d_%d", batchNum, totalBatches)
+	return idb.retryWithBackoff(operation, operationName)
 }
 
 func (idb *InfluxDBClient) WriteBenchmarkMetrics(benchmarkID int, benchmarkConfig *config.BenchmarkConfig, metrics *datahandeling.BenchmarkMetrics, startTime, endTime time.Time) error {
-	ctx := context.Background()
+	logger := logging.GetLogger()
 
 	// Create points for all container data
 	var points []*write.Point
@@ -254,18 +378,47 @@ func (idb *InfluxDBClient) WriteBenchmarkMetrics(benchmarkID int, benchmarkConfi
 		}
 	}
 
-	// Write all points
-	if len(points) > 0 {
-		if err := idb.writeAPI.WritePoint(ctx, points...); err != nil {
-			return fmt.Errorf("failed to write data points: %w", err)
-		}
+	logger.WithField("total_points", len(points)).Info("Writing benchmark metrics to InfluxDB")
+
+	// Write points in batches if there are many
+	if len(points) == 0 {
+		logger.Info("No data points to write")
+		return nil
 	}
 
+	// Split into batches
+	totalBatches := (len(points) + idb.batchSize - 1) / idb.batchSize
+	logger.WithFields(logrus.Fields{
+		"total_points":  len(points),
+		"batch_size":    idb.batchSize,
+		"total_batches": totalBatches,
+	}).Info("Writing data in batches")
+
+	for i := 0; i < len(points); i += idb.batchSize {
+		end := i + idb.batchSize
+		if end > len(points) {
+			end = len(points)
+		}
+		
+		batch := points[i:end]
+		batchNum := (i / idb.batchSize) + 1
+		
+		if err := idb.writePointsBatch(batch, batchNum, totalBatches); err != nil {
+			return fmt.Errorf("failed to write batch %d/%d: %w", batchNum, totalBatches, err)
+		}
+		
+		logger.WithFields(logrus.Fields{
+			"batch_num":     batchNum,
+			"total_batches": totalBatches,
+		}).Debug("Batch written successfully")
+	}
+
+	logger.Info("All benchmark metrics written successfully")
 	return nil
 }
 
 func (idb *InfluxDBClient) WriteMetadata(metadata *BenchmarkMetadata) error {
-	ctx := context.Background()
+	logger := logging.GetLogger()
 
 	// Create point for metadata
 	point := influxdb2.NewPoint("benchmark_meta",
@@ -301,12 +454,17 @@ func (idb *InfluxDBClient) WriteMetadata(metadata *BenchmarkMetadata) error {
 		},
 		time.Now())
 
-	// Write metadata point
-	if err := idb.writeAPI.WritePoint(ctx, point); err != nil {
-		return fmt.Errorf("failed to write metadata: %w", err)
+	logger.WithField("benchmark_id", metadata.BenchmarkID).Info("Writing benchmark metadata to InfluxDB")
+
+	// Write metadata point with retry logic
+	operation := func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second) // 30s timeout for metadata
+		defer cancel()
+		
+		return idb.writeAPI.WritePoint(ctx, point)
 	}
 
-	return nil
+	return idb.retryWithBackoff(operation, "write_metadata")
 }
 
 func CollectBenchmarkMetadata(benchmarkID int, config *config.BenchmarkConfig, configContent string, dataframes *dataframe.DataFrames, startTime, endTime time.Time, driverVersion string) (*BenchmarkMetadata, error) {
