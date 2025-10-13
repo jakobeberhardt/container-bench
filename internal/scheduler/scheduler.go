@@ -5,6 +5,7 @@ import (
 	"container-bench/internal/dataframe"
 	"container-bench/internal/host"
 	"container-bench/internal/logging"
+
 	"github.com/sirupsen/logrus"
 )
 
@@ -21,7 +22,7 @@ type Scheduler interface {
 	Shutdown() error
 	GetVersion() string
 	SetLogLevel(level string) error
-	
+
 	// Host configuration for scheduler decisions
 	SetHostConfig(hostConfig *host.HostConfig)
 }
@@ -46,28 +47,29 @@ func NewDefaultScheduler() *DefaultScheduler {
 func (ds *DefaultScheduler) Initialize(allocator RDTAllocator, containers []ContainerInfo) error {
 	ds.rdtAllocator = allocator
 	ds.containers = containers
-	
+
 	ds.schedulerLogger.WithField("containers", len(containers)).Info("Default scheduler initialized")
 	return nil
 }
 
 func (ds *DefaultScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) error {
 	containers := dataframes.GetAllContainers()
-	
+
 	for containerIndex, containerDF := range containers {
 		latest := containerDF.GetLatestStep()
 		if latest == nil {
 			continue
 		}
-		
+
 		// Simple and lightweight: just print current CPU and cache miss rate
 		if latest.Perf != nil && latest.Perf.CacheMissRate != nil {
 			ds.schedulerLogger.WithFields(logrus.Fields{
-				"container":        containerIndex,
-				"cache_miss_rate": *latest.Perf.CacheMissRate,
+				"container":               containerIndex,
+				"cache_miss_rate":         *latest.Perf.CacheMissRate,
+				"stalled_cycles_frontend": latest.Perf.StalledCyclesFrontend,
 			}).Info("Cache miss rate")
 		}
-		
+
 		if latest.Docker != nil && latest.Docker.CPUUsagePercent != nil {
 			ds.schedulerLogger.WithFields(logrus.Fields{
 				"container":   containerIndex,
@@ -75,7 +77,7 @@ func (ds *DefaultScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) 
 			}).Info("CPU usage")
 		}
 	}
-	
+
 	return nil
 }
 
