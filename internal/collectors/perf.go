@@ -1,34 +1,34 @@
 package collectors
 
 import (
+	"container-bench/internal/dataframe"
+	"container-bench/internal/logging"
 	"fmt"
 	"os"
 	"sync"
 	"syscall"
 
-	"container-bench/internal/dataframe"
-	"container-bench/internal/logging"
-	"github.com/elastic/go-perf"
+	"github.com/jakobeberhardt/go-perf"
 )
 
 type PerfCollector struct {
-	events       []*perf.Event
-	cgroupFd     int
-	cpuCore      int
-	
-	lastValues   map[int]uint64
-	mutex        sync.Mutex
+	events   []*perf.Event
+	cgroupFd int
+	cpuCore  int
+
+	lastValues map[int]uint64
+	mutex      sync.Mutex
 }
 
 func NewPerfCollector(pid int, cgroupPath string, cpuCore int) (*PerfCollector, error) {
 	logger := logging.GetLogger()
-	
+
 	// Check if cgroup path exists
 	if _, err := os.Stat(cgroupPath); os.IsNotExist(err) {
 		logger.WithField("cgroup_path", cgroupPath).Error("Cgroup path does not exist")
 		return nil, err
 	}
-	
+
 	// Open cgroup file descriptor
 	cgroupFd, err := os.Open(cgroupPath)
 	if err != nil {
@@ -85,7 +85,7 @@ func (pc *PerfCollector) Collect() *dataframe.PerfMetrics {
 	if len(pc.events) == 0 {
 		return nil
 	}
-	
+
 	pc.mutex.Lock()
 	defer pc.mutex.Unlock()
 
@@ -100,12 +100,12 @@ func (pc *PerfCollector) Collect() *dataframe.PerfMetrics {
 		}
 
 		currentValue := uint64(count.Value)
-		
+
 		// Calculate delta from previous measurement
 		if lastValue, exists := pc.lastValues[i]; exists {
 			delta := currentValue - lastValue
 			hasAnyData = true // We have a measurement, even if delta is 0
-			
+
 			// Map to appropriate metric based on event index
 			switch i {
 			case 0: // CACHE_MISSES
@@ -124,10 +124,10 @@ func (pc *PerfCollector) Collect() *dataframe.PerfMetrics {
 				metrics.BusCycles = &delta
 			}
 		}
-		
+
 		pc.lastValues[i] = currentValue
 	}
-	
+
 	if !hasAnyData {
 		return nil
 	}
