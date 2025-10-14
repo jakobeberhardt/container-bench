@@ -57,6 +57,8 @@ github.com/influxdata/line-protocol v0.0.0-20200327222509-2487e7298839 h1:W9WBk7
 github.com/influxdata/line-protocol v0.0.0-20200327222509-2487e7298839/go.mod h1:xaLFMmpvUxqXtVkUJfg9QmT88cDaCJ3ZKgdZ78oO8Qo=
 github.com/intel/goresctrl v0.9.0 h1:IKI4ZrPTazLyFgdnWEkR9LS+DDATapOgoBtGxVMHePs=
 github.com/intel/goresctrl v0.9.0/go.mod h1:1S8GDqL46GuKb525bxNhIEEkhf4rhVcbSf9DuKhp7mw=
+github.com/jakobeberhardt/go-perf v0.0.0-20251014092304-b212b02c136d h1:s8m1ZQScijk4fM0Q7BlW/s8sDpsxW6indcd21b41Yzo=
+github.com/jakobeberhardt/go-perf v0.0.0-20251014092304-b212b02c136d/go.mod h1:OeOQmdUFlu7WvZiHnoZxTehjig1m8FiFB4zTAiLiLrs=
 github.com/joho/godotenv v1.5.1 h1:7eLL/+HRGLY0ldzfGMeQkb7vMd0as4CfYvUVzLqw0N0=
 github.com/joho/godotenv v1.5.1/go.mod h1:f4LDr5Voq0i2e/R5DDNOoa2zzDfwtkZa6DnEwAbqwq4=
 github.com/juju/gnuflag v0.0.0-20171113085948-2ce1bb71843d/go.mod h1:2PavIy+JPciBPrBUjwbNvtwB6RQlve+hkpll6QSNmOE=
