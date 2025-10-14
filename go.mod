@@ -9,7 +9,7 @@ require (
 	github.com/docker/go-connections v0.6.0
 	github.com/influxdata/influxdb-client-go/v2 v2.14.0
 	github.com/intel/goresctrl v0.9.0
-	github.com/jakobeberhardt/go-perf v0.0.0-20251014092304-b212b02c136d
+	github.com/jakobeberhardt/go-perf v0.0.0-20251014113637-3b8462f21889
 	github.com/joho/godotenv v1.5.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.10.1

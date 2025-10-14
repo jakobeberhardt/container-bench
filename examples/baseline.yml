@@ -34,8 +34,8 @@ baseline:
 victim:
   index: 1
   image: registry.jakob-eberhardt.de/neighbor:default  
-  core: 1
-  command: "sleep 2 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
+  core: 2
+  command: "sleep 2 && /neighbor --duration 3600 --buffer-size 20MB --pattern random"
   data:
     frequency: 100
     perf: true
@@ -45,8 +45,8 @@ victim:
 first:
   index: 2
   image: registry.jakob-eberhardt.de/neighbor:default  
-  core: 2
-  command: "sleep 20 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
+  core: 4
+  command: "sleep 20 && /neighbor --duration 3600 --buffer-size 20MB --pattern random"
   data:
     frequency: 100
     perf: true
@@ -56,8 +56,8 @@ first:
 second:
   index: 3
   image: registry.jakob-eberhardt.de/neighbor:default  
-  core: 3
-  command: "sleep 30 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
+  core: 6
+  command: "sleep 30 && /neighbor --duration 3600 --buffer-size 20MB --pattern random"
   data:
     frequency: 100
     perf: true
@@ -67,8 +67,8 @@ second:
 third:
   index: 4
   image: registry.jakob-eberhardt.de/neighbor:default  
-  core: 4
-  command: "sleep 40 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
+  core: 8
+  command: "sleep 40 && /neighbor --duration 3600 --buffer-size 20MB --pattern random"
   data:
     frequency: 100
     perf: true

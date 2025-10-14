@@ -15,7 +15,7 @@ import (
 	"container-bench/internal/datahandeling"
 	"container-bench/internal/host"
 	"container-bench/internal/logging"
-	
+
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/influxdata/influxdb-client-go/v2/api"
 	"github.com/influxdata/influxdb-client-go/v2/api/write"
@@ -36,8 +36,8 @@ type BenchmarkMetadata struct {
 	BenchmarkName          string `json:"benchmark_name"`
 	Description            string `json:"description"`
 	DurationSeconds        int64  `json:"duration_seconds"`
-	BenchmarkStarted       string `json:"benchmark_started"`       
-	BenchmarkFinished      string `json:"benchmark_finished"`      
+	BenchmarkStarted       string `json:"benchmark_started"`
+	BenchmarkFinished      string `json:"benchmark_finished"`
 	TotalContainers        int    `json:"total_containers"`
 	DriverVersion          string `json:"driver_version"`
 	UsedScheduler          string `json:"used_scheduler"`
@@ -77,15 +77,15 @@ type SystemInfo struct {
 // TODO: We should use the hostconfig here for consistency
 func collectSystemInfo() (*SystemInfo, error) {
 	info := &SystemInfo{}
-	
+
 	hostname, err := os.Hostname()
 	if err != nil {
 		hostname = "unknown"
 	}
 	info.Hostname = hostname
-	
+
 	info.OSInfo = runtime.GOOS + "/" + runtime.GOARCH
-	
+
 	// Get kernel version from /proc/version
 	if data, err := os.ReadFile("/proc/version"); err == nil {
 		parts := strings.Fields(string(data))
@@ -96,7 +96,7 @@ func collectSystemInfo() (*SystemInfo, error) {
 	if info.KernelVersion == "" {
 		info.KernelVersion = "unknown"
 	}
-	
+
 	// Get CPU info from /proc/cpuinfo
 	if data, err := os.ReadFile("/proc/cpuinfo"); err == nil {
 		lines := strings.Split(string(data), "\n")
@@ -114,7 +114,7 @@ func collectSystemInfo() (*SystemInfo, error) {
 			}
 		}
 	}
-	
+
 	// Set defaults if not found
 	if info.CPUVendor == "" {
 		info.CPUVendor = "unknown"
@@ -122,11 +122,11 @@ func collectSystemInfo() (*SystemInfo, error) {
 	if info.CPUModel == "" {
 		info.CPUModel = "unknown"
 	}
-	
+
 	// Get CPU core/thread count
 	info.CPUCores = runtime.NumCPU()
 	info.CPUThreads = runtime.NumCPU()
-	
+
 	// Try to collect L3 cache size from /sys/devices/system/cpu/cpu0/cache/index3/size
 	if data, err := os.ReadFile("/sys/devices/system/cpu/cpu0/cache/index3/size"); err == nil {
 		sizeStr := strings.TrimSpace(string(data))
@@ -140,8 +140,7 @@ func collectSystemInfo() (*SystemInfo, error) {
 			}
 		}
 	}
-	
-	
+
 	return info, nil
 }
 
@@ -158,18 +157,18 @@ type InfluxDBClient struct {
 
 func NewInfluxDBClient(config config.DatabaseConfig) (*InfluxDBClient, error) {
 	logger := logging.GetLogger()
-	
+
 	client := influxdb2.NewClient(config.Host, config.Password)
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	
+
 	health, err := client.Health(ctx)
 	if err != nil {
 		logger.WithField("host", config.Host).WithError(err).Error("Failed to connect to InfluxDB")
 		return nil, err
 	}
-	
+
 	if health.Status != "pass" {
 		logger.WithFields(logrus.Fields{
 			"host":    config.Host,
@@ -195,19 +194,19 @@ func NewInfluxDBClient(config config.DatabaseConfig) (*InfluxDBClient, error) {
 		bucket:     config.Name,
 		org:        config.Org,
 		config:     config,
-		maxRetries: 5,     
-		batchSize:  1000,  
+		maxRetries: 5,
+		batchSize:  1000,
 	}, nil
 }
 
 func (idb *InfluxDBClient) GetLastBenchmarkID() (int, error) {
 	logger := logging.GetLogger()
 	var result int
-	
+
 	operation := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		
+
 		query := fmt.Sprintf(`
 			from(bucket: "%s")
 			|> range(start: -300d)
@@ -240,13 +239,13 @@ func (idb *InfluxDBClient) GetLastBenchmarkID() (int, error) {
 		result = maxID
 		return nil
 	}
-	
+
 	err := idb.retryWithBackoff(operation, "get_last_benchmark_id")
 	if err != nil {
 		logger.WithError(err).Warn("Failed to get last benchmark ID, defaulting to 0")
-		return 0, nil 
+		return 0, nil
 	}
-	
+
 	logger.WithField("last_benchmark_id", result).Debug("Retrieved last benchmark ID")
 	return result, nil
 }
@@ -255,16 +254,16 @@ func (idb *InfluxDBClient) GetLastBenchmarkID() (int, error) {
 func (idb *InfluxDBClient) validateConnection() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	
+
 	health, err := idb.client.Health(ctx)
 	if err != nil {
 		return fmt.Errorf("health check failed: %w", err)
 	}
-	
+
 	if health.Status != "pass" {
 		return fmt.Errorf("health check failed: status %s, message: %s", health.Status, health.Message)
 	}
-	
+
 	return nil
 }
 
@@ -272,15 +271,15 @@ func (idb *InfluxDBClient) validateConnection() error {
 func (idb *InfluxDBClient) refreshConnection() error {
 	logger := logging.GetLogger()
 	logger.Info("Refreshing InfluxDB connection")
-	
+
 	if idb.client != nil {
 		idb.client.Close()
 	}
-	
+
 	idb.client = influxdb2.NewClient(idb.config.Host, idb.config.Password)
 	idb.writeAPI = idb.client.WriteAPIBlocking(idb.config.Org, idb.config.Name)
 	idb.queryAPI = idb.client.QueryAPI(idb.config.Org)
-	
+
 	return idb.validateConnection()
 }
 
@@ -288,7 +287,7 @@ func (idb *InfluxDBClient) refreshConnection() error {
 func (idb *InfluxDBClient) retryWithBackoff(operation func() error, operationName string) error {
 	logger := logging.GetLogger()
 	var lastErr error
-	
+
 	for attempt := 0; attempt < idb.maxRetries; attempt++ {
 		if attempt > 0 {
 			delay := time.Duration(math.Pow(2, float64(attempt))) * time.Second
@@ -299,7 +298,7 @@ func (idb *InfluxDBClient) retryWithBackoff(operation func() error, operationNam
 			}).Warn("Retrying operation after delay")
 			time.Sleep(delay)
 		}
-		
+
 		if err := idb.validateConnection(); err != nil {
 			logger.WithField("operation", operationName).WithError(err).Warn("Connection validation failed, refreshing")
 			if refreshErr := idb.refreshConnection(); refreshErr != nil {
@@ -307,7 +306,7 @@ func (idb *InfluxDBClient) retryWithBackoff(operation func() error, operationNam
 				continue
 			}
 		}
-		
+
 		if err := operation(); err != nil {
 			lastErr = err
 			logger.WithFields(logrus.Fields{
@@ -317,7 +316,7 @@ func (idb *InfluxDBClient) retryWithBackoff(operation func() error, operationNam
 			}).Warn("Operation failed")
 			continue
 		}
-		
+
 		// Success
 		if attempt > 0 {
 			logger.WithFields(logrus.Fields{
@@ -327,27 +326,27 @@ func (idb *InfluxDBClient) retryWithBackoff(operation func() error, operationNam
 		}
 		return nil
 	}
-	
+
 	return fmt.Errorf("operation %s failed after %d attempts: %w", operationName, idb.maxRetries, lastErr)
 }
 
 // writes a batch of points with timeout and retry logic
 func (idb *InfluxDBClient) writePointsBatch(points []*write.Point, batchNum, totalBatches int) error {
 	logger := logging.GetLogger()
-	
+
 	operation := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second) // 60s timeout for writes
 		defer cancel()
-		
+
 		logger.WithFields(logrus.Fields{
 			"batch_num":     batchNum,
 			"total_batches": totalBatches,
 			"points_count":  len(points),
 		}).Debug("Writing batch to InfluxDB")
-		
+
 		return idb.writeAPI.WritePoint(ctx, points...)
 	}
-	
+
 	operationName := fmt.Sprintf("write_batch_%d_%d", batchNum, totalBatches)
 	return idb.retryWithBackoff(operation, operationName)
 }
@@ -363,12 +362,12 @@ func (idb *InfluxDBClient) WriteBenchmarkMetrics(benchmarkID int, benchmarkConfi
 			// Create base point with common tags
 			point := influxdb2.NewPoint("benchmark_metrics",
 				map[string]string{
-					"benchmark_id":     fmt.Sprintf("%d", benchmarkID),
-					"container_index":  fmt.Sprintf("%d", containerMetrics.ContainerIndex),
-					"container_name":   containerMetrics.ContainerName,
-					"container_image":  containerMetrics.ContainerImage,
-					"container_core":   fmt.Sprintf("%d", containerMetrics.ContainerCore),
-					"benchmark_started": startTime.Format(time.RFC3339),
+					"benchmark_id":       fmt.Sprintf("%d", benchmarkID),
+					"container_index":    fmt.Sprintf("%d", containerMetrics.ContainerIndex),
+					"container_name":     containerMetrics.ContainerName,
+					"container_image":    containerMetrics.ContainerImage,
+					"container_core":     fmt.Sprintf("%d", containerMetrics.ContainerCore),
+					"benchmark_started":  startTime.Format(time.RFC3339),
 					"benchmark_finished": endTime.Format(time.RFC3339),
 				},
 				idb.createFieldsFromMetricStep(&step),
@@ -399,14 +398,14 @@ func (idb *InfluxDBClient) WriteBenchmarkMetrics(benchmarkID int, benchmarkConfi
 		if end > len(points) {
 			end = len(points)
 		}
-		
+
 		batch := points[i:end]
 		batchNum := (i / idb.batchSize) + 1
-		
+
 		if err := idb.writePointsBatch(batch, batchNum, totalBatches); err != nil {
 			return fmt.Errorf("failed to write batch %d/%d: %w", batchNum, totalBatches, err)
 		}
-		
+
 		logger.WithFields(logrus.Fields{
 			"batch_num":     batchNum,
 			"total_batches": totalBatches,
@@ -460,7 +459,6 @@ func (idb *InfluxDBClient) WriteMetadata(metadata *BenchmarkMetadata) error {
 	operation := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second) // 30s timeout for metadata
 		defer cancel()
-		
 		return idb.writeAPI.WritePoint(ctx, point)
 	}
 
@@ -477,12 +475,10 @@ func CollectBenchmarkMetadata(benchmarkID int, config *config.BenchmarkConfig, c
 	// Calculate metrics from dataframes
 	totalSteps := 0
 	totalMeasurements := 0
-	
 	containers := dataframes.GetAllContainers()
 	for _, containerDF := range containers {
 		steps := containerDF.GetAllSteps()
 		totalSteps += len(steps)
-		
 		// Count measurements (each step with data counts as multiple measurements)
 		// TODO: We should use sizeof()
 		for _, step := range steps {
@@ -525,9 +521,9 @@ func CollectBenchmarkMetadata(benchmarkID int, config *config.BenchmarkConfig, c
 		TotalContainers:        len(config.Containers),
 		DriverVersion:          driverVersion,
 		UsedScheduler:          config.Benchmark.Scheduler.Implementation,
-		SchedulerVersion:       "1.0.0", 
+		SchedulerVersion:       "1.0.0",
 		Hostname:               hostConfig.Hostname,
-		ExecutionHost:          hostConfig.Hostname, 
+		ExecutionHost:          hostConfig.Hostname,
 		OSInfo:                 hostConfig.OSInfo,
 		KernelVersion:          hostConfig.KernelVersion,
 		CPUVendor:              hostConfig.CPUVendor,
@@ -679,14 +675,14 @@ func (idb *InfluxDBClient) createFields(step *dataframe.SamplingStep, stepNumber
 	return fields
 }
 
-//  creates InfluxDB fields from a processed MetricStep
+// creates InfluxDB fields from a processed MetricStep
 func (idb *InfluxDBClient) createFieldsFromMetricStep(step *datahandeling.MetricStep) map[string]interface{} {
 	fields := make(map[string]interface{})
 
 	// Add step number
 	fields["step_number"] = step.StepNumber
 
-	// Add relative time 
+	// Add relative time
 	fields["relative_time"] = step.RelativeTime
 
 	// Add Perf metrics
@@ -711,6 +707,74 @@ func (idb *InfluxDBClient) createFieldsFromMetricStep(step *datahandeling.Metric
 	if step.PerfBusCycles != nil {
 		fields["perf_bus_cycles"] = *step.PerfBusCycles
 	}
+
+	if step.PerfL1DCacheLoadMisses != nil {
+		fields["perf_l1d_cache_load_misses"] = *step.PerfL1DCacheLoadMisses
+	}
+	if step.PerfL1DCacheLoads != nil {
+		fields["perf_l1d_cache_loads"] = *step.PerfL1DCacheLoads
+	}
+	if step.PerfL1DCacheStores != nil {
+		fields["perf_l1d_cache_stores"] = *step.PerfL1DCacheStores
+	}
+
+	if step.PerfL1ICacheLoadMisses != nil {
+		fields["perf_l1i_cache_load_misses"] = *step.PerfL1ICacheLoadMisses
+	}
+
+	if step.PerfLLCLoadMisses != nil {
+		fields["perf_llc_load_misses"] = *step.PerfLLCLoadMisses
+	}
+	if step.PerfLLCLoads != nil {
+		fields["perf_llc_loads"] = *step.PerfLLCLoads
+	}
+	if step.PerfLLCStoreMisses != nil {
+		fields["perf_llc_store_misses"] = *step.PerfLLCStoreMisses
+	}
+	if step.PerfLLCStores != nil {
+		fields["perf_llc_stores"] = *step.PerfLLCStores
+	}
+
+	// Branch Predictor Events
+	if step.PerfBranchLoadMisses != nil {
+		fields["perf_branch_load_misses"] = *step.PerfBranchLoadMisses
+	}
+	if step.PerfBranchLoads != nil {
+		fields["perf_branch_loads"] = *step.PerfBranchLoads
+	}
+
+	// Data Translation Lookaside Buffer Events
+	if step.PerfDTLBLoadMisses != nil {
+		fields["perf_dtlb_load_misses"] = *step.PerfDTLBLoadMisses
+	}
+	if step.PerfDTLBLoads != nil {
+		fields["perf_dtlb_loads"] = *step.PerfDTLBLoads
+	}
+	if step.PerfDTLBStoreMisses != nil {
+		fields["perf_dtlb_store_misses"] = *step.PerfDTLBStoreMisses
+	}
+	if step.PerfDTLBStores != nil {
+		fields["perf_dtlb_stores"] = *step.PerfDTLBStores
+	}
+
+	if step.PerfITLBLoadMisses != nil {
+		fields["perf_itlb_load_misses"] = *step.PerfITLBLoadMisses
+	}
+
+	if step.PerfNodeLoadMisses != nil {
+		fields["perf_node_load_misses"] = *step.PerfNodeLoadMisses
+	}
+	if step.PerfNodeLoads != nil {
+		fields["perf_node_loads"] = *step.PerfNodeLoads
+	}
+	if step.PerfNodeStoreMisses != nil {
+		fields["perf_node_store_misses"] = *step.PerfNodeStoreMisses
+	}
+	if step.PerfNodeStores != nil {
+		fields["perf_node_stores"] = *step.PerfNodeStores
+	}
+
+	// Basic Derived Metrics
 	if step.PerfCacheMissRate != nil {
 		fields["perf_cache_miss_rate"] = *step.PerfCacheMissRate
 	}
@@ -719,6 +783,17 @@ func (idb *InfluxDBClient) createFieldsFromMetricStep(step *datahandeling.Metric
 	}
 	if step.PerfInstructionsPerCycle != nil {
 		fields["perf_instructions_per_cycle"] = *step.PerfInstructionsPerCycle
+	}
+
+	// Advanced Derived Metrics
+	if step.PerfL1DCacheMissRate != nil {
+		fields["perf_l1d_cache_miss_rate"] = *step.PerfL1DCacheMissRate
+	}
+	if step.PerfLLCMissRate != nil {
+		fields["perf_llc_miss_rate"] = *step.PerfLLCMissRate
+	}
+	if step.PerfDTLBMissRate != nil {
+		fields["perf_dtlb_miss_rate"] = *step.PerfDTLBMissRate
 	}
 
 	// Add Docker metrics
