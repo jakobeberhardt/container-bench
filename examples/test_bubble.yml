@@ -1,7 +1,7 @@
 benchmark:
   name: Bubble
   description: Starts a bubble
-  max_t: 120
+  max_t: 240
   log_level: info
   scheduler:
     implementation: default
@@ -20,33 +20,33 @@ benchmark:
       username: ${DOCKER_REGISTRY_USERNAME}
       password: ${DOCKER_REGISTRY_PASSWORD}
 
-sequential:
-  index: 0
-  image: registry.jakob-eberhardt.de/neighbor:default  
-  core: 0
-  command: "sleep 0.5 &&  /neighbor --duration 3600 --buffer-size 5MB --pattern sequential"
-  data:
-    frequency: 1000
-    perf: true
-    docker: true
-    rdt: true
-
-# random:
+# sequential:
 #   index: 0
 #   image: registry.jakob-eberhardt.de/neighbor:default  
 #   core: 0
-#   command: "sleep 0.5 && /neighbor --duration 3600 --buffer-size 5MB --pattern random"
+#   command: "sleep 0.5 &&  /neighbor --duration 3600 --buffer-size 5MB --pattern sequential"
 #   data:
 #     frequency: 1000
 #     perf: true
 #     docker: true
 #     rdt: true
 
+random:
+  index: 0
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  core: 0
+  command: "sleep 0.5 && /neighbor --duration 3600 --buffer-size 5MB --pattern random"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
 bubble:
   index: 1
   image: registry.jakob-eberhardt.de/rdt4nn/bubble:latest
   core: 1-55
-  command: "/usr/local/bin/bubble --ramp-time 240 --min-size 1 --max-size 1000"
+  command: "sleep 0.5 && /usr/local/bin/bubble --ramp-time 240 --min-size 1 --max-size 1000"
   data:
     frequency: 1000
     perf: true
