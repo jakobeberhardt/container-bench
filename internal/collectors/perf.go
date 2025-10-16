@@ -8,28 +8,31 @@ import (
 
 	"container-bench/internal/dataframe"
 	"container-bench/internal/logging"
+
 	"github.com/elastic/go-perf"
 )
 
 type PerfCollector struct {
-	events       []*perf.Event
-	cgroupFd     int
-	cpuCore      int
-	
-	lastValues   map[int]uint64
-	mutex        sync.Mutex
+	events   []*perf.Event
+	cgroupFd int
+	cpus     []int // List of CPUs to monitor
+
+	lastValues map[int]uint64
+	mutex      sync.Mutex
 }
 
-func NewPerfCollector(pid int, cgroupPath string, cpuCore int) (*PerfCollector, error) {
+func NewPerfCollector(pid int, cgroupPath string, cpus []int) (*PerfCollector, error) {
 	logger := logging.GetLogger()
-	
-	// Check if cgroup path exists
+
+	if len(cpus) == 0 {
+		return nil, fmt.Errorf("no CPUs specified")
+	}
+
 	if _, err := os.Stat(cgroupPath); os.IsNotExist(err) {
 		logger.WithField("cgroup_path", cgroupPath).Error("Cgroup path does not exist")
 		return nil, err
 	}
-	
-	// Open cgroup file descriptor
+
 	cgroupFd, err := os.Open(cgroupPath)
 	if err != nil {
 		logger.WithField("cgroup_path", cgroupPath).WithError(err).Error("Failed to open cgroup path")
@@ -38,12 +41,11 @@ func NewPerfCollector(pid int, cgroupPath string, cpuCore int) (*PerfCollector, 
 
 	collector := &PerfCollector{
 		cgroupFd:   int(cgroupFd.Fd()),
-		cpuCore:    cpuCore, // Use the specific CPU core assigned to the container TODO: Check if we can use all, e.g like -1 in case a container is migrated
+		cpus:       cpus,
 		lastValues: make(map[int]uint64),
 	}
 
 	// Define the hardware events we want to monitor using proper go-perf constants
-	// TODO: Extend these
 	hardwareCounters := []perf.HardwareCounter{
 		perf.CacheMisses,
 		perf.CacheReferences,
@@ -54,20 +56,24 @@ func NewPerfCollector(pid int, cgroupPath string, cpuCore int) (*PerfCollector, 
 		perf.BusCycles,
 	}
 
-	// Create perf events
-	for _, counter := range hardwareCounters {
-		attr := &perf.Attr{}
-		counter.Configure(attr)
+	// Create perf events for each CPU and each counter
+	// TODO: What happens if we migrate a container to different cores?
+	for _, cpu := range cpus {
+		for _, counter := range hardwareCounters {
+			attr := &perf.Attr{}
+			counter.Configure(attr)
+			event, err := perf.OpenCGroup(attr, collector.cgroupFd, cpu, nil)
+			if err != nil {
+				collector.Close()
+				logger.WithFields(map[string]interface{}{
+					"counter": counter,
+					"cpu":     cpu,
+				}).WithError(err).Error("Failed to open perf event")
+				return nil, err
+			}
 
-		event, err := perf.OpenCGroup(attr, collector.cgroupFd, collector.cpuCore, nil)
-		if err != nil {
-			// Clean up previously opened events
-			collector.Close()
-			logger.WithField("counter", counter).WithError(err).Error("Failed to open perf event")
-			return nil, err
+			collector.events = append(collector.events, event)
 		}
-
-		collector.events = append(collector.events, event)
 	}
 
 	// Enable all events
@@ -85,14 +91,16 @@ func (pc *PerfCollector) Collect() *dataframe.PerfMetrics {
 	if len(pc.events) == 0 {
 		return nil
 	}
-	
+
 	pc.mutex.Lock()
 	defer pc.mutex.Unlock()
 
-	metrics := &dataframe.PerfMetrics{}
-	hasAnyData := false
+	numCounters := 7
 
-	// Read values from events and calculate deltas
+	// Aggregate counters across all CPUs
+	counterSums := make([]uint64, numCounters)
+
+	// Read values from all events and aggregate by counter type
 	for i, event := range pc.events {
 		count, err := event.ReadCount()
 		if err != nil {
@@ -100,36 +108,51 @@ func (pc *PerfCollector) Collect() *dataframe.PerfMetrics {
 		}
 
 		currentValue := uint64(count.Value)
-		
-		// Calculate delta from previous measurement
+
+		counterIndex := i % numCounters
+
 		if lastValue, exists := pc.lastValues[i]; exists {
 			delta := currentValue - lastValue
-			hasAnyData = true // We have a measurement, even if delta is 0
-			
-			// Map to appropriate metric based on event index
-			switch i {
-			case 0: // CACHE_MISSES
-				metrics.CacheMisses = &delta
-			case 1: // CACHE_REFERENCES
-				metrics.CacheReferences = &delta
-			case 2: // INSTRUCTIONS
-				metrics.Instructions = &delta
-			case 3: // CPU_CYCLES
-				metrics.Cycles = &delta
-			case 4: // BRANCH_INSTRUCTIONS
-				metrics.BranchInstructions = &delta
-			case 5: // BRANCH_MISSES
-				metrics.BranchMisses = &delta
-			case 6: // BUS_CYCLES
-				metrics.BusCycles = &delta
-			}
+			counterSums[counterIndex] += delta
 		}
-		
+
 		pc.lastValues[i] = currentValue
 	}
-	
+
+	hasAnyData := false
+	for _, sum := range counterSums {
+		if sum > 0 {
+			hasAnyData = true
+			break
+		}
+	}
+
 	if !hasAnyData {
 		return nil
+	}
+
+	metrics := &dataframe.PerfMetrics{}
+
+	if counterSums[0] > 0 {
+		metrics.CacheMisses = &counterSums[0]
+	}
+	if counterSums[1] > 0 {
+		metrics.CacheReferences = &counterSums[1]
+	}
+	if counterSums[2] > 0 {
+		metrics.Instructions = &counterSums[2]
+	}
+	if counterSums[3] > 0 {
+		metrics.Cycles = &counterSums[3]
+	}
+	if counterSums[4] > 0 {
+		metrics.BranchInstructions = &counterSums[4]
+	}
+	if counterSums[5] > 0 {
+		metrics.BranchMisses = &counterSums[5]
+	}
+	if counterSums[6] > 0 {
+		metrics.BusCycles = &counterSums[6]
 	}
 
 	// Calculate derived metrics only if we have the base data

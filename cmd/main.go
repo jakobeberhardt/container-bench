@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -41,7 +40,7 @@ func isPrivateRegistryImage(image string, registryHost string) bool {
 	if registryHost == "" {
 		return false
 	}
-	
+
 	// If image starts with the registry host, its from the private registry
 	return strings.HasPrefix(image, registryHost)
 }
@@ -51,18 +50,18 @@ func createRegistryAuth(registryConfig *config.RegistryConfig) (string, error) {
 	if registryConfig == nil {
 		return "", nil
 	}
-	
+
 	authConfig := registry.AuthConfig{
 		Username:      registryConfig.Username,
 		Password:      registryConfig.Password,
 		ServerAddress: registryConfig.Host,
 	}
-	
+
 	authJSON, err := json.Marshal(authConfig)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal auth config: %w", err)
 	}
-	
+
 	return base64.URLEncoding.EncodeToString(authJSON), nil
 }
 
@@ -79,7 +78,7 @@ type ContainerBench struct {
 	benchmarkID   int
 	startTime     time.Time
 	endTime       time.Time
-	
+
 	// Container tracking for clean orchestration
 	containerIDs  map[int]string // container index -> container ID
 	containerPIDs map[int]int    // container index -> process PID
@@ -98,7 +97,7 @@ func (cb *ContainerBench) cleanup() {
 func (cb *ContainerBench) cleanupContainers(ctx context.Context) {
 	logger := logging.GetLogger()
 	logger.Info("Stopping and cleaning up containers")
-	
+
 	for containerIndex, containerID := range cb.containerIDs {
 		if containerID != "" {
 			logger.WithFields(logrus.Fields{
@@ -112,7 +111,7 @@ func (cb *ContainerBench) cleanupContainers(ctx context.Context) {
 
 func (cb *ContainerBench) stopAndRemoveContainer(ctx context.Context, containerID string) {
 	logger := logging.GetLogger()
-	
+
 	// Check if container exists and get its state
 	containerInfo, err := cb.dockerClient.ContainerInspect(ctx, containerID)
 	if err != nil {
@@ -123,7 +122,7 @@ func (cb *ContainerBench) stopAndRemoveContainer(ctx context.Context, containerI
 		logger.WithField("container_id", containerID[:12]).WithError(err).Error("Failed to inspect container")
 		return
 	}
-	
+
 	// Check container state and warn if unexpectedly stopped
 	if !containerInfo.State.Running {
 		if containerInfo.State.Status == "exited" {
@@ -141,7 +140,7 @@ func (cb *ContainerBench) stopAndRemoveContainer(ctx context.Context, containerI
 	} else {
 		// Container is running as expected - stop it
 		logger.WithField("container_id", containerID[:12]).Info("Stopping container")
-		
+
 		timeout := 10
 		stopOptions := container.StopOptions{Timeout: &timeout}
 		if err := cb.dockerClient.ContainerStop(ctx, containerID, stopOptions); err != nil {
@@ -152,7 +151,7 @@ func (cb *ContainerBench) stopAndRemoveContainer(ctx context.Context, containerI
 			logger.WithField("container_id", containerID[:12]).Info("Container stopped")
 		}
 	}
-	
+
 	// Always try to remove container for cleanup
 	if err := cb.dockerClient.ContainerRemove(ctx, containerID, types.ContainerRemoveOptions{Force: true}); err != nil {
 		if !client.IsErrNotFound(err) {
@@ -165,7 +164,7 @@ func (cb *ContainerBench) stopAndRemoveContainer(ctx context.Context, containerI
 
 func loadEnvironment() {
 	logger := logging.GetLogger()
-	
+
 	// Try to load .env file from current directory
 	envFile := ".env"
 	if _, err := os.Stat(envFile); err == nil {
@@ -192,27 +191,27 @@ func loadEnvironment() {
 
 func validateEnvironment() error {
 	logger := logging.GetLogger()
-	
+
 	requiredVars := []string{
 		"INFLUXDB_HOST",
-		"INFLUXDB_USER", 
+		"INFLUXDB_USER",
 		"INFLUXDB_TOKEN",
 		"INFLUXDB_ORG",
 		"INFLUXDB_BUCKET",
 	}
-	
+
 	var missing []string
 	for _, varName := range requiredVars {
 		if os.Getenv(varName) == "" {
 			missing = append(missing, varName)
 		}
 	}
-	
+
 	if len(missing) > 0 {
 		logger.WithField("missing_vars", missing).Error("Missing required environment variables")
 		return fmt.Errorf("missing required environment variables: %v. Please ensure your .env file contains these variables", missing)
 	}
-	
+
 	logger.Debug("All required environment variables are present")
 	return nil
 }
@@ -220,7 +219,7 @@ func validateEnvironment() error {
 func main() {
 	// Initialize logging
 	logger := logging.GetLogger()
-	
+
 	loadEnvironment()
 
 	var configFile string
@@ -267,7 +266,7 @@ func main() {
 
 func validateConfig(configFile string) error {
 	logger := logging.GetLogger()
-	
+
 	_, err := config.LoadConfig(configFile)
 	if err != nil {
 		logger.WithField("config_file", configFile).WithError(err).Error("Configuration validation failed")
@@ -279,7 +278,7 @@ func validateConfig(configFile string) error {
 
 func runBenchmark(configFile string) error {
 	logger := logging.GetLogger()
-	
+
 	// Load configuration first to determine RDT requirements
 	bench := &ContainerBench{
 		dataframes:    dataframe.NewDataFrames(),
@@ -331,13 +330,13 @@ func runBenchmark(configFile string) error {
 		return hostErr
 	}
 	bench.hostConfig = hostConfig
-	
+
 	logger.WithFields(logrus.Fields{
-		"hostname":        hostConfig.Hostname,
-		"cpu_model":       hostConfig.CPUModel,
-		"total_cores":     hostConfig.TotalCores,
-		"l3_cache_mb":     hostConfig.L3Cache.TotalSizeMB,
-		"rdt_supported":   hostConfig.RDT.Supported,
+		"hostname":      hostConfig.Hostname,
+		"cpu_model":     hostConfig.CPUModel,
+		"total_cores":   hostConfig.TotalCores,
+		"l3_cache_mb":   hostConfig.L3Cache.TotalSizeMB,
+		"rdt_supported": hostConfig.RDT.Supported,
 	}).Info("Host configuration initialized")
 
 	// Initialize Docker client
@@ -372,7 +371,7 @@ func runBenchmark(configFile string) error {
 	if schedulerImpl == "" {
 		schedulerImpl = "default" // Default to default scheduler
 	}
-	
+
 	switch schedulerImpl {
 	case "cache-aware":
 		logger.Info("Using cache-aware scheduler")
@@ -387,7 +386,7 @@ func runBenchmark(configFile string) error {
 		logger.WithField("implementation", schedulerImpl).Warn("Unknown scheduler implementation, using default")
 		bench.scheduler = scheduler.NewDefaultScheduler()
 	}
-	
+
 	// Set scheduler log level if specified in config
 	if bench.config.Benchmark.Scheduler.LogLevel != "" {
 		if err := bench.scheduler.SetLogLevel(bench.config.Benchmark.Scheduler.LogLevel); err != nil {
@@ -396,16 +395,15 @@ func runBenchmark(configFile string) error {
 			logger.WithField("scheduler_log_level", bench.config.Benchmark.Scheduler.LogLevel).Debug("Scheduler log level set from configuration")
 		}
 	}
-	
-	
+
 	// Set host config for scheduler
 	bench.scheduler.SetHostConfig(bench.hostConfig)
-	
+
 	// NOTE: Scheduler Initialize() will be called after containers start to provide PIDs
 
 	logger.WithFields(logrus.Fields{
 		"benchmark_id": bench.benchmarkID,
-		"name":        bench.config.Benchmark.Name,
+		"name":         bench.config.Benchmark.Name,
 	}).Info("Starting benchmark")
 
 	// Execute benchmark with clean orchestration
@@ -422,7 +420,7 @@ func runBenchmark(configFile string) error {
 // orchestrates the benchmark execution in proper order
 func (cb *ContainerBench) executeBenchmark() error {
 	logger := logging.GetLogger()
-	
+
 	// Setup signal handling for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -435,43 +433,43 @@ func (cb *ContainerBench) executeBenchmark() error {
 		logger.Info("Received interrupt signal, shutting down")
 		cancel()
 	}()
-	
+
 	// Pull all container images
 	logger.Info("Pulling container images")
 	if err := cb.pullImages(ctx); err != nil {
 		return fmt.Errorf("failed to pull images: %w", err)
 	}
-	
+
 	// Create all containers (but don't start them)
 	logger.Info("Creating containers")
 	if err := cb.createContainers(ctx); err != nil {
 		return fmt.Errorf("failed to create containers: %w", err)
 	}
-	
+
 	// Start all containers
 	logger.Info("Starting containers")
 	if err := cb.startContainers(ctx); err != nil {
 		return fmt.Errorf("failed to start containers: %w", err)
 	}
-	
+
 	// Initialize scheduler now that we have container PIDs
 	logger.Info("Initializing scheduler with container PIDs")
 	if err := cb.initializeSchedulerWithPIDs(); err != nil {
 		return fmt.Errorf("failed to initialize scheduler: %w", err)
 	}
-	
+
 	// Start all collectors
 	logger.Info("Starting collectors")
 	if err := cb.startCollectors(ctx); err != nil {
 		return fmt.Errorf("failed to start collectors: %w", err)
 	}
-	
+
 	// Start scheduler
 	logger.Info("Starting scheduler")
 	if err := cb.startScheduler(); err != nil {
 		return fmt.Errorf("failed to start scheduler: %w", err)
 	}
-	
+
 	// Run benchmark (main execution loop)
 	logger.Info("Running benchmark")
 	if err := cb.runBenchmarkLoop(ctx); err != nil {
@@ -479,7 +477,7 @@ func (cb *ContainerBench) executeBenchmark() error {
 		cb.cleanupInOrder(ctx)
 		return fmt.Errorf("benchmark execution failed: %w", err)
 	}
-	
+
 	// Normal cleanup and data writing in correct order
 	return cb.cleanupInOrder(ctx)
 }
@@ -488,15 +486,15 @@ func (cb *ContainerBench) executeBenchmark() error {
 func (cb *ContainerBench) cleanupInOrder(ctx context.Context) error {
 	// Stop scheduler
 	cb.stopScheduler()
-	
+
 	// Stop collectors
 	cb.stopCollectors()
-	
+
 	// RDT cleanup happens automatically when collectors stop
-	
+
 	// Stop and cleanup containers
 	cb.cleanupContainers(ctx)
-	
+
 	// Write data to database (last step)
 	return cb.writeDatabaseData()
 }
@@ -513,10 +511,10 @@ func (cb *ContainerBench) pullImages(ctx context.Context) error {
 		}).Info("Pulling container image")
 
 		logger.WithField("image", containerConfig.Image).Debug("Pulling image")
-		
+
 		// Prepare pull options with authentication if needed
 		pullOptions := types.ImagePullOptions{}
-		
+
 		// Check if this image requires private registry authentication
 		registryConfig := cb.config.GetRegistryConfig()
 		if registryConfig != nil && isPrivateRegistryImage(containerConfig.Image, registryConfig.Host) {
@@ -531,14 +529,14 @@ func (cb *ContainerBench) pullImages(ctx context.Context) error {
 				"registry": registryConfig.Host,
 			}).Debug("Using private registry authentication")
 		}
-		
+
 		pullResp, err := cb.dockerClient.ImagePull(ctx, containerConfig.Image, pullOptions)
 		if err != nil {
 			logger.WithField("image", containerConfig.Image).WithError(err).Error("Failed to pull image")
 			return fmt.Errorf("failed to pull image %s: %w", containerConfig.Image, err)
 		}
 		defer pullResp.Close()
-		
+
 		// Read the pull response to completion (required for pull to finish)
 		_, err = io.Copy(io.Discard, pullResp)
 		if err != nil {
@@ -564,7 +562,7 @@ func (cb *ContainerBench) createContainers(ctx context.Context) error {
 
 		// Create container
 		containerName := containerConfig.GetContainerName(cb.benchmarkID)
-		
+
 		config := &container.Config{
 			Image: containerConfig.Image,
 		}
@@ -582,17 +580,17 @@ func (cb *ContainerBench) createContainers(ctx context.Context) error {
 				logger.WithField("port", containerConfig.Port).Error("Invalid port format")
 				return fmt.Errorf("invalid port format %s, expected format: host:container", containerConfig.Port)
 			}
-			
+
 			hostPort := parts[0]
 			containerPort := parts[1]
-			
+
 			// Create port binding
 			port, err := nat.NewPort("tcp", containerPort)
 			if err != nil {
 				logger.WithField("container_port", containerPort).WithError(err).Error("Invalid container port")
 				return fmt.Errorf("invalid container port %s: %w", containerPort, err)
 			}
-			
+
 			hostConfig.PortBindings = nat.PortMap{
 				port: []nat.PortBinding{
 					{
@@ -601,7 +599,7 @@ func (cb *ContainerBench) createContainers(ctx context.Context) error {
 					},
 				},
 			}
-			
+
 			// Also expose the port
 			if config.ExposedPorts == nil {
 				config.ExposedPorts = make(nat.PortSet)
@@ -610,7 +608,7 @@ func (cb *ContainerBench) createContainers(ctx context.Context) error {
 		}
 
 		// Set CPU affinity
-		hostConfig.CpusetCpus = strconv.Itoa(containerConfig.Core)
+		hostConfig.CpusetCpus = containerConfig.Core
 
 		resp, err := cb.dockerClient.ContainerCreate(ctx, config, hostConfig, nil, nil, containerName)
 		if err != nil {
@@ -637,7 +635,7 @@ func (cb *ContainerBench) startContainers(ctx context.Context) error {
 
 	for _, containerConfig := range containers {
 		containerID := cb.containerIDs[containerConfig.Index]
-		
+
 		// Start container
 		if err := cb.dockerClient.ContainerStart(ctx, containerID, container.StartOptions{}); err != nil {
 			logger.WithFields(logrus.Fields{
@@ -672,24 +670,24 @@ func (cb *ContainerBench) startContainers(ctx context.Context) error {
 // initializes the scheduler with container information including PIDs
 func (cb *ContainerBench) initializeSchedulerWithPIDs() error {
 	logger := logging.GetLogger()
-	
+
 	// Create container info list with PIDs
 	containers := cb.config.GetContainersSorted()
 	containerInfos := make([]scheduler.ContainerInfo, 0, len(containers))
-	
+
 	for _, containerConfig := range containers {
 		pid, exists := cb.containerPIDs[containerConfig.Index]
 		if !exists {
 			return fmt.Errorf("PID not found for container %d", containerConfig.Index)
 		}
-		
+
 		containerInfos = append(containerInfos, scheduler.ContainerInfo{
 			Index:  containerConfig.Index,
 			Config: &containerConfig,
 			PID:    pid,
 		})
 	}
-	
+
 	// Create RDT allocator if supported
 	var rdtAllocator scheduler.RDTAllocator
 	if cb.hostConfig.RDT.Supported && cb.config.Benchmark.Scheduler.RDT {
@@ -698,17 +696,17 @@ func (cb *ContainerBench) initializeSchedulerWithPIDs() error {
 	} else {
 		logger.Debug("RDT allocator not created (RDT not supported or not enabled)")
 	}
-	
+
 	// Initialize scheduler with allocator and container information
 	if err := cb.scheduler.Initialize(rdtAllocator, containerInfos); err != nil {
 		return fmt.Errorf("failed to initialize scheduler: %w", err)
 	}
-	
+
 	logger.WithFields(logrus.Fields{
-		"containers": len(containerInfos),
+		"containers":  len(containerInfos),
 		"rdt_enabled": rdtAllocator != nil,
 	}).Info("Scheduler initialized with container PIDs")
-	
+
 	return nil
 }
 
@@ -720,7 +718,7 @@ func (cb *ContainerBench) startCollectors(ctx context.Context) error {
 	for _, containerConfig := range containers {
 		containerID := cb.containerIDs[containerConfig.Index]
 		pid := cb.containerPIDs[containerConfig.Index]
-		
+
 		// Setup data frame for this container
 		containerDF := cb.dataframes.AddContainer(containerConfig.Index)
 
@@ -733,11 +731,11 @@ func (cb *ContainerBench) startCollectors(ctx context.Context) error {
 		}
 
 		collector := collectors.NewContainerCollector(containerConfig.Index, containerID, collectorConfig, containerDF)
-		
+
 		// Fix cgroup path and use the correct systemd cgroup structure
 		cgroupPath := fmt.Sprintf("/sys/fs/cgroup/system.slice/docker-%s.scope", containerID)
-		collector.SetContainerInfo(pid, cgroupPath, containerConfig.Core)
-		
+		collector.SetContainerInfo(pid, cgroupPath, containerConfig.CPUCores)
+
 		// Start collector
 		if err := collector.Start(ctx); err != nil {
 			logger.WithFields(logrus.Fields{
@@ -779,7 +777,7 @@ func (cb *ContainerBench) startScheduler() error {
 // Run benchmark main loop
 func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 	logger := logging.GetLogger()
-	
+
 	// Start scheduler updates
 	schedulerTicker := time.NewTicker(1 * time.Second)
 	defer schedulerTicker.Stop()
@@ -829,7 +827,6 @@ func (cb *ContainerBench) stopCollectors() {
 		}
 	}
 }
-
 
 // Write data to database (happens after all cleanup)
 func (cb *ContainerBench) writeDatabaseData() error {

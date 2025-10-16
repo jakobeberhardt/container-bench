@@ -1,0 +1,54 @@
+benchmark:
+  name: Bubble
+  description: Starts a bubble
+  max_t: 10
+  log_level: info
+  scheduler:
+    implementation: default
+    rdt: false
+    log_level: warn
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+bubble:
+  index: 0
+  image: registry.jakob-eberhardt.de/rdt4nn/bubble:latest
+  core: 0
+  command: "/usr/local/bin/bubble --ramp-time 120 --min-size 1 --max-size 1"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+bubble2:
+  index: 1
+  image: registry.jakob-eberhardt.de/rdt4nn/bubble:latest
+  core: 1,2
+  command: "/usr/local/bin/bubble --ramp-time 120 --min-size 1 --max-size 1"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+bubble4:
+  index: 2
+  image: registry.jakob-eberhardt.de/rdt4nn/bubble:latest
+  core: 9-22,24,25,26
+  command: "/usr/local/bin/bubble --ramp-time 120 --min-size 1 --max-size 1"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true

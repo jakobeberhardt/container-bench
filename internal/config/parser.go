@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"container-bench/internal/logging"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -17,7 +19,7 @@ func LoadConfig(filepath string) (*BenchmarkConfig, error) {
 
 func LoadConfigWithContent(filepath string) (*BenchmarkConfig, string, error) {
 	logger := logging.GetLogger()
-	
+
 	data, err := os.ReadFile(filepath)
 	if err != nil {
 		logger.WithField("filepath", filepath).WithError(err).Error("Failed to read config file")
@@ -36,8 +38,20 @@ func LoadConfigWithContent(filepath string) (*BenchmarkConfig, string, error) {
 	}
 
 	// Set KeyName field for each container based on the YAML key
+	// and parse CPU cores
 	for keyName, container := range config.Containers {
 		container.KeyName = keyName
+
+		// Parse CPU cores from the Core string
+		if container.Core != "" {
+			cpus, err := parseCPUSpec(container.Core)
+			if err != nil {
+				logger.WithField("container", keyName).WithField("core_spec", container.Core).WithError(err).Error("Failed to parse CPU specification")
+				return nil, "", fmt.Errorf("container %s: invalid CPU specification '%s': %w", keyName, container.Core, err)
+			}
+			container.CPUCores = cpus
+		}
+
 		config.Containers[keyName] = container
 	}
 
@@ -57,6 +71,64 @@ func expandEnvVars(content string) string {
 		}
 		return match
 	})
+}
+
+// CPU specification strings like "0", "0,2,4", or "0-3"
+func parseCPUSpec(spec string) ([]int, error) {
+	var cpus []int
+	seen := make(map[int]bool)
+
+	parts := strings.Split(spec, ",")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		if strings.Contains(part, "-") {
+			rangeParts := strings.Split(part, "-")
+			if len(rangeParts) != 2 {
+				return nil, fmt.Errorf("invalid CPU range: %s", part)
+			}
+
+			start, err := strconv.Atoi(strings.TrimSpace(rangeParts[0]))
+			if err != nil {
+				return nil, fmt.Errorf("invalid CPU range start: %s", rangeParts[0])
+			}
+
+			end, err := strconv.Atoi(strings.TrimSpace(rangeParts[1]))
+			if err != nil {
+				return nil, fmt.Errorf("invalid CPU range end: %s", rangeParts[1])
+			}
+
+			if start > end {
+				return nil, fmt.Errorf("invalid CPU range: start > end (%d > %d)", start, end)
+			}
+
+			for i := start; i <= end; i++ {
+				if !seen[i] {
+					cpus = append(cpus, i)
+					seen[i] = true
+				}
+			}
+		} else {
+			cpu, err := strconv.Atoi(part)
+			if err != nil {
+				return nil, fmt.Errorf("invalid CPU number: %s", part)
+			}
+
+			if !seen[cpu] {
+				cpus = append(cpus, cpu)
+				seen[cpu] = true
+			}
+		}
+	}
+
+	if len(cpus) == 0 {
+		return nil, fmt.Errorf("no CPUs specified")
+	}
+
+	return cpus, nil
 }
 
 func validateConfig(config *BenchmarkConfig) error {

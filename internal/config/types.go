@@ -7,18 +7,18 @@ import (
 )
 
 type BenchmarkConfig struct {
-	Benchmark  BenchmarkInfo             `yaml:"benchmark"`
+	Benchmark  BenchmarkInfo              `yaml:"benchmark"`
 	Containers map[string]ContainerConfig `yaml:",inline"`
 }
 
 type BenchmarkInfo struct {
-	Name        string            `yaml:"name"`
-	Description string            `yaml:"description"`
-	MaxT        int               `yaml:"max_t"`
-	LogLevel    string            `yaml:"log_level"`
-	Scheduler   SchedulerConfig   `yaml:"scheduler"`
-	Data        DataConfig        `yaml:"data"`
-	Docker      *DockerConfig     `yaml:"docker,omitempty"`
+	Name        string          `yaml:"name"`
+	Description string          `yaml:"description"`
+	MaxT        int             `yaml:"max_t"`
+	LogLevel    string          `yaml:"log_level"`
+	Scheduler   SchedulerConfig `yaml:"scheduler"`
+	Data        DataConfig      `yaml:"data"`
+	Docker      *DockerConfig   `yaml:"docker,omitempty"`
 }
 
 type DockerConfig struct {
@@ -33,8 +33,8 @@ type RegistryConfig struct {
 
 type SchedulerConfig struct {
 	Implementation string `yaml:"implementation"`
-	RDT           bool   `yaml:"rdt"`
-	LogLevel      string `yaml:"log_level,omitempty"`
+	RDT            bool   `yaml:"rdt"`
+	LogLevel       string `yaml:"log_level,omitempty"`
 }
 
 type DataConfig struct {
@@ -52,10 +52,11 @@ type DatabaseConfig struct {
 type ContainerConfig struct {
 	Index    int             `yaml:"index"`
 	Name     string          `yaml:"name,omitempty"`
-	KeyName  string          `yaml:"-"` // Store the YAML key name, not serialized
+	KeyName  string          `yaml:"-"`
 	Image    string          `yaml:"image"`
 	Port     string          `yaml:"port,omitempty"`
-	Core     int             `yaml:"core"`
+	Core     string          `yaml:"core"`
+	CPUCores []int           `yaml:"-"`
 	Command  string          `yaml:"command,omitempty"`
 	Data     CollectorConfig `yaml:"data"`
 }
@@ -76,12 +77,12 @@ func (c *BenchmarkConfig) GetRegistryConfig() *RegistryConfig {
 	if c.Benchmark.Docker != nil && c.Benchmark.Docker.Registry != nil {
 		return c.Benchmark.Docker.Registry
 	}
-	
+
 	// Otherwise, try to get from environment variables (legacy support)
 	host := os.Getenv("DOCKER_REGISTRY_HOST")
 	username := os.Getenv("DOCKER_REGISTRY_USERNAME")
 	password := os.Getenv("DOCKER_REGISTRY_PASSWORD")
-	
+
 	if host != "" && username != "" && password != "" {
 		return &RegistryConfig{
 			Host:     host,
@@ -89,7 +90,7 @@ func (c *BenchmarkConfig) GetRegistryConfig() *RegistryConfig {
 			Password: password,
 		}
 	}
-	
+
 	return nil
 }
 
@@ -98,7 +99,7 @@ func (c *BenchmarkConfig) GetContainersSorted() []ContainerConfig {
 	for _, container := range c.Containers {
 		containers = append(containers, container)
 	}
-	
+
 	// Sort by index
 	for i := 0; i < len(containers)-1; i++ {
 		for j := i + 1; j < len(containers); j++ {
@@ -107,7 +108,7 @@ func (c *BenchmarkConfig) GetContainersSorted() []ContainerConfig {
 			}
 		}
 	}
-	
+
 	return containers
 }
 
@@ -118,7 +119,7 @@ func (c *ContainerConfig) GetContainerName(benchmarkID int) string {
 		return c.Name
 	}
 	if c.KeyName != "" {
-		// Use the YAML key name directly 
+		// Use the YAML key name directly
 		return c.KeyName
 	}
 	// Fallback to generated name if neither is available

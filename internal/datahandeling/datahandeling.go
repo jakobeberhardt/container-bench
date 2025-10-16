@@ -14,11 +14,11 @@ type BenchmarkMetrics struct {
 
 // ContainerMetrics holds all metrics for a single container across all sampling steps
 type ContainerMetrics struct {
-	ContainerIndex int           `json:"container_index"`
-	ContainerName  string        `json:"container_name"`
-	ContainerImage string        `json:"container_image"`
-	ContainerCore  int           `json:"container_core"`
-	Steps          []MetricStep  `json:"steps"`
+	ContainerIndex int          `json:"container_index"`
+	ContainerName  string       `json:"container_name"`
+	ContainerImage string       `json:"container_image"`
+	ContainerCore  string       `json:"container_core"`
+	Steps          []MetricStep `json:"steps"`
 }
 
 // processed metrics for a single sampling step
@@ -56,16 +56,16 @@ type MetricStep struct {
 	DockerDiskReadBytes      *uint64  `json:"docker_disk_read_bytes,omitempty"`
 	DockerDiskWriteBytes     *uint64  `json:"docker_disk_write_bytes,omitempty"`
 
-	RDTClassName                      *string  `json:"rdt_class_name,omitempty"`
-	RDTMonGroupName                   *string  `json:"rdt_mon_group_name,omitempty"`
-	RDTL3CacheOccupancy              *uint64  `json:"rdt_l3_cache_occupancy,omitempty"`
-	RDTMemoryBandwidthTotal          *uint64  `json:"rdt_memory_bandwidth_total,omitempty"`
-	RDTMemoryBandwidthLocal          *uint64  `json:"rdt_memory_bandwidth_local,omitempty"`
-	RDTL3CacheAllocation             *uint64  `json:"rdt_l3_cache_allocation,omitempty"`
-	RDTL3CacheAllocationPct          *float64 `json:"rdt_l3_cache_allocation_pct,omitempty"`
-	RDTMBAThrottle                   *uint64  `json:"rdt_mba_throttle,omitempty"`
-	RDTCacheLLCUtilizationPercent    *float64 `json:"rdt_cache_llc_utilization_percent,omitempty"`
-	RDTBandwidthUtilizationPercent   *float64 `json:"rdt_bandwidth_utilization_percent,omitempty"`
+	RDTClassName                   *string  `json:"rdt_class_name,omitempty"`
+	RDTMonGroupName                *string  `json:"rdt_mon_group_name,omitempty"`
+	RDTL3CacheOccupancy            *uint64  `json:"rdt_l3_cache_occupancy,omitempty"`
+	RDTMemoryBandwidthTotal        *uint64  `json:"rdt_memory_bandwidth_total,omitempty"`
+	RDTMemoryBandwidthLocal        *uint64  `json:"rdt_memory_bandwidth_local,omitempty"`
+	RDTL3CacheAllocation           *uint64  `json:"rdt_l3_cache_allocation,omitempty"`
+	RDTL3CacheAllocationPct        *float64 `json:"rdt_l3_cache_allocation_pct,omitempty"`
+	RDTMBAThrottle                 *uint64  `json:"rdt_mba_throttle,omitempty"`
+	RDTCacheLLCUtilizationPercent  *float64 `json:"rdt_cache_llc_utilization_percent,omitempty"`
+	RDTBandwidthUtilizationPercent *float64 `json:"rdt_bandwidth_utilization_percent,omitempty"`
 }
 
 // process raw dataframes into structured benchmark metrics
@@ -211,7 +211,7 @@ func (h *DefaultDataHandler) processRDTMetrics(rdt *dataframe.RDTMetrics, step *
 	step.RDTL3CacheAllocation = rdt.L3CacheAllocation
 	step.RDTL3CacheAllocationPct = rdt.L3CacheAllocationPct
 	step.RDTMBAThrottle = rdt.MBAThrottle
-	
+
 	// Copy derived metrics from dataframe (calculated by collectors)
 	step.RDTCacheLLCUtilizationPercent = rdt.CacheLLCUtilizationPercent
 	step.RDTBandwidthUtilizationPercent = rdt.BandwidthUtilizationPercent
