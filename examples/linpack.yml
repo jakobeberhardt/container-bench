@@ -24,3 +24,23 @@ linpack:
     perf: true
     docker: true
     rdt: true
+
+linpack2:
+  index: 1
+  image: registry.jakob-eberhardt.de/rdt4nn/linpack:latest
+  core: 1,2
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+linpack4:
+  index: 2
+  image: registry.jakob-eberhardt.de/rdt4nn/linpack:latest
+  core: 3,4,5,6
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true

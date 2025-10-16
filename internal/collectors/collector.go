@@ -6,6 +6,7 @@ import (
 
 	"container-bench/internal/dataframe"
 	"container-bench/internal/logging"
+
 	"github.com/sirupsen/logrus"
 )
 
@@ -19,20 +20,20 @@ type ContainerCollector struct {
 	ContainerID    string
 	containerPID   int
 	cgroupPath     string
-	cpuCore        int
+	cpuCores       []int
 	config         CollectorConfig
 	dataFrame      *dataframe.ContainerDataFrame
-	
+
 	perfCollector   *PerfCollector
 	dockerCollector *DockerCollector
 	rdtCollector    *RDTCollector
-	
+
 	stopChan chan struct{}
 	stopped  bool
 }
 
 type CollectorConfig struct {
-	Frequency time.Duration
+	Frequency    time.Duration
 	EnablePerf   bool
 	EnableDocker bool
 	EnableRDT    bool
@@ -48,17 +49,17 @@ func NewContainerCollector(containerIndex int, containerID string, config Collec
 	}
 }
 
-func (cc *ContainerCollector) SetContainerInfo(pid int, cgroupPath string, cpuCore int) {
+func (cc *ContainerCollector) SetContainerInfo(pid int, cgroupPath string, cpuCores []int) {
 	cc.containerPID = pid
 	cc.cgroupPath = cgroupPath
-	cc.cpuCore = cpuCore
+	cc.cpuCores = cpuCores
 }
 
 func (cc *ContainerCollector) Start(ctx context.Context) error {
 	var err error
-	
+
 	if cc.config.EnablePerf {
-		cc.perfCollector, err = NewPerfCollector(cc.containerPID, cc.cgroupPath, cc.cpuCore)
+		cc.perfCollector, err = NewPerfCollector(cc.containerPID, cc.cgroupPath, cc.cpuCores)
 		if err != nil {
 			// Log warning but don't fail the entire collector
 			logger := logging.GetLogger()
@@ -68,14 +69,14 @@ func (cc *ContainerCollector) Start(ctx context.Context) error {
 			cc.perfCollector = nil
 		}
 	}
-	
+
 	if cc.config.EnableDocker {
 		cc.dockerCollector, err = NewDockerCollector(cc.ContainerID, cc.containerIndex)
 		if err != nil {
 			return err
 		}
 	}
-	
+
 	if cc.config.EnableRDT {
 		cc.rdtCollector, err = NewRDTCollector(cc.containerPID)
 		if err != nil {
@@ -87,19 +88,19 @@ func (cc *ContainerCollector) Start(ctx context.Context) error {
 			cc.rdtCollector = nil
 		}
 	}
-	
+
 	// Start the collector process
 	go cc.collect(ctx)
-	
+
 	return nil
 }
 
 func (cc *ContainerCollector) collect(ctx context.Context) {
 	ticker := time.NewTicker(cc.config.Frequency)
 	defer ticker.Stop()
-	
+
 	stepCounter := 0
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -110,20 +111,20 @@ func (cc *ContainerCollector) collect(ctx context.Context) {
 			step := &dataframe.SamplingStep{
 				Timestamp: time.Now(),
 			}
-			
+
 			// Collect metrics from all enabled collectors
 			if cc.perfCollector != nil {
 				step.Perf = cc.perfCollector.Collect()
 			}
-			
+
 			if cc.dockerCollector != nil {
 				step.Docker = cc.dockerCollector.Collect()
 			}
-			
+
 			if cc.rdtCollector != nil {
 				step.RDT = cc.rdtCollector.Collect()
 			}
-			
+
 			// Store in data frame
 			cc.dataFrame.AddStep(stepCounter, step)
 			stepCounter++
@@ -136,18 +137,18 @@ func (cc *ContainerCollector) Stop() error {
 		close(cc.stopChan)
 		cc.stopped = true
 	}
-	
+
 	if cc.perfCollector != nil {
 		cc.perfCollector.Close()
 	}
-	
+
 	if cc.dockerCollector != nil {
 		cc.dockerCollector.Close()
 	}
-	
+
 	if cc.rdtCollector != nil {
 		cc.rdtCollector.Close()
 	}
-	
+
 	return nil
 }
