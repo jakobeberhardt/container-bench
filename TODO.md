@@ -9,4 +9,4 @@
 - Preallocation of Dataframes according to sice, e.g. if sampling rate is different
 - Start collectors faster and earlier (we want to see the cache warming up)
 - Add support for container exit (e.g. when benchmark finished)
-- Make perf counters count all cores
+- ~~Make perf counters count all cores~~

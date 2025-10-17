@@ -1,7 +1,7 @@
 benchmark:
   name: Bubble
   description: Starts a bubble
-  max_t: 240
+  max_t: 360
   log_level: info
   scheduler:
     implementation: default
@@ -46,7 +46,7 @@ bubble:
   index: 1
   image: registry.jakob-eberhardt.de/rdt4nn/bubble:latest
   core: 1-55
-  command: "sleep 0.5 && /usr/local/bin/bubble --ramp-time 240 --min-size 1 --max-size 1000"
+  command: "sleep 0.5 && /usr/local/bin/bubble --ramp-time 360 --min-size 5 --max-size 7000"
   data:
     frequency: 1000
     perf: true
