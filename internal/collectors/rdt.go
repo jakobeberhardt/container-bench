@@ -239,7 +239,6 @@ func (rc *RDTCollector) syncCGroupPIDs() error {
 		return nil
 	}
 
-	// Add all PIDs to the monitoring group
 	if err := rc.monGroup.AddPids(pids...); err != nil {
 		return fmt.Errorf("failed to add PIDs to RDT monitoring group: %v", err)
 	}
