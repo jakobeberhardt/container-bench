@@ -27,6 +27,10 @@ type RDTCollector struct {
 	// RDT monitoring group for this container
 	monGroup  rdt.MonGroup
 	ctrlGroup rdt.CtrlGroup
+
+	lastBandwidthTotal uint64
+	lastBandwidthLocal uint64
+	firstCollection    bool
 }
 
 func NewRDTCollector(pid int, cgroupPath string) (*RDTCollector, error) {
@@ -86,16 +90,17 @@ func NewRDTCollector(pid int, cgroupPath string) (*RDTCollector, error) {
 	}).Debug("RDT monitoring initialized for container")
 
 	collector := &RDTCollector{
-		pid:          pid,
-		pidStr:       pidStr,
-		cgroupPath:   cgroupPath,
-		monGroupName: monGroupName,
-		className:    className,
-		rdtEnabled:   true,
-		logger:       logger,
-		hostConfig:   hostConfig,
-		monGroup:     monGroup,
-		ctrlGroup:    ctrlGroup,
+		pid:             pid,
+		pidStr:          pidStr,
+		cgroupPath:      cgroupPath,
+		monGroupName:    monGroupName,
+		className:       className,
+		rdtEnabled:      true,
+		logger:          logger,
+		hostConfig:      hostConfig,
+		monGroup:        monGroup,
+		ctrlGroup:       ctrlGroup,
+		firstCollection: true,
 	}
 
 	// Sync all PIDs from the container's cgroup to the monitoring group
@@ -289,6 +294,9 @@ func (rc *RDTCollector) Collect() *dataframe.RDTMetrics {
 }
 
 func (rc *RDTCollector) processL3MonitoringData(monData *rdt.MonData, metrics *dataframe.RDTMetrics) {
+	var totalBandwidthTotal uint64
+	var totalBandwidthLocal uint64
+
 	// Iterate through L3 data for all cache IDs
 	for cacheID, leafData := range monData.L3 {
 		rc.logger.WithFields(logrus.Fields{
@@ -296,7 +304,6 @@ func (rc *RDTCollector) processL3MonitoringData(monData *rdt.MonData, metrics *d
 			"cache_id": cacheID,
 		}).Trace("Processing L3 monitoring data")
 
-		// L3 cache occupancy
 		if occupancy, exists := leafData["llc_occupancy"]; exists {
 			if metrics.L3CacheOccupancy == nil {
 				metrics.L3CacheOccupancy = &occupancy
@@ -314,24 +321,38 @@ func (rc *RDTCollector) processL3MonitoringData(monData *rdt.MonData, metrics *d
 			}
 		}
 
-		// Memory bandwidth monitoring
+		// Memory bandwidth monitoring (cumulative counters - aggregate first)
 		if mbmTotal, exists := leafData["mbm_total_bytes"]; exists {
-			if metrics.MemoryBandwidthTotal == nil {
-				metrics.MemoryBandwidthTotal = &mbmTotal
-			} else {
-				*metrics.MemoryBandwidthTotal += mbmTotal
+			totalBandwidthTotal += mbmTotal
+		}
+
+		if mbmLocal, exists := leafData["mbm_local_bytes"]; exists {
+			totalBandwidthLocal += mbmLocal
+		}
+	}
+
+	// Calculate deltas for bandwidth metrics (similar to perf counters)
+	if !rc.firstCollection {
+		// Compute delta from last collection
+		if totalBandwidthTotal >= rc.lastBandwidthTotal {
+			deltaBandwidthTotal := totalBandwidthTotal - rc.lastBandwidthTotal
+			if deltaBandwidthTotal > 0 {
+				metrics.MemoryBandwidthTotal = &deltaBandwidthTotal
 			}
 		}
 
-		// Memory bandwidth monitoring
-		if mbmLocal, exists := leafData["mbm_local_bytes"]; exists {
-			if metrics.MemoryBandwidthLocal == nil {
-				metrics.MemoryBandwidthLocal = &mbmLocal
-			} else {
-				*metrics.MemoryBandwidthLocal += mbmLocal
+		if totalBandwidthLocal >= rc.lastBandwidthLocal {
+			deltaBandwidthLocal := totalBandwidthLocal - rc.lastBandwidthLocal
+			if deltaBandwidthLocal > 0 {
+				metrics.MemoryBandwidthLocal = &deltaBandwidthLocal
 			}
 		}
 	}
+
+	// Update last values for next delta calculation
+	rc.lastBandwidthTotal = totalBandwidthTotal
+	rc.lastBandwidthLocal = totalBandwidthLocal
+	rc.firstCollection = false
 }
 
 func (rc *RDTCollector) calculateDerivedMetrics(metrics *dataframe.RDTMetrics) {
@@ -341,16 +362,6 @@ func (rc *RDTCollector) calculateDerivedMetrics(metrics *dataframe.RDTMetrics) {
 		metrics.CacheLLCUtilizationPercent = &utilizationPercent
 	}
 
-	// Calculate memory bandwidth utilization percentage
-	if metrics.MemoryBandwidthTotal != nil {
-		bandwidthMBps := float64(*metrics.MemoryBandwidthTotal) / (1024.0 * 1024.0)
-
-		// Calculate bandwidth utilization percentage
-		if rc.hostConfig != nil {
-			bandwidthUtilization := rc.hostConfig.GetMemoryBandwidthUtilizationPercent(bandwidthMBps)
-			metrics.BandwidthUtilizationPercent = &bandwidthUtilization
-		}
-	}
 }
 
 // gets allocation information for the container
