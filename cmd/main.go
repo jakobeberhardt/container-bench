@@ -476,6 +476,12 @@ func (cb *ContainerBench) executeBenchmark() error {
 		return fmt.Errorf("failed to execute container commands: %w", err)
 	}
 
+	// Sync RDT PIDs after command execution (docker exec creates new PIDs that need monitoring)
+	logger.Info("Syncing RDT monitoring PIDs after command execution")
+	if err := cb.syncRDTPIDs(); err != nil {
+		logger.WithError(err).Warn("Failed to sync RDT PIDs, RDT monitoring may be incomplete")
+	}
+
 	// Run benchmark (main execution loop)
 	logger.Info("Running benchmark")
 	if err := cb.runBenchmarkLoop(ctx); err != nil {
@@ -828,6 +834,22 @@ func (cb *ContainerBench) startScheduler() error {
 	}
 
 	logger.Info("Scheduler started and configured")
+	return nil
+}
+
+// Sync RDT PIDs after docker exec to ensure new processes are monitored
+func (cb *ContainerBench) syncRDTPIDs() error {
+	logger := logging.GetLogger()
+
+	for _, collector := range cb.collectors {
+		if collector != nil {
+			if err := collector.SyncRDTPIDs(); err != nil {
+				logger.WithError(err).Warn("Failed to sync RDT PIDs for collector")
+			}
+		}
+	}
+
+	logger.Debug("RDT PIDs synced for all collectors")
 	return nil
 }
 

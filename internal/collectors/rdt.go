@@ -207,7 +207,6 @@ func countSetBits(mask uint64) uint64 {
 }
 
 // syncCGroupPIDs reads all PIDs from the container's cgroup and adds them to the RDT monitoring group
-// This ensures that exec'd processes are also monitored
 func (rc *RDTCollector) syncCGroupPIDs() error {
 	if rc.cgroupPath == "" {
 		return fmt.Errorf("cgroup path not set")
@@ -254,15 +253,15 @@ func (rc *RDTCollector) syncCGroupPIDs() error {
 	return nil
 }
 
+// SyncPIDs syncs all PIDs from the container's cgroup to the RDT monitoring group
+// This should be called after docker exec
+func (rc *RDTCollector) SyncPIDs() error {
+	return rc.syncCGroupPIDs()
+}
+
 func (rc *RDTCollector) Collect() *dataframe.RDTMetrics {
 	if !rc.rdtEnabled || rc.monGroup == nil {
 		return nil
-	}
-
-	// Sync PIDs from cgroup before collecting to ensure we monitor all processes
-	// This is important because docker exec creates new PIDs that need to be added
-	if err := rc.syncCGroupPIDs(); err != nil {
-		rc.logger.WithError(err).Debug("Failed to sync cgroup PIDs during collection")
 	}
 
 	// Get monitoring data
@@ -305,13 +304,13 @@ func (rc *RDTCollector) processL3MonitoringData(monData *rdt.MonData, metrics *d
 			} else {
 				*metrics.L3CacheOccupancy += occupancy
 			}
-			
+
 			// Debug log when we see non-zero occupancy
 			if occupancy > 0 {
 				rc.logger.WithFields(logrus.Fields{
-					"pid":        rc.pid,
-					"cache_id":   cacheID,
-					"occupancy":  occupancy,
+					"pid":       rc.pid,
+					"cache_id":  cacheID,
+					"occupancy": occupancy,
 				}).Debug("RDT: Non-zero LLC occupancy detected")
 			}
 		}
