@@ -26,7 +26,7 @@ bubble:
   core: 0
   command: "/usr/local/bin/bubble --ramp-time 60 --min-size 1 --max-size 1000"
   data:
-    frequency: 100
+    frequency: 1000
     perf: true
     docker: true
     rdt: true
@@ -37,7 +37,7 @@ bubble2:
   core: 1,2
   command: "/usr/local/bin/bubble --ramp-time 60 --min-size 1 --max-size 1000"
   data:
-    frequency: 100
+    frequency: 1000
     perf: true
     docker: true
     rdt: true
@@ -48,7 +48,7 @@ bubble4:
   core: 9-22,24,25,26
   command: "/usr/local/bin/bubble --ramp-time 60 --min-size 1 --max-size 1000"
   data:
-    frequency: 100
+    frequency: 1000
     perf: true
     docker: true
     rdt: true
