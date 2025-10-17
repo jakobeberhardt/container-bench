@@ -78,7 +78,7 @@ func (cc *ContainerCollector) Start(ctx context.Context) error {
 	}
 
 	if cc.config.EnableRDT {
-		cc.rdtCollector, err = NewRDTCollector(cc.containerPID)
+		cc.rdtCollector, err = NewRDTCollector(cc.containerPID, cc.cgroupPath)
 		if err != nil {
 			// Log warning but don't fail the entire collector
 			logger := logging.GetLogger()
