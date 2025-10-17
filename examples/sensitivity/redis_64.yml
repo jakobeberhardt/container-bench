@@ -1,0 +1,55 @@
+benchmark:
+  name: Redis Sensitivity Benchmark
+  description: Starts redis, a bubble and a load generator for redis
+  max_t: 360
+  log_level: info
+  scheduler:
+    implementation: default
+    rdt: false
+    log_level: warn
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+
+redis:
+  index: 0
+  image: registry.jakob-eberhardt.de/rdt4nn/redis-prepopulated-64
+  core: 0
+  port: 6379:6379
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+redis-load:
+  index: 1
+  image: redis:7-alpine
+  core: 16
+  command: "sh -c 'sleep 5 && redis-benchmark -h 172.17.0.1 -p 6379 -t get -n 10000000000 -c 50 -d 64 -P 10'"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+bubble:
+  index: 2
+  image: registry.jakob-eberhardt.de/rdt4nn/bubble:latest
+  core: 1-15
+  command: "/usr/local/bin/bubble --ramp-time 360 --min-size 1 --max-size 1000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
