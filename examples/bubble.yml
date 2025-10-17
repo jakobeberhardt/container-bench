@@ -1,7 +1,7 @@
 benchmark:
   name: Bubble
   description: Starts a bubble
-  max_t: 120
+  max_t: 60
   log_level: info
   scheduler:
     implementation: default
@@ -24,7 +24,7 @@ bubble:
   index: 0
   image: registry.jakob-eberhardt.de/rdt4nn/bubble:latest
   core: 0
-  command: "/usr/local/bin/bubble --ramp-time 120 --min-size 1 --max-size 1000"
+  command: "/usr/local/bin/bubble --ramp-time 60 --min-size 1 --max-size 1000"
   data:
     frequency: 100
     perf: true
@@ -35,7 +35,7 @@ bubble2:
   index: 1
   image: registry.jakob-eberhardt.de/rdt4nn/bubble:latest
   core: 1,2
-  command: "/usr/local/bin/bubble --ramp-time 120 --min-size 1 --max-size 1000"
+  command: "/usr/local/bin/bubble --ramp-time 60 --min-size 1 --max-size 1000"
   data:
     frequency: 100
     perf: true
@@ -46,7 +46,7 @@ bubble4:
   index: 2
   image: registry.jakob-eberhardt.de/rdt4nn/bubble:latest
   core: 9-22,24,25,26
-  command: "/usr/local/bin/bubble --ramp-time 120 --min-size 1 --max-size 1000"
+  command: "/usr/local/bin/bubble --ramp-time 60 --min-size 1 --max-size 1000"
   data:
     frequency: 100
     perf: true
