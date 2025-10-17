@@ -152,3 +152,12 @@ func (cc *ContainerCollector) Stop() error {
 
 	return nil
 }
+
+// SyncRDTPIDs syncs PIDs from the container's cgroup to the RDT monitoring group
+// This should be called after docker exec commands to ensure new processes are monitored
+func (cc *ContainerCollector) SyncRDTPIDs() error {
+	if cc.rdtCollector != nil {
+		return cc.rdtCollector.SyncPIDs()
+	}
+	return nil
+}
