@@ -470,6 +470,12 @@ func (cb *ContainerBench) executeBenchmark() error {
 		return fmt.Errorf("failed to start scheduler: %w", err)
 	}
 
+	// Execute commands in containers (after collectors/scheduler are ready)
+	logger.Info("Executing container commands")
+	if err := cb.executeContainerCommands(ctx); err != nil {
+		return fmt.Errorf("failed to execute container commands: %w", err)
+	}
+
 	// Run benchmark (main execution loop)
 	logger.Info("Running benchmark")
 	if err := cb.runBenchmarkLoop(ctx); err != nil {
@@ -567,10 +573,6 @@ func (cb *ContainerBench) createContainers(ctx context.Context) error {
 			Image: containerConfig.Image,
 		}
 
-		if containerConfig.Command != "" {
-			config.Cmd = []string{"sh", "-c", containerConfig.Command}
-		}
-
 		hostConfig := &container.HostConfig{}
 
 		if containerConfig.Port != "" {
@@ -662,6 +664,61 @@ func (cb *ContainerBench) startContainers(ctx context.Context) error {
 			"index": containerConfig.Index,
 			"pid":   pid,
 		}).Info("Container started")
+	}
+
+	return nil
+}
+
+// Execute commands in running containers (after collectors/scheduler are started)
+func (cb *ContainerBench) executeContainerCommands(ctx context.Context) error {
+	logger := logging.GetLogger()
+	containers := cb.config.GetContainersSorted()
+
+	for _, containerConfig := range containers {
+		// Skip containers without a command
+		if containerConfig.Command == "" {
+			continue
+		}
+
+		containerID := cb.containerIDs[containerConfig.Index]
+
+		logger.WithFields(logrus.Fields{
+			"index":        containerConfig.Index,
+			"container_id": containerID[:12],
+			"command":      containerConfig.Command,
+		}).Info("Executing command in container")
+
+		// Create exec configuration
+		execConfig := types.ExecConfig{
+			Cmd:          []string{"sh", "-c", containerConfig.Command},
+			AttachStdout: false,
+			AttachStderr: false,
+			Detach:       true, // Run in background
+		}
+
+		// Create exec instance
+		execResp, err := cb.dockerClient.ContainerExecCreate(ctx, containerID, execConfig)
+		if err != nil {
+			logger.WithFields(logrus.Fields{
+				"index":        containerConfig.Index,
+				"container_id": containerID[:12],
+			}).WithError(err).Error("Failed to create exec instance")
+			return fmt.Errorf("failed to create exec for container %d: %w", containerConfig.Index, err)
+		}
+
+		// Start exec
+		if err := cb.dockerClient.ContainerExecStart(ctx, execResp.ID, types.ExecStartCheck{Detach: true}); err != nil {
+			logger.WithFields(logrus.Fields{
+				"index":        containerConfig.Index,
+				"container_id": containerID[:12],
+			}).WithError(err).Error("Failed to start exec")
+			return fmt.Errorf("failed to start exec for container %d: %w", containerConfig.Index, err)
+		}
+
+		logger.WithFields(logrus.Fields{
+			"index": containerConfig.Index,
+			"pid":   cb.containerPIDs[containerConfig.Index],
+		}).Info("Command executed in container")
 	}
 
 	return nil
