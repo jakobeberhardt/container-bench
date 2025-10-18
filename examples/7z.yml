@@ -1,0 +1,120 @@
+benchmark:
+  name: Compression with 7zip
+  description: Compresses a 4 GB file with compression level 1 to nine
+  max_t: 600
+  log_level: info
+  scheduler:
+    implementation: default
+    rdt: false
+    log_level: warn
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+7z-one:
+  index: 0
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/4gb:latest
+  core: 0
+  command: "apk add 7zip && 7z a -mx=1 -mmt=1 dummy.7z /data/*.bin > /dev/null"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+7z-two:
+  index: 1
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/4gb:latest
+  core: 1
+  command: "apk add 7zip && 7z a -mx=2 -mmt=1 dummy.7z /data/*.bin > /dev/null"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+7z-three:
+  index: 2
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/4gb:latest
+  core: 2
+  command: "apk add 7zip && 7z a -mx=3 -mmt=1 dummy.7z /data/*.bin > /dev/null"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+7z-four:
+  index: 3
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/4gb:latest
+  core: 3
+  command: "apk add 7zip && 7z a -mx=4 -mmt=1 dummy.7z /data/*.bin > /dev/null"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+7z-five:
+  index: 4
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/4gb:latest
+  core: 4
+  command: "apk add 7zip && 7z a -mx=5 -mmt=1 dummy.7z /data/*.bin > /dev/null"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+7z-six:
+  index: 5
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/4gb:latest
+  core: 5
+  command: "apk add 7zip && 7z a -mx=6 -mmt=1 dummy.7z /data/*.bin > /dev/null"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+7z-seven:
+  index: 6
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/4gb:latest
+  core: 6
+  command: "apk add 7zip && 7z a -mx=7 -mmt=1 dummy.7z /data/*.bin > /dev/null"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+7z-eight:
+  index: 7
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/4gb:latest
+  core: 7
+  command: "apk add 7zip && 7z a -mx=8 -mmt=1 dummy.7z /data/*.bin > /dev/null"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+7z-nine:
+  index: 8
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/4gb:latest
+  core: 8
+  command: "apk add 7zip && 7z a -mx=9 -mmt=1 dummy.7z /data/*.bin > /dev/null"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
