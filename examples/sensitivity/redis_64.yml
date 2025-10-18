@@ -1,7 +1,7 @@
 benchmark:
   name: Redis Sensitivity Benchmark
   description: Starts redis, a load generator for redis, and neigbors
-  max_t: 230
+  max_t: 470
   log_level: info
   scheduler:
     implementation: default
@@ -35,172 +35,183 @@ first:
   index: 1
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 1
-  command: "sleep 15 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  command: "sleep 30 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
   data:
     frequency: 1000
-    perf: true
+    perf: false
     docker: true
-    rdt: true
+    rdt: false
 
 second:
   index: 2
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 2
-  command: "sleep 30 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  command: "sleep 60 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
   data:
     frequency: 1000
-    perf: true
+    perf: false
     docker: true
-    rdt: true
+    rdt: false
 
 third:
   index: 3
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 3
-  command: "sleep 45 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  command: "sleep 90 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
   data:
     frequency: 1000
-    perf: true
+    perf: false
     docker: true
-    rdt: true
+    rdt: false
 
 fourth:
   index: 4
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 4
-  command: "sleep 60 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  command: "sleep 120 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
   data:
     frequency: 1000
-    perf: true
+    perf: false
     docker: true
-    rdt: true
+    rdt: false
 
 fifth:
   index: 5
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 5
-  command: "sleep 75 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  command: "sleep 150 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
   data:
     frequency: 1000
-    perf: true
+    perf: false
     docker: true
-    rdt: true
+    rdt: false
 
 sixth:
   index: 6
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 6
-  command: "sleep 90 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  command: "sleep 180 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
   data:
     frequency: 1000
-    perf: true
+    perf: false
     docker: true
-    rdt: true
+    rdt: false
 
 seventh:
   index: 7
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 7
-  command: "sleep 105 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  command: "sleep 210 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
   data:
     frequency: 1000
-    perf: true
+    perf: false
     docker: true
-    rdt: true
+    rdt: false
 
 eighth:
   index: 8
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 8
-  command: "sleep 120 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  command: "sleep 240 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
   data:
     frequency: 1000
-    perf: true
+    perf: false
     docker: true
-    rdt: true
+    rdt: false
 
 ninth:
   index: 9
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 9
-  command: "sleep 135 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  command: "sleep 270 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
   data:
     frequency: 1000
-    perf: true
+    perf: false
     docker: true
-    rdt: true
+    rdt: false
 
 tenth:
   index: 10
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 10
-  command: "sleep 150 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  command: "sleep 300 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
   data:
     frequency: 1000
-    perf: true
+    perf: false
     docker: true
-    rdt: true
+    rdt: false
 
 eleventh:
   index: 11
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 11
-  command: "sleep 165 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  command: "sleep 330 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
   data:
     frequency: 1000
-    perf: true
+    perf: false
     docker: true
-    rdt: true
+    rdt: false
 
 twelfth:
   index: 12
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 12
-  command: "sleep 180 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  command: "sleep 360 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
   data:
     frequency: 1000
-    perf: true
+    perf: false
     docker: true
-    rdt: true
+    rdt: false
 
 thirteenth:
   index: 13
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 13
-  command: "sleep 195 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  command: "sleep 390 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
   data:
     frequency: 1000
-    perf: true
+    perf: false
     docker: true
-    rdt: true
+    rdt: false
 
 fourteenth:
   index: 14
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 14
-  command: "sleep 210 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  command: "sleep 410 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
   data:
     frequency: 1000
-    perf: true
+    perf: false
     docker: true
-    rdt: true
+    rdt: false
 
 fifteenth:
   index: 15
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 15
-  command: "sleep 225 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  command: "sleep 440 && /neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  data:
+    frequency: 1000
+    perf: false
+    docker: true
+    rdt: false
+
+redis-load-set:
+  index: 16
+  image: redis:7-alpine
+  core: 16,17,18,19,20,21,22,23
+  command: "sh -c 'sleep 20 && redis-benchmark -h redis -p 6379 -t set -d 65536 -c 100 -P 16 -n 99999999999"
   data:
     frequency: 1000
     perf: true
     docker: true
     rdt: true
 
-redis-load:
-  index: 16
+redis-load-get:
+  index: 17
   image: redis:7-alpine
-  core: 16-31
-  command: "sh -c 'sleep 10 && redis-benchmark -h redis -p 6379 -t get -n 10000000000 -c 40 -P 1 -r 1000000 & redis-benchmark -h redis -p 6379 -t set -d 1024 -n 10000000000 -c 10 -P 1 -r 2000000 & wait'"
+  core: 24,25,26,27,28,29,30,31
+  command: "sh -c 'sleep 20 && redis-benchmark -h redis -p 6379 -t get -d 65536 -c 100 -P 16 -n 99999999999"
   data:
     frequency: 1000
     perf: true
