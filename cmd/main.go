@@ -82,6 +82,7 @@ type ContainerBench struct {
 	// Container tracking for clean orchestration
 	containerIDs  map[int]string // container index -> container ID
 	containerPIDs map[int]int    // container index -> process PID
+	networkID     string         // Docker network ID for inter-container communication
 }
 
 func (cb *ContainerBench) cleanup() {
@@ -440,6 +441,12 @@ func (cb *ContainerBench) executeBenchmark() error {
 		return fmt.Errorf("failed to pull images: %w", err)
 	}
 
+	// Create Docker network for inter-container communication
+	logger.Info("Creating Docker network for benchmark")
+	if err := cb.createNetwork(ctx); err != nil {
+		return fmt.Errorf("failed to create network: %w", err)
+	}
+
 	// Create all containers (but don't start them)
 	logger.Info("Creating containers")
 	if err := cb.createContainers(ctx); err != nil {
@@ -507,6 +514,9 @@ func (cb *ContainerBench) cleanupInOrder(ctx context.Context) error {
 	// Stop and cleanup containers
 	cb.cleanupContainers(ctx)
 
+	// Cleanup Docker network
+	cb.cleanupNetwork(ctx)
+
 	// Write data to database (last step)
 	return cb.writeDatabaseData()
 }
@@ -557,6 +567,32 @@ func (cb *ContainerBench) pullImages(ctx context.Context) error {
 		}
 		logger.WithField("image", containerConfig.Image).Info("Image pulled successfully")
 	}
+
+	return nil
+}
+
+// Create Docker network for inter-container communication
+func (cb *ContainerBench) createNetwork(ctx context.Context) error {
+	logger := logging.GetLogger()
+
+	networkName := fmt.Sprintf("container-bench-%d", cb.benchmarkID)
+
+	// Create a bridge network for the benchmark
+	resp, err := cb.dockerClient.NetworkCreate(ctx, networkName, types.NetworkCreate{
+		Driver: "bridge",
+		CheckDuplicate: true,
+	})
+	if err != nil {
+		logger.WithField("network_name", networkName).WithError(err).Error("Failed to create Docker network")
+		return fmt.Errorf("failed to create network %s: %w", networkName, err)
+	}
+
+	cb.networkID = resp.ID
+
+	logger.WithFields(logrus.Fields{
+		"network_name": networkName,
+		"network_id":   resp.ID[:12],
+	}).Info("Docker network created for benchmark")
 
 	return nil
 }
@@ -618,6 +654,10 @@ func (cb *ContainerBench) createContainers(ctx context.Context) error {
 		// Set CPU affinity
 		hostConfig.CpusetCpus = containerConfig.Core
 
+		// Attach container to the benchmark network
+		networkName := fmt.Sprintf("container-bench-%d", cb.benchmarkID)
+		hostConfig.NetworkMode = container.NetworkMode(networkName)
+
 		resp, err := cb.dockerClient.ContainerCreate(ctx, config, hostConfig, nil, nil, containerName)
 		if err != nil {
 			logger.WithField("container_name", containerName).WithError(err).Error("Failed to create container")
@@ -634,6 +674,23 @@ func (cb *ContainerBench) createContainers(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// Cleanup Docker network
+func (cb *ContainerBench) cleanupNetwork(ctx context.Context) {
+	logger := logging.GetLogger()
+
+	if cb.networkID == "" {
+		return
+	}
+
+	logger.WithField("network_id", cb.networkID[:12]).Info("Removing Docker network")
+
+	if err := cb.dockerClient.NetworkRemove(ctx, cb.networkID); err != nil {
+		logger.WithField("network_id", cb.networkID[:12]).WithError(err).Warn("Failed to remove Docker network")
+	} else {
+		logger.WithField("network_id", cb.networkID[:12]).Info("Docker network removed")
+	}
 }
 
 // Start all containers and get their PIDs
