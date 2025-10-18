@@ -31,17 +31,6 @@ redis:
     docker: true
     rdt: true
 
-# bubble:
-#   index: 2
-#   image: registry.jakob-eberhardt.de/rdt4nn/bubble:latest
-#   core: 1-15,32-47
-#   command: "sleep 10 && /usr/local/bin/bubble --ramp-time 370 --min-size 1 --max-size 1000"
-#   data:
-#     frequency: 1000
-#     perf: true
-#     docker: true
-#     rdt: true
-
 first:
   index: 1
   image: registry.jakob-eberhardt.de/neighbor:default  
