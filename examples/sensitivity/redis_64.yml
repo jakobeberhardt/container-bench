@@ -211,7 +211,7 @@ redis-load:
   index: 16
   image: redis:7-alpine
   core: 16-31
-  command: "sh -c 'sleep 10 && redis-benchmark -h redis -p 6379 -t get -n 10000000000 -c 50 -d 64 -P 10'"
+  command: "sh -c 'sleep 10 && redis-benchmark -h redis -p 6379 -t get -n 10000000000 -c 40 -P 1 -r 1000000 & redis-benchmark -h redis -p 6379 -t set -d 1024 -n 10000000000 -c 10 -P 1 -r 2000000 & wait'"
   data:
     frequency: 1000
     perf: true
