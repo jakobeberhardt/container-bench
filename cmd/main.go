@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -80,14 +81,13 @@ type ContainerBench struct {
 	endTime       time.Time
 
 	// Container tracking for clean orchestration
-	containerIDs  map[int]string // container index -> container ID
-	containerPIDs map[int]int    // container index -> process PID
-	networkID     string         // Docker network ID for inter-container communication
+	containerIDs  map[int]string
+	containerPIDs map[int]int
+	networkID     string  
 }
 
 func (cb *ContainerBench) cleanup() {
-	// Emergency cleanup, only stop collectors
-	// Containers cleanup is handled properly in cleanupContainers()
+
 	for _, collector := range cb.collectors {
 		if collector != nil {
 			collector.Stop()
@@ -97,69 +97,42 @@ func (cb *ContainerBench) cleanup() {
 
 func (cb *ContainerBench) cleanupContainers(ctx context.Context) {
 	logger := logging.GetLogger()
-	logger.Info("Stopping and cleaning up containers")
+	logger.Info("Stopping and removing all containers")
 
+	var wg sync.WaitGroup
 	for containerIndex, containerID := range cb.containerIDs {
 		if containerID != "" {
-			logger.WithFields(logrus.Fields{
-				"index":        containerIndex,
-				"container_id": containerID[:12],
-			}).Info("Stopping and removing container")
-			cb.stopAndRemoveContainer(ctx, containerID)
+			wg.Add(1)
+			go func(idx int, id string) {
+				defer wg.Done()
+				logger.WithFields(logrus.Fields{
+					"index":        idx,
+					"container_id": id[:12],
+				}).Debug("Force removing container")
+				cb.stopAndRemoveContainer(ctx, id)
+			}(containerIndex, containerID)
 		}
 	}
+
+	wg.Wait()
+	logger.Info("All containers stopped and removed")
 }
 
 func (cb *ContainerBench) stopAndRemoveContainer(ctx context.Context, containerID string) {
 	logger := logging.GetLogger()
+	logger.WithField("container_id", containerID[:12]).Debug("Force removing container")
 
-	// Check if container exists and get its state
-	containerInfo, err := cb.dockerClient.ContainerInspect(ctx, containerID)
-	if err != nil {
-		if client.IsErrNotFound(err) {
-			logger.WithField("container_id", containerID[:12]).Warn("Container not found - may have been removed unexpectedly")
-			return
-		}
-		logger.WithField("container_id", containerID[:12]).WithError(err).Error("Failed to inspect container")
-		return
+	removeOptions := types.ContainerRemoveOptions{
+		Force:         true,
+		RemoveVolumes: true, 
 	}
 
-	// Check container state and warn if unexpectedly stopped
-	if !containerInfo.State.Running {
-		if containerInfo.State.Status == "exited" {
-			logger.WithFields(logrus.Fields{
-				"container_id": containerID[:12],
-				"exit_code":    containerInfo.State.ExitCode,
-				"status":       containerInfo.State.Status,
-			}).Warn("Container exited unexpectedly before benchmark completion")
-		} else {
-			logger.WithFields(logrus.Fields{
-				"container_id": containerID[:12],
-				"status":       containerInfo.State.Status,
-			}).Warn("Container in unexpected state")
-		}
-	} else {
-		// Container is running as expected - stop it
-		logger.WithField("container_id", containerID[:12]).Info("Stopping container")
-
-		timeout := 10
-		stopOptions := container.StopOptions{Timeout: &timeout}
-		if err := cb.dockerClient.ContainerStop(ctx, containerID, stopOptions); err != nil {
-			if !client.IsErrNotFound(err) {
-				logger.WithField("container_id", containerID[:12]).WithError(err).Error("Failed to stop container")
-			}
-		} else {
-			logger.WithField("container_id", containerID[:12]).Info("Container stopped")
-		}
-	}
-
-	// Always try to remove container for cleanup
-	if err := cb.dockerClient.ContainerRemove(ctx, containerID, types.ContainerRemoveOptions{Force: true}); err != nil {
+	if err := cb.dockerClient.ContainerRemove(ctx, containerID, removeOptions); err != nil {
 		if !client.IsErrNotFound(err) {
-			logger.WithField("container_id", containerID[:12]).WithError(err).Error("Failed to remove container")
+			logger.WithField("container_id", containerID[:12]).WithError(err).Warn("Failed to force remove container")
 		}
 	} else {
-		logger.WithField("container_id", containerID[:12]).Info("Container removed")
+		logger.WithField("container_id", containerID[:12]).Debug("Container force removed")
 	}
 }
 
