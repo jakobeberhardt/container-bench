@@ -498,49 +498,112 @@ func (cb *ContainerBench) cleanupInOrder(ctx context.Context) error {
 func (cb *ContainerBench) pullImages(ctx context.Context) error {
 	logger := logging.GetLogger()
 	containers := cb.config.GetContainersSorted()
+	registryConfig := cb.config.GetRegistryConfig()
+
+	// Deduplicate images
+	type imageInfo struct {
+		image           string
+		needsAuth       bool
+		containerCount  int
+	}
+	uniqueImages := make(map[string]*imageInfo)
 
 	for _, containerConfig := range containers {
-		logger.WithFields(logrus.Fields{
-			"index": containerConfig.Index,
-			"image": containerConfig.Image,
-		}).Info("Pulling container image")
-
-		logger.WithField("image", containerConfig.Image).Debug("Pulling image")
-
-		// Prepare pull options with authentication if needed
-		pullOptions := types.ImagePullOptions{}
-
-		// Check if this image requires private registry authentication
-		registryConfig := cb.config.GetRegistryConfig()
-		if registryConfig != nil && isPrivateRegistryImage(containerConfig.Image, registryConfig.Host) {
-			authString, err := createRegistryAuth(registryConfig)
-			if err != nil {
-				logger.WithField("image", containerConfig.Image).WithError(err).Error("Failed to create registry auth")
-				return fmt.Errorf("failed to create registry auth for %s: %w", containerConfig.Image, err)
+		if _, exists := uniqueImages[containerConfig.Image]; !exists {
+			needsAuth := registryConfig != nil && isPrivateRegistryImage(containerConfig.Image, registryConfig.Host)
+			uniqueImages[containerConfig.Image] = &imageInfo{
+				image:          containerConfig.Image,
+				needsAuth:      needsAuth,
+				containerCount: 0,
 			}
-			pullOptions.RegistryAuth = authString
-			logger.WithFields(logrus.Fields{
-				"image":    containerConfig.Image,
-				"registry": registryConfig.Host,
-			}).Debug("Using private registry authentication")
 		}
-
-		pullResp, err := cb.dockerClient.ImagePull(ctx, containerConfig.Image, pullOptions)
-		if err != nil {
-			logger.WithField("image", containerConfig.Image).WithError(err).Error("Failed to pull image")
-			return fmt.Errorf("failed to pull image %s: %w", containerConfig.Image, err)
-		}
-		defer pullResp.Close()
-
-		// Read the pull response to completion (required for pull to finish)
-		_, err = io.Copy(io.Discard, pullResp)
-		if err != nil {
-			logger.WithField("image", containerConfig.Image).WithError(err).Error("Failed to complete image pull")
-			return fmt.Errorf("failed to complete image pull for %s: %w", containerConfig.Image, err)
-		}
-		logger.WithField("image", containerConfig.Image).Info("Image pulled successfully")
+		uniqueImages[containerConfig.Image].containerCount++
 	}
 
+	logger.WithFields(logrus.Fields{
+		"total_containers": len(containers),
+		"unique_images":    len(uniqueImages),
+	}).Info("Preparing to pull images")
+
+	var authString string
+	var err error
+	if registryConfig != nil {
+		authString, err = createRegistryAuth(registryConfig)
+		if err != nil {
+			logger.WithError(err).Error("Failed to create registry auth")
+			return fmt.Errorf("failed to create registry auth: %w", err)
+		}
+	}
+
+	type pullResult struct {
+		image string
+		err   error
+	}
+
+	resultChan := make(chan pullResult, len(uniqueImages))
+	var wg sync.WaitGroup
+
+	for _, imgInfo := range uniqueImages {
+		wg.Add(1)
+		go func(info *imageInfo) {
+			defer wg.Done()
+
+			pullOptions := types.ImagePullOptions{}
+			if info.needsAuth {
+				pullOptions.RegistryAuth = authString
+				logger.WithFields(logrus.Fields{
+					"image":    info.image,
+					"registry": registryConfig.Host,
+				}).Debug("Using private registry authentication")
+			}
+
+			logger.WithFields(logrus.Fields{
+				"image":      info.image,
+				"containers": info.containerCount,
+			}).Info("Pulling image")
+
+			pullResp, err := cb.dockerClient.ImagePull(ctx, info.image, pullOptions)
+			if err != nil {
+				logger.WithField("image", info.image).WithError(err).Error("Failed to pull image")
+				resultChan <- pullResult{image: info.image, err: fmt.Errorf("failed to pull image %s: %w", info.image, err)}
+				return
+			}
+			defer pullResp.Close()
+
+			// Read the pull response to completion
+			_, err = io.Copy(io.Discard, pullResp)
+			if err != nil {
+				logger.WithField("image", info.image).WithError(err).Error("Failed to complete image pull")
+				resultChan <- pullResult{image: info.image, err: fmt.Errorf("failed to complete image pull for %s: %w", info.image, err)}
+				return
+			}
+
+			logger.WithFields(logrus.Fields{
+				"image":      info.image,
+				"containers": info.containerCount,
+			}).Info("Image pulled successfully")
+			resultChan <- pullResult{image: info.image, err: nil}
+		}(imgInfo)
+	}
+
+	// Wait for all pulls to complete
+	wg.Wait()
+	close(resultChan)
+
+	// Check for errors
+	var pullErrors []error
+	for result := range resultChan {
+		if result.err != nil {
+			pullErrors = append(pullErrors, result.err)
+		}
+	}
+
+	if len(pullErrors) > 0 {
+		logger.WithField("error_count", len(pullErrors)).Error("Failed to pull some images")
+		return fmt.Errorf("failed to pull %d images: %v", len(pullErrors), pullErrors[0])
+	}
+
+	logger.Info("All images pulled successfully")
 	return nil
 }
 
