@@ -1,7 +1,7 @@
 benchmark:
   name: Redis Sensitivity Benchmark
   description: Starts redis, a bubble and a load generator for redis
-  max_t: 360
+  max_t: 100
   log_level: info
   scheduler:
     implementation: default
@@ -35,8 +35,8 @@ redis:
 redis-load:
   index: 1
   image: redis:7-alpine
-  core: 16
-  command: "sh -c 'sleep 5 && redis-benchmark -h 172.17.0.1 -p 6379 -t get -n 10000000000 -c 50 -d 64 -P 10'"
+  core: 16-31
+  command: "sh -c 'sleep 3 && redis-benchmark -h 172.17.0.1 -p 6379 -t get -n 10000000000 -c 50 -d 64 -P 10'"
   data:
     frequency: 1000
     perf: true
@@ -46,8 +46,8 @@ redis-load:
 bubble:
   index: 2
   image: registry.jakob-eberhardt.de/rdt4nn/bubble:latest
-  core: 1-15
-  command: "/usr/local/bin/bubble --ramp-time 360 --min-size 1 --max-size 1000"
+  core: 1-15,32-47
+  command: "/usr/local/bin/bubble --ramp-time 100 --min-size 1 --max-size 1000"
   data:
     frequency: 1000
     perf: true
