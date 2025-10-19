@@ -1,5 +1,14 @@
 container-bench
+main
 *.env
 *.csv
 test_csv
+
+# Build artifacts
+*.tar.gz
+*.zip
+
+# Binaries
+/container-bench
+/main
 .github
