@@ -1,5 +1,5 @@
 benchmark:
-  name: Registry Test
+  name: Example Benchmark
   description: Test mixing public and private registry images
   max_t: 60
   log_level: info

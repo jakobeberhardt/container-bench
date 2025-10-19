@@ -1,7 +1,7 @@
 benchmark:
   name: Compression with 7zip
   description: Compresses a 4 GB file with compression level 1 to nine
-  max_t: 600
+  max_t: 100
   log_level: info
   scheduler:
     implementation: default
@@ -20,7 +20,7 @@ benchmark:
       username: ${DOCKER_REGISTRY_USERNAME}
       password: ${DOCKER_REGISTRY_PASSWORD}
 
-7z-one:
+7zip-one:
   index: 0
   image: registry.jakob-eberhardt.de/rdt4nn/compression/4gb:latest
   core: 0
@@ -31,7 +31,7 @@ benchmark:
     docker: true
     rdt: true
 
-7z-two:
+7zip-two:
   index: 1
   image: registry.jakob-eberhardt.de/rdt4nn/compression/4gb:latest
   core: 1
@@ -42,7 +42,7 @@ benchmark:
     docker: true
     rdt: true
 
-7z-three:
+7zip-three:
   index: 2
   image: registry.jakob-eberhardt.de/rdt4nn/compression/4gb:latest
   core: 2
@@ -53,7 +53,7 @@ benchmark:
     docker: true
     rdt: true
 
-7z-four:
+7zip-four:
   index: 3
   image: registry.jakob-eberhardt.de/rdt4nn/compression/4gb:latest
   core: 3
@@ -64,7 +64,7 @@ benchmark:
     docker: true
     rdt: true
 
-7z-five:
+7zip-five:
   index: 4
   image: registry.jakob-eberhardt.de/rdt4nn/compression/4gb:latest
   core: 4
@@ -75,7 +75,7 @@ benchmark:
     docker: true
     rdt: true
 
-7z-six:
+7zip-six:
   index: 5
   image: registry.jakob-eberhardt.de/rdt4nn/compression/4gb:latest
   core: 5
@@ -86,7 +86,7 @@ benchmark:
     docker: true
     rdt: true
 
-7z-seven:
+7zip-seven:
   index: 6
   image: registry.jakob-eberhardt.de/rdt4nn/compression/4gb:latest
   core: 6
@@ -97,7 +97,7 @@ benchmark:
     docker: true
     rdt: true
 
-7z-eight:
+7zip-eight:
   index: 7
   image: registry.jakob-eberhardt.de/rdt4nn/compression/4gb:latest
   core: 7
@@ -108,7 +108,7 @@ benchmark:
     docker: true
     rdt: true
 
-7z-nine:
+7zip-nine:
   index: 8
   image: registry.jakob-eberhardt.de/rdt4nn/compression/4gb:latest
   core: 8
