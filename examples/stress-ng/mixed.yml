@@ -1,0 +1,141 @@
+benchmark:
+  name: mixed stress-ng
+  description: Runs stress-ng workers with mixed workloads 
+  max_t: 60
+  log_level: info
+  scheduler:
+    implementation: default
+    rdt: false
+    log_level: warn
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+# CPU intensive: Matrix multiplication operations
+cpu:
+  index: 0
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 0
+  command: "stress-ng --cpu 1 --cpu-method matrixprod --timeout 0"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+# L1 cache thrashing: Intensive L1 cache operations
+l1:
+  index: 1
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 2
+  command: "stress-ng --cache 1 --cache-level 1 --timeout 0"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+# L2 cache stress: L2 cache-focused operations
+l2:
+  index: 2
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 4
+  command: "stress-ng --cache 1 --cache-level 2 --timeout 0"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+# L3 cache stress: L3 cache-focused operations
+l3:
+  index: 3
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 6
+  command: "stress-ng --cache 1 --cache-level 3 --timeout 0"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+# Memory bandwidth: Stream memory operations
+mem-bandwidth:
+  index: 4
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 8
+  command: "stress-ng --stream 1 --timeout 0"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+# Disk I/O: Asynchronous I/O operations
+async-io:
+  index: 5
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 10
+  command: "stress-ng --aio 1 --aio-requests 8 --timeout 0"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+# Filesystem operations: Heavy metadata operations (create/delete files)
+filesystem:
+  index: 6
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 12
+  command: "stress-ng --dir 1 --dir-dirs 64 --timeout 0"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+# Kernel: System call stress (getpid calls)
+syscalls:
+  index: 7
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 14
+  command: "stress-ng --syscall 1 --timeout 0"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+# Memory allocation: Virtual memory stress
+malloc:
+  index: 8
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 16
+  command: "stress-ng --vm 1 --vm-bytes 512M --timeout 0"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+# Branch prediction: CPU branch misprediction stress
+braching:
+  index: 9
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 18
+  command: "stress-ng --cpu 1 --cpu-method rand48 --timeout 0"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
