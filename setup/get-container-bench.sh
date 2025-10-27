@@ -4,4 +4,5 @@ cd ./container-bench
 git checkout refactor
 
 sudo bash setup/install-setup.sh
-make 
+echo "Run "make" or "make" install"
+echo "Validate installation with e.g. "container-bench validate --config examples/simple_test.yml""
