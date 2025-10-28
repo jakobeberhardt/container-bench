@@ -1,7 +1,7 @@
 benchmark:
   name: Mixed stress-ng Ramp-up
   description: Runs stress-ng workers with mixed workloads 
-  max_t: 60
+  max_t: 255
   log_level: info
   scheduler:
     implementation: default
