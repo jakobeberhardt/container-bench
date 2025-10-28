@@ -40,7 +40,7 @@ first:
     frequency: 100
     perf: true
     docker: true
-    rdt: true
+    rdt: false
 
 second:
   index: 2
