@@ -1,5 +1,5 @@
 benchmark:
-  name: Mixed stress-ng
+  name: Mixed stress-ng Ramp-up
   description: Runs stress-ng workers with mixed workloads 
   max_t: 60
   log_level: info
@@ -36,7 +36,7 @@ l1:
   index: 1
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
   core: 1
-  command: "stress-ng --cache 1 --cache-level 1 --timeout 0" 
+  command: "sleep 15 && stress-ng --cache 1 --cache-level 1 --timeout 0" 
   data:
     frequency: 100
     perf: true
@@ -47,7 +47,7 @@ l2:
   index: 2
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
   core: 2
-  command: "stress-ng --cache 1 --cache-level 2 --timeout 0"
+  command: "sleep 30 && stress-ng --cache 1 --cache-level 2 --timeout 0"
   data:
     frequency: 100
     perf: true
@@ -58,7 +58,7 @@ l3:
   index: 3
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
   core: 3
-  command: "stress-ng --cache 1 --cache-level 3 --timeout 0"
+  command: "sleep 45 && stress-ng --cache 1 --cache-level 3 --timeout 0"
   data:
     frequency: 100
     perf: true
@@ -69,7 +69,7 @@ all-cache:
   index: 4
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
   core: 4
-  command: "stress-ng --cache 1 --timeout 0"
+  command: "sleep 60 && stress-ng --cache 1 --timeout 0"
   data:
     frequency: 100
     perf: true
@@ -80,7 +80,7 @@ disk:
   index: 5
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
   core: 5
-  command: "stress-ng --hdd 1 --timeout 0"
+  command: "sleep 75 && stress-ng --hdd 1 --timeout 0"
   data:
     frequency: 100
     perf: true
@@ -91,7 +91,7 @@ files:
   index: 6
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
   core: 6
-  command: "stress-ng --copy-file 1 --timeout 0"
+  command: "sleep 90 && stress-ng --copy-file 1 --timeout 0"
   data:
     frequency: 100
     perf: true
@@ -102,7 +102,7 @@ heapsort:
   index: 7
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
   core: 7
-  command: "stress-ng --heapsort 1 --timeout 0"
+  command: "sleep 105 && stress-ng --heapsort 1 --timeout 0"
   data:
     frequency: 100
     perf: true
@@ -113,7 +113,7 @@ io:
   index: 8
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
   core: 8
-  command: "stress-ng --io 1 --timeout 0"
+  command: "sleep 120 && stress-ng --io 1 --timeout 0"
   data:
     frequency: 100
     perf: true
@@ -124,7 +124,7 @@ matrix-3d:
   index: 9
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
   core: 9
-  command: "stress-ng --matrix-3d 1 --timeout 0"
+  command: "sleep 135 && stress-ng --matrix-3d 1 --timeout 0"
   data:
     frequency: 100
     perf: true
@@ -135,7 +135,7 @@ nop:
   index: 10
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
   core: 10
-  command: "stress-ng --nop 1 --timeout 0"
+  command: "sleep 150 && stress-ng --nop 1 --timeout 0"
   data:
     frequency: 100
     perf: true
@@ -146,7 +146,7 @@ qsort:
   index: 11
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
   core: 11
-  command: "stress-ng --qsort 1 --timeout 0"
+  command: "sleep 165 && stress-ng --qsort 1 --timeout 0"
   data:
     frequency: 100
     perf: true
@@ -157,7 +157,7 @@ sparse-matrix:
   index: 12
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
   core: 12
-  command: "stress-ng --sparsematrix 1 --timeout 0"
+  command: "sleep 180 && stress-ng --sparsematrix 1 --timeout 0"
   data:
     frequency: 100
     perf: true
@@ -168,7 +168,7 @@ stream:
   index: 13
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
   core: 13
-  command: "stress-ng --stream 1 --timeout 0"
+  command: "sleep 195 && stress-ng --stream 1 --timeout 0"
   data:
     frequency: 100
     perf: true
@@ -179,7 +179,7 @@ syscalls:
   index: 14
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
   core: 14
-  command: "stress-ng --x86syscall 1 --timeout 0"
+  command: "sleep 210 && stress-ng --x86syscall 1 --timeout 0"
   data:
     frequency: 100
     perf: true
@@ -190,7 +190,7 @@ tree-search:
   index: 15
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
   core: 15
-  command: "stress-ng --tsearch 1 --timeout 0"
+  command: "sleep 225 && stress-ng --tsearch 1 --timeout 0"
   data:
     frequency: 100
     perf: true
