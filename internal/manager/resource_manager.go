@@ -357,18 +357,33 @@ func (rm *ResourceManager) Reset() error {
 		return fmt.Errorf("ResourceManager not initialized")
 	}
 
-	rm.logger.Info("Resetting all RDT allocations")
+	rm.logger.Info("Resetting RDT configuration to default")
 
-	totalWays := rm.hostConfig.L3Cache.WaysPerCache
+	// First, remove all PIDs from the RDT classes
 	for _, allocation := range rm.containers {
-		allocation.Ways = totalWays
-		allocation.Percentage = 1.0
+		if allocation.ClassName == "" {
+			continue
+		}
+
+		if ctrlGroup, exists := rdt.GetClass(allocation.ClassName); exists {
+			// Get current PIDs
+			pids, err := ctrlGroup.GetPids()
+			if err == nil && len(pids) > 0 {
+				rm.logger.WithFields(logrus.Fields{
+					"class_name": allocation.ClassName,
+					"num_pids":   len(pids),
+				}).Debug("Removing PIDs from RDT class before reset")
+			}
+		}
 	}
 
-	if err := rm.applyRDTConfig(); err != nil {
+	// Reset to default (empty) configuration - use force=true to remove non-empty groups
+	defaultConfig := &rdt.Config{}
+	if err := rdt.SetConfig(defaultConfig, true); err != nil {
 		return fmt.Errorf("failed to reset RDT configuration: %v", err)
 	}
 
+	rm.logger.Info("RDT configuration reset to default (all allocations removed)")
 	return nil
 }
 
