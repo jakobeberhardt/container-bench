@@ -86,7 +86,7 @@ func (rm *DefaultRDTManager) Initialize(hostConfig *host.HostConfig) error {
 	
 	rm.logger.WithFields(logrus.Fields{
 		"rdt_supported":      hostConfig.RDT.Supported,
-		"l3_cache_mb":        hostConfig.L3Cache.TotalSizeMB,
+		"l3_cache_mb":        hostConfig.L3Cache.SizeMB,
 		"cache_ways":         hostConfig.L3Cache.WaysPerCache,
 	}).Info("RDT manager initialized successfully")
 	

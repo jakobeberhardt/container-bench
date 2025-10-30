@@ -308,8 +308,9 @@ func runBenchmark(configFile string) error {
 	logger.WithFields(logrus.Fields{
 		"hostname":      hostConfig.Hostname,
 		"cpu_model":     hostConfig.CPUModel,
-		"total_cores":   hostConfig.TotalCores,
-		"l3_cache_mb":   hostConfig.L3Cache.TotalSizeMB,
+		"physical_cores": hostConfig.Topology.PhysicalCores,
+		"logical_cores":  hostConfig.Topology.LogicalCores,
+		"l3_cache_mb":   hostConfig.L3Cache.SizeMB,
 		"rdt_supported": hostConfig.RDT.Supported,
 	}).Info("Host configuration initialized")
 

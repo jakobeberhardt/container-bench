@@ -1,32 +1,40 @@
 package host
 
 import (
-	"bufio"
 	"fmt"
+	"math/bits"
 	"os"
-	"runtime"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 
 	"container-bench/internal/logging"
 	"github.com/intel/goresctrl/pkg/rdt"
+	"github.com/klauspost/cpuid/v2"
 	"github.com/sirupsen/logrus"
+	"github.com/zcalusic/sysinfo"
 )
 
-// HostConfig contains host system configuration information
-// TODO: This should be done using a tested package as errors may propagate into all other components, e.g. scheduler assumption
+// HostConfig contains comprehensive host system configuration information.
+// This is the single source of truth for all host-related information.
 type HostConfig struct {
+	// CPU Information
 	CPUVendor       string
 	CPUModel        string
-	TotalCores      int
-	TotalThreads    int
-	NumSockets      int
 	
+	// CPU Topology
+	Topology        CPUTopology
+	
+	// Cache Hierarchy
+	L1Cache         CacheConfig
+	L2Cache         CacheConfig
 	L3Cache         L3CacheConfig
 	
+	// RDT Configuration
 	RDT             RDTConfig
 	
+	// System Information
 	Hostname        string
 	OSInfo          string
 	KernelVersion   string
@@ -34,25 +42,57 @@ type HostConfig struct {
 	logger          *logrus.Logger
 }
 
-// L3CacheConfig contains L3 cache configuration
-type L3CacheConfig struct {
-	TotalSizeBytes     int64            
-	TotalSizeKB        float64          
-	TotalSizeMB        float64          
-	CacheIDs           []uint64         // Available cache IDs
-	WaysPerCache       int              // Number of ways per cache
-	BytesPerWay        int64            // Bytes per cache way
-	MaxBitmask         uint64           // Maximum allocation bitmask
+// CPUTopology contains detailed CPU topology information
+type CPUTopology struct {
+	PhysicalCores   int                    // Total physical cores across all sockets
+	LogicalCores    int                    // Total logical cores (with hyperthreading)
+	ThreadsPerCore  int                    // Threads per core (1 or 2 for HT)
+	Sockets         int                    // Number of CPU sockets/packages
+	CoresPerSocket  int                    // Physical cores per socket
+	CoreMap         map[int]CoreInfo       // Mapping of logical CPU ID to detailed core info
 }
 
-// RDTConfig contains RDT system configuration
+// CoreInfo contains detailed information about a specific logical CPU
+type CoreInfo struct {
+	LogicalID       int        // Logical CPU ID (0, 1, 2, ...)
+	PhysicalID      int        // Physical package/socket ID
+	CoreID          int        // Core ID within the socket
+	Siblings        []int      // Hyperthread sibling logical CPU IDs
+}
+
+// CacheConfig contains cache configuration for L1/L2 caches
+type CacheConfig struct {
+	SizeBytes       int64      // Cache size in bytes
+	SizeKB          float64    // Cache size in KB
+	SizeMB          float64    // Cache size in MB
+	LineSize        int        // Cache line size in bytes
+}
+
+// L3CacheConfig contains L3 (LLC) cache configuration with RDT-specific information
+type L3CacheConfig struct {
+	SizeBytes       int64      // Total L3 cache size in bytes
+	SizeKB          float64    // Total L3 cache size in KB
+	SizeMB          float64    // Total L3 cache size in MB
+	LineSize        int        // Cache line size in bytes
+	CacheIDs        []uint64   // Available L3 cache IDs
+	WaysPerCache    int        // Number of ways per cache (from RDT)
+	BytesPerWay     int64      // Bytes per cache way
+	MaxBitmask      uint64     // Maximum allocation bitmask (from RDT)
+}
+
+// RDTConfig contains Intel RDT system configuration
 type RDTConfig struct {
 	Supported              bool
 	MonitoringSupported    bool
 	AllocationSupported    bool
 	AvailableClasses       []string
 	MonitoringFeatures     map[string][]string  // MonResource -> features
-	MaxMemoryBandwidthMBps int64               // System max memory bandwidth
+	MaxCLOSIDs             int                  // Maximum number of CLOSIDs
+	
+	// NYI: Memory bandwidth information
+	// No reliable source available for querying actual system memory bandwidth.
+	// Would require platform-specific detection or manual configuration.
+	// MaxMemoryBandwidthMBps int64
 }
 
 var (
@@ -60,8 +100,8 @@ var (
 	hostConfigOnce   sync.Once
 )
 
-
-// It initializes the configuration on first call so we can cache it
+// GetHostConfig returns the singleton HostConfig instance.
+// It initializes the configuration on first call and caches it for subsequent calls.
 func GetHostConfig() (*HostConfig, error) {
 	var err error
 	hostConfigOnce.Do(func() {
@@ -70,7 +110,7 @@ func GetHostConfig() (*HostConfig, error) {
 	return globalHostConfig, err
 }
 
-// initializeHostConfig performs the actual initialization
+// initializeHostConfig performs the actual initialization using reliable sources
 func initializeHostConfig() (*HostConfig, error) {
 	logger := logging.GetLogger()
 	logger.Info("Initializing host configuration")
@@ -79,223 +119,259 @@ func initializeHostConfig() (*HostConfig, error) {
 		logger: logger,
 	}
 	
+	// Initialize system information
 	if err := config.initSystemInfo(); err != nil {
 		return nil, fmt.Errorf("failed to initialize system info: %v", err)
 	}
 	
+	// Initialize CPU information using cpuid
 	if err := config.initCPUInfo(); err != nil {
 		return nil, fmt.Errorf("failed to initialize CPU info: %v", err)
 	}
 	
-	if err := config.initL3CacheInfo(); err != nil {
-		logger.WithError(err).Warn("Failed to initialize L3 cache info, using defaults")
-		config.setDefaultL3CacheInfo()
+	// Initialize CPU topology
+	if err := config.initCPUTopology(); err != nil {
+		logger.WithError(err).Warn("Failed to initialize CPU topology, using basic info")
+		config.setBasicTopology()
 	}
 	
+	// Initialize cache hierarchy
+	if err := config.initCacheInfo(); err != nil {
+		logger.WithError(err).Warn("Failed to initialize cache info")
+		return nil, fmt.Errorf("failed to initialize cache info: %v", err)
+	}
+	
+	// Initialize RDT information
 	if err := config.initRDTInfo(); err != nil {
 		logger.WithError(err).Warn("Failed to initialize RDT info, RDT features disabled")
 		config.RDT.Supported = false
 	}
 	
 	logger.WithFields(logrus.Fields{
+		"cpu_vendor":      config.CPUVendor,
 		"cpu_model":       config.CPUModel,
-		"total_cores":     config.TotalCores,
-		"l3_cache_mb":     config.L3Cache.TotalSizeMB,
+		"physical_cores":  config.Topology.PhysicalCores,
+		"logical_cores":   config.Topology.LogicalCores,
+		"sockets":         config.Topology.Sockets,
+		"l3_cache_mb":     config.L3Cache.SizeMB,
+		"cache_ways":      config.L3Cache.WaysPerCache,
 		"rdt_supported":   config.RDT.Supported,
 	}).Info("Host configuration initialized")
+	
+	// Print detailed configuration at debug level
+	config.logDetailedConfiguration()
 	
 	return config, nil
 }
 
+// initSystemInfo initializes system information using sysinfo package
 func (hc *HostConfig) initSystemInfo() error {
-	hostname, err := os.Hostname()
-	if err != nil {
-		return fmt.Errorf("failed to get hostname: %v", err)
-	}
-	hc.Hostname = hostname
+	var si sysinfo.SysInfo
+	si.GetSysInfo()
 	
-	hc.OSInfo = runtime.GOOS + "/" + runtime.GOARCH
-	
-	// Get kernel version from /proc/version
-	if data, err := os.ReadFile("/proc/version"); err == nil {
-		version := strings.Fields(string(data))
-		if len(version) >= 3 {
-			hc.KernelVersion = version[2]
-		}
-	}
-	
-	if hc.KernelVersion == "" {
-		hc.KernelVersion = "unknown"
-	}
+	hc.Hostname = si.Node.Hostname
+	hc.OSInfo = fmt.Sprintf("%s %s", si.OS.Name, si.OS.Architecture)
+	hc.KernelVersion = si.Kernel.Release
 	
 	return nil
 }
 
+// initCPUInfo initializes CPU information using cpuid package
 func (hc *HostConfig) initCPUInfo() error {
-	hc.TotalCores = runtime.NumCPU()
-	hc.TotalThreads = runtime.NumCPU()
+	// Get CPU information from cpuid
+	cpu := cpuid.CPU
 	
-	// Read detailed CPU info from /proc/cpuinfo
-	file, err := os.Open("/proc/cpuinfo")
-	if err != nil {
-		// Set defaults if we can't read cpuinfo
-		hc.CPUVendor = "unknown"
-		hc.CPUModel = "unknown"
-		hc.NumSockets = 1
-		return nil
-	}
-	defer file.Close()
+	hc.CPUVendor = cpu.VendorString
+	hc.CPUModel = cpu.BrandName
 	
-	var physicalIDs []string
-	scanner := bufio.NewScanner(file)
+	hc.logger.WithFields(logrus.Fields{
+		"vendor": hc.CPUVendor,
+		"model":  hc.CPUModel,
+	}).Debug("CPU info initialized from cpuid")
 	
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+	return nil
+}
+
+// initCPUTopology initializes detailed CPU topology from sysfs
+func (hc *HostConfig) initCPUTopology() error {
+	cpu := cpuid.CPU
+	
+	hc.Topology.PhysicalCores = cpu.PhysicalCores
+	hc.Topology.LogicalCores = cpu.LogicalCores
+	hc.Topology.ThreadsPerCore = cpu.ThreadsPerCore
+	
+	// Parse topology from sysfs for detailed core mapping
+	coreMap := make(map[int]CoreInfo)
+	socketSet := make(map[int]bool)
+	
+	for i := 0; i < hc.Topology.LogicalCores; i++ {
+		cpuPath := fmt.Sprintf("/sys/devices/system/cpu/cpu%d/topology", i)
 		
-		if strings.HasPrefix(line, "vendor_id") {
-			if hc.CPUVendor == "" {
-				parts := strings.SplitN(line, ":", 2)
-				if len(parts) == 2 {
-					hc.CPUVendor = strings.TrimSpace(parts[1])
-				}
-			}
-		} else if strings.HasPrefix(line, "model name") {
-			if hc.CPUModel == "" {
-				parts := strings.SplitN(line, ":", 2)
-				if len(parts) == 2 {
-					hc.CPUModel = strings.TrimSpace(parts[1])
-				}
-			}
-		} else if strings.HasPrefix(line, "physical id") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				physicalID := strings.TrimSpace(parts[1])
-				// Check if this physical ID is already seen
-				found := false
-				for _, id := range physicalIDs {
-					if id == physicalID {
-						found = true
-						break
-					}
-				}
-				if !found {
-					physicalIDs = append(physicalIDs, physicalID)
-				}
-			}
+		// Read physical package ID (socket)
+		physicalID, err := readIntFromFile(filepath.Join(cpuPath, "physical_package_id"))
+		if err != nil {
+			continue
+		}
+		socketSet[physicalID] = true
+		
+		// Read core ID
+		coreID, err := readIntFromFile(filepath.Join(cpuPath, "core_id"))
+		if err != nil {
+			continue
+		}
+		
+		// Read thread siblings
+		siblingsStr, err := readStringFromFile(filepath.Join(cpuPath, "thread_siblings_list"))
+		if err != nil {
+			continue
+		}
+		siblings := parseCPUList(siblingsStr)
+		
+		coreMap[i] = CoreInfo{
+			LogicalID:  i,
+			PhysicalID: physicalID,
+			CoreID:     coreID,
+			Siblings:   siblings,
 		}
 	}
 	
-	// Set defaults if not found
-	if hc.CPUVendor == "" {
-		hc.CPUVendor = "unknown"
-	}
-	if hc.CPUModel == "" {
-		hc.CPUModel = "unknown"
+	hc.Topology.CoreMap = coreMap
+	hc.Topology.Sockets = len(socketSet)
+	
+	if hc.Topology.Sockets > 0 && hc.Topology.PhysicalCores > 0 {
+		hc.Topology.CoresPerSocket = hc.Topology.PhysicalCores / hc.Topology.Sockets
 	}
 	
-	// Number of sockets is the number of unique physical IDs
-	hc.NumSockets = len(physicalIDs)
-	if hc.NumSockets == 0 {
-		hc.NumSockets = 1
-	}
+	hc.logger.WithFields(logrus.Fields{
+		"physical_cores":   hc.Topology.PhysicalCores,
+		"logical_cores":    hc.Topology.LogicalCores,
+		"threads_per_core": hc.Topology.ThreadsPerCore,
+		"sockets":          hc.Topology.Sockets,
+		"cores_per_socket": hc.Topology.CoresPerSocket,
+		"core_mappings":    len(hc.Topology.CoreMap),
+	}).Debug("CPU topology initialized")
 	
 	return nil
 }
 
-func (hc *HostConfig) initL3CacheInfo() error {
-	// Try to get L3 cache size from sysfs
-	cacheSize, err := hc.getL3CacheSizeFromSysfs()
-	if err != nil {
-		return fmt.Errorf("failed to get L3 cache size: %v", err)
+// setBasicTopology sets basic topology when detailed topology cannot be determined
+func (hc *HostConfig) setBasicTopology() {
+	cpu := cpuid.CPU
+	
+	hc.Topology.PhysicalCores = cpu.PhysicalCores
+	hc.Topology.LogicalCores = cpu.LogicalCores
+	hc.Topology.ThreadsPerCore = cpu.ThreadsPerCore
+	hc.Topology.Sockets = 1
+	hc.Topology.CoresPerSocket = cpu.PhysicalCores
+	hc.Topology.CoreMap = make(map[int]CoreInfo)
+}
+
+// initCacheInfo initializes cache hierarchy using cpuid
+func (hc *HostConfig) initCacheInfo() error {
+	cpu := cpuid.CPU
+	
+	// L1 Cache (Data cache)
+	if cpu.Cache.L1D > 0 {
+		hc.L1Cache.SizeBytes = int64(cpu.Cache.L1D)
+		hc.L1Cache.SizeKB = float64(cpu.Cache.L1D) / 1024.0
+		hc.L1Cache.SizeMB = float64(cpu.Cache.L1D) / (1024.0 * 1024.0)
 	}
+	hc.L1Cache.LineSize = cpu.CacheLine
 	
-	hc.L3Cache.TotalSizeBytes = cacheSize
-	hc.L3Cache.TotalSizeKB = float64(cacheSize) / 1024.0
-	hc.L3Cache.TotalSizeMB = float64(cacheSize) / (1024.0 * 1024.0)
+	// L2 Cache
+	if cpu.Cache.L2 > 0 {
+		hc.L2Cache.SizeBytes = int64(cpu.Cache.L2)
+		hc.L2Cache.SizeKB = float64(cpu.Cache.L2) / 1024.0
+		hc.L2Cache.SizeMB = float64(cpu.Cache.L2) / (1024.0 * 1024.0)
+	}
+	hc.L2Cache.LineSize = cpu.CacheLine
 	
-	// Get cache IDs and ways information from RDT if available
+	// L3 Cache
+	if cpu.Cache.L3 > 0 {
+		hc.L3Cache.SizeBytes = int64(cpu.Cache.L3)
+		hc.L3Cache.SizeKB = float64(cpu.Cache.L3) / 1024.0
+		hc.L3Cache.SizeMB = float64(cpu.Cache.L3) / (1024.0 * 1024.0)
+	} else {
+		return fmt.Errorf("L3 cache size not available from cpuid")
+	}
+	hc.L3Cache.LineSize = cpu.CacheLine
+	
+	// Initialize RDT-specific L3 cache information if RDT is available
 	if rdt.MonSupported() {
-		hc.initRDTCacheInfo()
+		if err := hc.initRDTCacheInfo(); err != nil {
+			hc.logger.WithError(err).Warn("Failed to initialize RDT cache info, using defaults")
+			hc.setDefaultRDTCacheInfo()
+		}
 	} else {
-		// Set default values
-		hc.L3Cache.CacheIDs = []uint64{0}
-		// TODO: Hotfix, we need to populate this
-		hc.L3Cache.WaysPerCache = 20  
-		hc.L3Cache.BytesPerWay = cacheSize / int64(hc.L3Cache.WaysPerCache)
-		hc.L3Cache.MaxBitmask = (1 << 20) - 1  // 20 ways default
+		hc.setDefaultRDTCacheInfo()
 	}
+	
+	hc.logger.WithFields(logrus.Fields{
+		"l1_cache_kb":     hc.L1Cache.SizeKB,
+		"l2_cache_kb":     hc.L2Cache.SizeKB,
+		"l3_cache_mb":     hc.L3Cache.SizeMB,
+		"cache_line_size": hc.L3Cache.LineSize,
+		"l3_cache_ways":   hc.L3Cache.WaysPerCache,
+	}).Debug("Cache hierarchy initialized")
 	
 	return nil
 }
 
-func (hc *HostConfig) getL3CacheSizeFromSysfs() (int64, error) {
-	// Try multiple possible locations for L3 cache size
-	cachePaths := []string{
-		"/sys/devices/system/cpu/cpu0/cache/index3/size",
-		"/sys/devices/system/cpu/cpu0/cache/index2/size", 
+// initRDTCacheInfo initializes RDT-specific cache information from resctrl filesystem
+func (hc *HostConfig) initRDTCacheInfo() error {
+	// Read CBM (Cache Bit Mask) from resctrl to determine cache ways
+	cbmMaskPath := "/sys/fs/resctrl/info/L3/cbm_mask"
+	cbmStr, err := readStringFromFile(cbmMaskPath)
+	if err != nil {
+		return fmt.Errorf("failed to read CBM mask: %v", err)
 	}
 	
-	for _, path := range cachePaths {
-		if data, err := os.ReadFile(path); err == nil {
-			sizeStr := strings.TrimSpace(string(data))
-			
-			// Parse size 
-			if strings.HasSuffix(sizeStr, "K") {
-				if sizeKB, err := strconv.ParseInt(sizeStr[:len(sizeStr)-1], 10, 64); err == nil {
-					return sizeKB * 1024, nil
-				}
-			} else if strings.HasSuffix(sizeStr, "M") {
-				if sizeMB, err := strconv.ParseInt(sizeStr[:len(sizeStr)-1], 10, 64); err == nil {
-					return sizeMB * 1024 * 1024, nil
-				}
-			} else {
-				if sizeBytes, err := strconv.ParseInt(sizeStr, 10, 64); err == nil {
-					return sizeBytes, nil
-				}
-			}
-		}
+	// Parse hex mask to determine number of ways
+	cbmValue, err := strconv.ParseUint(strings.TrimSpace(cbmStr), 16, 64)
+	if err != nil {
+		return fmt.Errorf("failed to parse CBM mask: %v", err)
 	}
 	
-	return 0, fmt.Errorf("could not determine L3 cache size")
+	// Count the number of bits set in the mask
+	hc.L3Cache.WaysPerCache = bits.OnesCount64(cbmValue)
+	hc.L3Cache.MaxBitmask = cbmValue
+	
+	if hc.L3Cache.WaysPerCache > 0 {
+		hc.L3Cache.BytesPerWay = hc.L3Cache.SizeBytes / int64(hc.L3Cache.WaysPerCache)
+	}
+	
+	// Read cache IDs - typically one per socket
+	// For simplicity, create cache IDs based on socket count
+	hc.L3Cache.CacheIDs = make([]uint64, 0, hc.Topology.Sockets)
+	for i := 0; i < hc.Topology.Sockets; i++ {
+		hc.L3Cache.CacheIDs = append(hc.L3Cache.CacheIDs, uint64(i))
+	}
+	
+	hc.logger.WithFields(logrus.Fields{
+		"cbm_mask_hex":  fmt.Sprintf("0x%x", cbmValue),
+		"cache_ways":    hc.L3Cache.WaysPerCache,
+		"bytes_per_way": hc.L3Cache.BytesPerWay,
+		"cache_ids":     hc.L3Cache.CacheIDs,
+	}).Debug("RDT cache info initialized from resctrl")
+	
+	return nil
 }
 
-func (hc *HostConfig) initRDTCacheInfo() {
-	// TODO: Hotfix, we need to populate this 
+// setDefaultRDTCacheInfo sets default RDT cache information when RDT is not available
+func (hc *HostConfig) setDefaultRDTCacheInfo() {
+	// Use reasonable defaults based on typical Intel configurations
+	hc.L3Cache.WaysPerCache = 12 // Conservative default
 	hc.L3Cache.CacheIDs = []uint64{0}
 	
-	// Estimate ways based on cache size (typical Intel configuration)
-	cacheMB := hc.L3Cache.TotalSizeMB
-	if cacheMB >= 32 {
-		hc.L3Cache.WaysPerCache = 20
-	} else if cacheMB >= 16 {
-		hc.L3Cache.WaysPerCache = 16
-	} else {
-		hc.L3Cache.WaysPerCache = 12
+	if hc.L3Cache.SizeBytes > 0 {
+		hc.L3Cache.BytesPerWay = hc.L3Cache.SizeBytes / int64(hc.L3Cache.WaysPerCache)
 	}
+	hc.L3Cache.MaxBitmask = (1 << 12) - 1 // 12 ways
 	
-	hc.L3Cache.BytesPerWay = hc.L3Cache.TotalSizeBytes / int64(hc.L3Cache.WaysPerCache)
-	hc.L3Cache.MaxBitmask = (1 << hc.L3Cache.WaysPerCache) - 1
+	hc.logger.Debug("Using default RDT cache info (RDT not available)")
 }
 
-func (hc *HostConfig) setDefaultL3CacheInfo() {
-	// TODO: We need to populate this
-	defaultSizeMB := int64(8) // 8MB default
-	
-	if strings.Contains(strings.ToLower(hc.CPUModel), "xeon") {
-		defaultSizeMB = 32 // 32MB for Xeon
-	} else if strings.Contains(strings.ToLower(hc.CPUModel), "i7") {
-		defaultSizeMB = 12 // 12MB for i7
-	}
-	
-	hc.L3Cache.TotalSizeBytes = defaultSizeMB * 1024 * 1024
-	hc.L3Cache.TotalSizeKB = float64(defaultSizeMB * 1024)
-	hc.L3Cache.TotalSizeMB = float64(defaultSizeMB)
-	hc.L3Cache.CacheIDs = []uint64{0}
-	hc.L3Cache.WaysPerCache = 16
-	hc.L3Cache.BytesPerWay = hc.L3Cache.TotalSizeBytes / 16
-	hc.L3Cache.MaxBitmask = (1 << 16) - 1
-}
-
+// initRDTInfo initializes Intel RDT information
 func (hc *HostConfig) initRDTInfo() error {
 	hc.RDT.Supported = rdt.MonSupported()
 	hc.RDT.MonitoringSupported = rdt.MonSupported()
@@ -304,6 +380,7 @@ func (hc *HostConfig) initRDTInfo() error {
 		return nil
 	}
 	
+	// Get available RDT classes
 	classes := rdt.GetClasses()
 	for _, class := range classes {
 		hc.RDT.AvailableClasses = append(hc.RDT.AvailableClasses, class.Name())
@@ -316,36 +393,43 @@ func (hc *HostConfig) initRDTInfo() error {
 		hc.RDT.MonitoringFeatures[string(resource)] = features
 	}
 	
-	// Check if allocation is supported 
+	// Check if allocation is supported
 	hc.RDT.AllocationSupported = len(hc.RDT.AvailableClasses) > 0
 	
-	// Set default memory bandwidth based on CPU type
-	if strings.Contains(strings.ToLower(hc.CPUModel), "xeon") {
-		hc.RDT.MaxMemoryBandwidthMBps = 100000
-	} else {
-		hc.RDT.MaxMemoryBandwidthMBps = 50000 
+	// Read maximum number of CLOSIDs from resctrl
+	numClosidsPath := "/sys/fs/resctrl/info/L3/num_closids"
+	if numClosids, err := readIntFromFile(numClosidsPath); err == nil {
+		hc.RDT.MaxCLOSIDs = numClosids
 	}
+	
+	hc.logger.WithFields(logrus.Fields{
+		"monitoring_supported":  hc.RDT.MonitoringSupported,
+		"allocation_supported":  hc.RDT.AllocationSupported,
+		"available_classes":     len(hc.RDT.AvailableClasses),
+		"monitoring_features":   len(hc.RDT.MonitoringFeatures),
+		"max_closids":           hc.RDT.MaxCLOSIDs,
+	}).Debug("RDT info initialized")
 	
 	return nil
 }
 
 // calculates L3 cache utilization percentage
 func (hc *HostConfig) GetL3CacheUtilizationPercent(occupancyBytes uint64) float64 {
-	if hc.L3Cache.TotalSizeBytes == 0 {
+	if hc.L3Cache.SizeBytes == 0 {
 		return 0.0
 	}
-	return float64(occupancyBytes) / float64(hc.L3Cache.TotalSizeBytes) * 100.0
+	return float64(occupancyBytes) / float64(hc.L3Cache.SizeBytes) * 100.0
 }
 
 // calculates memory bandwidth utilization percentage
+// NYI: Memory bandwidth calculation not implemented - no reliable source for max bandwidth
 func (hc *HostConfig) GetMemoryBandwidthUtilizationPercent(bandwidthMBps float64) float64 {
-	if hc.RDT.MaxMemoryBandwidthMBps == 0 {
-		return 0.0
-	}
-	return bandwidthMBps / float64(hc.RDT.MaxMemoryBandwidthMBps) * 100.0
+	// NYI: No reliable source for maximum memory bandwidth
+	// Would require platform-specific detection or manual configuration
+	return 0.0
 }
 
-// TODO: Move to scheduler common interface. fair L3 cache allocation for a given number of containers
+// GetFairL3Allocation calculates fair L3 cache allocation for a given number of containers
 func (hc *HostConfig) GetFairL3Allocation(totalContainers int) (waysPerContainer int, bitmaskPerContainer uint64) {
 	if totalContainers == 0 || hc.L3Cache.WaysPerCache == 0 {
 		return 0, 0
@@ -360,4 +444,186 @@ func (hc *HostConfig) GetFairL3Allocation(totalContainers int) (waysPerContainer
 	bitmaskPerContainer = (1 << waysPerContainer) - 1
 	
 	return waysPerContainer, bitmaskPerContainer
+}
+
+// Helper functions for reading system information
+
+// readIntFromFile reads an integer from a file
+func readIntFromFile(path string) (int, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	
+	value, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse integer from %s: %v", path, err)
+	}
+	
+	return value, nil
+}
+
+// readStringFromFile reads a string from a file
+func readStringFromFile(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
+// parseCPUList parses a CPU list string (e.g., "0,28" or "0-3,8-11") into a slice of integers
+func parseCPUList(cpuList string) []int {
+	var result []int
+	
+	if cpuList == "" {
+		return result
+	}
+	
+	parts := strings.Split(cpuList, ",")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		
+		if strings.Contains(part, "-") {
+			// Range like "0-3"
+			rangeParts := strings.Split(part, "-")
+			if len(rangeParts) == 2 {
+				start, err1 := strconv.Atoi(rangeParts[0])
+				end, err2 := strconv.Atoi(rangeParts[1])
+				if err1 == nil && err2 == nil {
+					for i := start; i <= end; i++ {
+						result = append(result, i)
+					}
+				}
+			}
+		} else {
+			// Single value
+			if val, err := strconv.Atoi(part); err == nil {
+				result = append(result, val)
+			}
+		}
+	}
+	
+	return result
+}
+
+// logDetailedConfiguration logs comprehensive host configuration at debug level
+func (hc *HostConfig) logDetailedConfiguration() {
+	if !hc.logger.IsLevelEnabled(logrus.DebugLevel) {
+		return
+	}
+	
+	hc.logger.Debug("=== Detailed Host Configuration ===")
+	
+	// System Information
+	hc.logger.WithFields(logrus.Fields{
+		"hostname": hc.Hostname,
+		"os":       hc.OSInfo,
+		"kernel":   hc.KernelVersion,
+	}).Debug("System Information")
+	
+	// CPU Information
+	hc.logger.WithFields(logrus.Fields{
+		"vendor": hc.CPUVendor,
+		"model":  hc.CPUModel,
+	}).Debug("CPU Information")
+	
+	// CPU Topology
+	hc.logger.WithFields(logrus.Fields{
+		"physical_cores":  hc.Topology.PhysicalCores,
+		"logical_cores":   hc.Topology.LogicalCores,
+		"threads_per_core": hc.Topology.ThreadsPerCore,
+		"sockets":         hc.Topology.Sockets,
+		"cores_per_socket": hc.Topology.CoresPerSocket,
+		"core_mappings":   len(hc.Topology.CoreMap),
+	}).Debug("CPU Topology")
+	
+	// Log all core mappings at debug level
+	if len(hc.Topology.CoreMap) > 0 {
+		hc.logger.Debug("Core Mappings (Logical CPU -> Socket, Core, Siblings):")
+		// Sort logical IDs for consistent output
+		logicalIDs := make([]int, 0, len(hc.Topology.CoreMap))
+		for id := range hc.Topology.CoreMap {
+			logicalIDs = append(logicalIDs, id)
+		}
+		
+		// Simple sort
+		for i := 0; i < len(logicalIDs); i++ {
+			for j := i + 1; j < len(logicalIDs); j++ {
+				if logicalIDs[i] > logicalIDs[j] {
+					logicalIDs[i], logicalIDs[j] = logicalIDs[j], logicalIDs[i]
+				}
+			}
+		}
+		
+		for _, logicalID := range logicalIDs {
+			coreInfo := hc.Topology.CoreMap[logicalID]
+			hc.logger.WithFields(logrus.Fields{
+				"cpu":      logicalID,
+				"socket":   coreInfo.PhysicalID,
+				"core":     coreInfo.CoreID,
+				"siblings": fmt.Sprintf("%v", coreInfo.Siblings),
+			}).Debugf("  CPU %d -> Socket %d, Core %d, Siblings: %v",
+				logicalID, coreInfo.PhysicalID, coreInfo.CoreID, coreInfo.Siblings)
+		}
+	}
+	
+	// Cache Hierarchy
+	hc.logger.WithFields(logrus.Fields{
+		"l1_kb":        hc.L1Cache.SizeKB,
+		"l1_line_size": hc.L1Cache.LineSize,
+		"l2_kb":        hc.L2Cache.SizeKB,
+		"l2_line_size": hc.L2Cache.LineSize,
+		"l3_mb":        hc.L3Cache.SizeMB,
+		"l3_line_size": hc.L3Cache.LineSize,
+	}).Debug("Cache Hierarchy")
+	
+	// L3 (LLC) Details
+	hc.logger.WithFields(logrus.Fields{
+		"size_bytes":    hc.L3Cache.SizeBytes,
+		"size_mb":       hc.L3Cache.SizeMB,
+		"cache_ways":    hc.L3Cache.WaysPerCache,
+		"bytes_per_way": hc.L3Cache.BytesPerWay,
+		"mb_per_way":    float64(hc.L3Cache.BytesPerWay) / (1024 * 1024),
+		"max_bitmask":   fmt.Sprintf("0x%x", hc.L3Cache.MaxBitmask),
+		"cache_ids":     fmt.Sprintf("%v", hc.L3Cache.CacheIDs),
+	}).Debug("L3 (LLC) Details")
+	
+	// Intel RDT
+	if hc.RDT.Supported {
+		fields := logrus.Fields{
+			"supported":   hc.RDT.Supported,
+			"monitoring":  hc.RDT.MonitoringSupported,
+			"allocation":  hc.RDT.AllocationSupported,
+			"max_closids": hc.RDT.MaxCLOSIDs,
+			"classes":     len(hc.RDT.AvailableClasses),
+		}
+		
+		if len(hc.RDT.AvailableClasses) > 0 {
+			fields["class_list"] = fmt.Sprintf("%v", hc.RDT.AvailableClasses)
+		}
+		
+		if len(hc.RDT.MonitoringFeatures) > 0 {
+			for resource, features := range hc.RDT.MonitoringFeatures {
+				fields[fmt.Sprintf("mon_%s", resource)] = fmt.Sprintf("%v", features)
+			}
+		}
+		
+		hc.logger.WithFields(fields).Debug("Intel RDT")
+	} else {
+		hc.logger.Debug("Intel RDT: Not supported")
+	}
+	
+	// Utility function examples
+	ways, bitmask := hc.GetFairL3Allocation(4)
+	testOccupancy := uint64(10 * 1024 * 1024) // 10 MB
+	utilization := hc.GetL3CacheUtilizationPercent(testOccupancy)
+	
+	hc.logger.WithFields(logrus.Fields{
+		"fair_allocation_4_containers_ways":    ways,
+		"fair_allocation_4_containers_bitmask": fmt.Sprintf("0x%x", bitmask),
+		"l3_utilization_10mb_percent":          fmt.Sprintf("%.2f%%", utilization),
+	}).Debug("Utility Functions Example")
+	
+	hc.logger.Debug("=== End Detailed Host Configuration ===")
 }
