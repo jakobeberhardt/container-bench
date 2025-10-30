@@ -4,8 +4,8 @@ benchmark:
   max_t: 60
   log_level: info
   scheduler:
-    implementation: fair
-    rdt: true
+    implementation: default
+    rdt: false
     log_level: warn
   data:
     db:
