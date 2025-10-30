@@ -5,6 +5,7 @@ import (
 	"container-bench/internal/dataframe"
 	"container-bench/internal/host"
 	"container-bench/internal/logging"
+
 	"github.com/sirupsen/logrus"
 )
 
@@ -15,13 +16,23 @@ type ContainerInfo struct {
 	PID    int
 }
 
+// RDTAllocator provides resource allocation capabilities for schedulers
+type RDTAllocator interface {
+	Initialize() error
+	RegisterContainer(containerIndex int, pid int, cgroupPath string) error
+	AllocateL3Cache(containerIndex int, percentage float64) error
+	AllocateL3CacheWays(containerIndex int, ways int) error
+	Reset() error
+	Shutdown() error
+}
+
 type Scheduler interface {
 	Initialize(allocator RDTAllocator, containers []ContainerInfo) error
 	ProcessDataFrames(dataframes *dataframe.DataFrames) error
 	Shutdown() error
 	GetVersion() string
 	SetLogLevel(level string) error
-	
+
 	// Host configuration for scheduler decisions
 	SetHostConfig(hostConfig *host.HostConfig)
 }
@@ -46,28 +57,28 @@ func NewDefaultScheduler() *DefaultScheduler {
 func (ds *DefaultScheduler) Initialize(allocator RDTAllocator, containers []ContainerInfo) error {
 	ds.rdtAllocator = allocator
 	ds.containers = containers
-	
+
 	ds.schedulerLogger.WithField("containers", len(containers)).Info("Default scheduler initialized")
 	return nil
 }
 
 func (ds *DefaultScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) error {
 	containers := dataframes.GetAllContainers()
-	
+
 	for containerIndex, containerDF := range containers {
 		latest := containerDF.GetLatestStep()
 		if latest == nil {
 			continue
 		}
-		
+
 		// Simple and lightweight: just print current CPU and cache miss rate
 		if latest.Perf != nil && latest.Perf.CacheMissRate != nil {
 			ds.schedulerLogger.WithFields(logrus.Fields{
-				"container":        containerIndex,
+				"container":       containerIndex,
 				"cache_miss_rate": *latest.Perf.CacheMissRate,
 			}).Info("Cache miss rate")
 		}
-		
+
 		if latest.Docker != nil && latest.Docker.CPUUsagePercent != nil {
 			ds.schedulerLogger.WithFields(logrus.Fields{
 				"container":   containerIndex,
@@ -75,7 +86,7 @@ func (ds *DefaultScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) 
 			}).Info("CPU usage")
 		}
 	}
-	
+
 	return nil
 }
 

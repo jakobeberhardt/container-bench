@@ -21,6 +21,7 @@ import (
 	"container-bench/internal/datahandeling"
 	"container-bench/internal/host"
 	"container-bench/internal/logging"
+	"container-bench/internal/manager"
 	"container-bench/internal/scheduler"
 
 	"github.com/docker/docker/api/types"
@@ -83,7 +84,7 @@ type ContainerBench struct {
 	// Container tracking for clean orchestration
 	containerIDs  map[int]string
 	containerPIDs map[int]int
-	networkID     string  
+	networkID     string
 }
 
 func (cb *ContainerBench) cleanup() {
@@ -124,7 +125,7 @@ func (cb *ContainerBench) stopAndRemoveContainer(ctx context.Context, containerI
 
 	removeOptions := types.ContainerRemoveOptions{
 		Force:         true,
-		RemoveVolumes: true, 
+		RemoveVolumes: true,
 	}
 
 	if err := cb.dockerClient.ContainerRemove(ctx, containerID, removeOptions); err != nil {
@@ -306,12 +307,12 @@ func runBenchmark(configFile string) error {
 	bench.hostConfig = hostConfig
 
 	logger.WithFields(logrus.Fields{
-		"hostname":      hostConfig.Hostname,
-		"cpu_model":     hostConfig.CPUModel,
+		"hostname":       hostConfig.Hostname,
+		"cpu_model":      hostConfig.CPUModel,
 		"physical_cores": hostConfig.Topology.PhysicalCores,
 		"logical_cores":  hostConfig.Topology.LogicalCores,
-		"l3_cache_mb":   hostConfig.L3Cache.SizeMB,
-		"rdt_supported": hostConfig.RDT.Supported,
+		"l3_cache_mb":    hostConfig.L3Cache.SizeMB,
+		"rdt_supported":  hostConfig.RDT.Supported,
 	}).Info("Host configuration initialized")
 
 	// Initialize Docker client
@@ -348,9 +349,6 @@ func runBenchmark(configFile string) error {
 	}
 
 	switch schedulerImpl {
-	case "cache-aware":
-		logger.Info("Using cache-aware scheduler")
-		bench.scheduler = scheduler.NewCacheAwareSchedulerWithRDT(bench.config.Benchmark.Scheduler.RDT)
 	case "fair":
 		logger.Info("Using fair scheduler")
 		bench.scheduler = scheduler.NewFairScheduler()
@@ -503,9 +501,9 @@ func (cb *ContainerBench) pullImages(ctx context.Context) error {
 
 	// Deduplicate images
 	type imageInfo struct {
-		image           string
-		needsAuth       bool
-		containerCount  int
+		image          string
+		needsAuth      bool
+		containerCount int
 	}
 	uniqueImages := make(map[string]*imageInfo)
 
@@ -616,7 +614,7 @@ func (cb *ContainerBench) createNetwork(ctx context.Context) error {
 
 	// Create a bridge network for the benchmark
 	resp, err := cb.dockerClient.NetworkCreate(ctx, networkName, types.NetworkCreate{
-		Driver: "bridge",
+		Driver:         "bridge",
 		CheckDuplicate: true,
 	})
 	if err != nil {
@@ -845,11 +843,26 @@ func (cb *ContainerBench) initializeSchedulerWithPIDs() error {
 		})
 	}
 
-	// Create RDT allocator if supported
+	// Create RDT allocator if supported and enabled
 	var rdtAllocator scheduler.RDTAllocator
 	if cb.hostConfig.RDT.Supported && cb.config.Benchmark.Scheduler.RDT {
-		rdtAllocator = scheduler.NewDefaultRDTAllocator()
-		logger.Debug("RDT allocator created for scheduler")
+		resourceManager := manager.NewResourceManager(cb.hostConfig)
+		if err := resourceManager.Initialize(); err != nil {
+			logger.WithError(err).Warn("Failed to initialize ResourceManager, RDT allocation disabled")
+		} else {
+			// Register all containers with the resource manager
+			for _, containerConfig := range containers {
+				pid := cb.containerPIDs[containerConfig.Index]
+				containerID := cb.containerIDs[containerConfig.Index]
+				cgroupPath := fmt.Sprintf("/sys/fs/cgroup/system.slice/docker-%s.scope", containerID)
+				
+				if err := resourceManager.RegisterContainer(containerConfig.Index, pid, cgroupPath); err != nil {
+					logger.WithError(err).WithField("container_index", containerConfig.Index).Warn("Failed to register container with ResourceManager")
+				}
+			}
+			rdtAllocator = resourceManager
+			logger.Debug("ResourceManager created and containers registered")
+		}
 	} else {
 		logger.Debug("RDT allocator not created (RDT not supported or not enabled)")
 	}
@@ -916,16 +929,6 @@ func (cb *ContainerBench) startCollectors(ctx context.Context) error {
 // Start scheduler
 func (cb *ContainerBench) startScheduler() error {
 	logger := logging.GetLogger()
-	containers := cb.config.GetContainersSorted()
-
-	// Notify scheduler of container PIDs for cache-aware scheduling
-	// Make this the general case for RDT-enabled schedulers
-	if cacheAwareScheduler, ok := cb.scheduler.(*scheduler.CacheAwareScheduler); ok {
-		for _, containerConfig := range containers {
-			pid := cb.containerPIDs[containerConfig.Index]
-			cacheAwareScheduler.SetContainerPID(containerConfig.Index, pid)
-		}
-	}
 
 	logger.Info("Scheduler started and configured")
 	return nil
