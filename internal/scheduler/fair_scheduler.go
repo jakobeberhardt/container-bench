@@ -97,7 +97,11 @@ func (fs *FairScheduler) updateFairAllocations() error {
 	
 	// For fair allocation: create dedicated RDT class for each container
 	// Calculate exclusive cache bit allocation per container
-	totalCacheWays := 12 // From /sys/fs/resctrl/info/L3/cbm_mask = fff (12 bits)
+	totalCacheWays := fs.hostConfig.L3Cache.WaysPerCache
+	if totalCacheWays == 0 {
+		fs.schedulerLogger.Warn("Cache ways not available from host config, cannot perform fair allocation")
+		return fmt.Errorf("cache ways not available from host config")
+	}
 	waysPerContainer := totalCacheWays / containerCount
 	
 	fs.schedulerLogger.WithFields(logrus.Fields{

@@ -1,8 +1,8 @@
 benchmark:
   name: Noisy neighbor
   description: Test which starts more and more neigbors
-  max_t: 60
-  log_level: info
+  max_t: 45
+  log_level: debug
   scheduler:
     implementation: default
     rdt: false
@@ -24,7 +24,7 @@ victim:
   index: 0
   image: registry.jakob-eberhardt.de/neighbor:default
   core: 0
-  command: "/neighbor --duration 3600 --buffer-size 12MB --pattern random"
+  command: "/neighbor --duration 3600 --buffer-size 17MB --pattern random"
   data:
     frequency: 100
     perf: true
@@ -35,31 +35,31 @@ first:
   index: 1
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 1
-  command: "sleep 15 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
+  command: "sleep 15 && /neighbor --duration 3600 --buffer-size 17MB --pattern random"
   data:
     frequency: 100
     perf: true
     docker: true
-    rdt: false
+    rdt: true
 
 second:
   index: 2
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 2
-  command: "sleep 30 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
+  command: "sleep 30 && /neighbor --duration 3600 --buffer-size 17MB --pattern random"
   data:
     frequency: 100
     perf: true
     docker: true
     rdt: true
 
-third:
-  index: 3
-  image: registry.jakob-eberhardt.de/neighbor:default  
-  core: 3
-  command: "sleep 45 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
-  data:
-    frequency: 100
-    perf: true
-    docker: true
-    rdt: true
+# third:
+#   index: 3
+#   image: registry.jakob-eberhardt.de/neighbor:default  
+#   core: 3
+#   command: "sleep 45 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
+#   data:
+#     frequency: 100
+#     perf: true
+#     docker: true
+#     rdt: true
