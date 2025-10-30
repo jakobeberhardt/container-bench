@@ -132,6 +132,66 @@ func findRDTClassForPID(pidStr string) (rdt.CtrlGroup, string, error) {
 	return nil, "", fmt.Errorf("PID %s not found in any RDT class", pidStr)
 }
 
+// ensureCorrectCtrlGroup checks if the main PID has been moved to a different CtrlGroup
+// (e.g., by a scheduler) and recreates the MonGroup under the new CtrlGroup if needed
+func (rc *RDTCollector) ensureCorrectCtrlGroup() error {
+	// Find which CtrlGroup the main PID currently belongs to
+	currentCtrlGroup, currentClassName, err := findRDTClassForPID(rc.pidStr)
+	if err != nil {
+		return fmt.Errorf("failed to find current RDT class for PID %s: %v", rc.pidStr, err)
+	}
+
+	rc.logger.WithFields(logrus.Fields{
+		"pid":          rc.pid,
+		"current_class": currentClassName,
+		"tracked_class": rc.className,
+	}).Trace("Checking if CtrlGroup changed")
+
+	// Check if the CtrlGroup has changed
+	if currentClassName != rc.className {
+		rc.logger.WithFields(logrus.Fields{
+			"pid":          rc.pid,
+			"old_class":    rc.className,
+			"new_class":    currentClassName,
+			"old_mon_group": rc.monGroupName,
+		}).Info("PID moved to different RDT class, recreating monitoring group")
+
+		// Delete the old monitoring group
+		if rc.monGroup != nil && rc.ctrlGroup != nil {
+			if err := rc.ctrlGroup.DeleteMonGroup(rc.monGroupName); err != nil {
+				rc.logger.WithError(err).Warn("Failed to delete old monitoring group")
+			}
+		}
+
+		// Update to the new CtrlGroup
+		rc.ctrlGroup = currentCtrlGroup
+		rc.className = currentClassName
+
+		// Create a new monitoring group under the new CtrlGroup
+		monGroup, err := rc.ctrlGroup.CreateMonGroup(rc.monGroupName, map[string]string{
+			"container-bench": "true",
+			"pid":             rc.pidStr,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create monitoring group under new class %s: %v", currentClassName, err)
+		}
+		rc.monGroup = monGroup
+
+		rc.logger.WithFields(logrus.Fields{
+			"pid":          rc.pid,
+			"new_class":    currentClassName,
+			"mon_group":    rc.monGroupName,
+		}).Info("Monitoring group recreated under new RDT class")
+
+		// Sync all PIDs to the new monitoring group
+		if err := rc.syncCGroupPIDs(); err != nil {
+			rc.logger.WithError(err).Warn("Failed to sync PIDs to new monitoring group")
+		}
+	}
+
+	return nil
+}
+
 // Reads allocation information directly from the resctrl filesystem
 // TODO: We should do this using gorestctl
 func (rc *RDTCollector) readAllocationFromResctrl() (uint64, float64, error) {
@@ -244,6 +304,19 @@ func (rc *RDTCollector) syncCGroupPIDs() error {
 		return nil
 	}
 
+	// First, ensure all PIDs are in the parent CtrlGroup
+	// PIDs must be in the CtrlGroup before they can be added to a MonGroup under that CtrlGroup
+	if rc.ctrlGroup != nil {
+		if err := rc.ctrlGroup.AddPids(pids...); err != nil {
+			rc.logger.WithError(err).WithFields(logrus.Fields{
+				"pid":        rc.pid,
+				"ctrl_group": rc.className,
+				"pids":       pids,
+			}).Warn("Failed to add some PIDs to control group, they may not be monitored")
+		}
+	}
+
+	// Now add the PIDs to the monitoring group
 	if err := rc.monGroup.AddPids(pids...); err != nil {
 		return fmt.Errorf("failed to add PIDs to RDT monitoring group: %v", err)
 	}
@@ -251,8 +324,9 @@ func (rc *RDTCollector) syncCGroupPIDs() error {
 	rc.logger.WithFields(logrus.Fields{
 		"pid":         rc.pid,
 		"cgroup_path": rc.cgroupPath,
+		"ctrl_group":  rc.className,
 		"num_pids":    len(pids),
-	}).Trace("Synced cgroup PIDs to RDT monitoring group")
+	}).Trace("Synced cgroup PIDs to RDT control and monitoring group")
 
 	return nil
 }
@@ -260,12 +334,25 @@ func (rc *RDTCollector) syncCGroupPIDs() error {
 // SyncPIDs syncs all PIDs from the container's cgroup to the RDT monitoring group
 // This should be called after docker exec
 func (rc *RDTCollector) SyncPIDs() error {
+	// First ensure we're monitoring under the correct CtrlGroup
+	if err := rc.ensureCorrectCtrlGroup(); err != nil {
+		return fmt.Errorf("failed to ensure correct control group: %v", err)
+	}
+	
+	// Now sync the PIDs
 	return rc.syncCGroupPIDs()
 }
 
 func (rc *RDTCollector) Collect() *dataframe.RDTMetrics {
 	if !rc.rdtEnabled || rc.monGroup == nil {
 		return nil
+	}
+
+	// Ensure we're monitoring under the correct CtrlGroup before collecting
+	// This handles the case where a scheduler moved our PIDs to a different class
+	if err := rc.ensureCorrectCtrlGroup(); err != nil {
+		rc.logger.WithError(err).WithField("pid", rc.pid).Warn("Failed to ensure correct control group during collection")
+		// Continue with collection anyway, using current state
 	}
 
 	// Get monitoring data

@@ -1,0 +1,32 @@
+benchmark:
+  name: RDT Debug Test
+  description: Minimal test to debug RDT monitoring with fair scheduler
+  max_t: 10
+  log_level: trace
+  scheduler:
+    implementation: fair
+    rdt: true
+    log_level: trace
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+container0:
+  index: 0
+  image: registry.jakob-eberhardt.de/neighbor:default
+  core: 0
+  command: "/neighbor --duration 60 --buffer-size 10MB --pattern random"
+  data:
+    frequency: 500
+    perf: true
+    docker: true
+    rdt: true
