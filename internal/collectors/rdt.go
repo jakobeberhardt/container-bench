@@ -142,7 +142,7 @@ func (rc *RDTCollector) ensureCorrectCtrlGroup() error {
 	}
 
 	rc.logger.WithFields(logrus.Fields{
-		"pid":          rc.pid,
+		"pid":           rc.pid,
 		"current_class": currentClassName,
 		"tracked_class": rc.className,
 	}).Trace("Checking if CtrlGroup changed")
@@ -150,9 +150,9 @@ func (rc *RDTCollector) ensureCorrectCtrlGroup() error {
 	// Check if the CtrlGroup has changed
 	if currentClassName != rc.className {
 		rc.logger.WithFields(logrus.Fields{
-			"pid":          rc.pid,
-			"old_class":    rc.className,
-			"new_class":    currentClassName,
+			"pid":           rc.pid,
+			"old_class":     rc.className,
+			"new_class":     currentClassName,
 			"old_mon_group": rc.monGroupName,
 		}).Info("PID moved to different RDT class, recreating monitoring group")
 
@@ -178,9 +178,9 @@ func (rc *RDTCollector) ensureCorrectCtrlGroup() error {
 		rc.monGroup = monGroup
 
 		rc.logger.WithFields(logrus.Fields{
-			"pid":          rc.pid,
-			"new_class":    currentClassName,
-			"mon_group":    rc.monGroupName,
+			"pid":       rc.pid,
+			"new_class": currentClassName,
+			"mon_group": rc.monGroupName,
 		}).Info("Monitoring group recreated under new RDT class")
 
 		// Sync all PIDs to the new monitoring group
@@ -338,7 +338,7 @@ func (rc *RDTCollector) SyncPIDs() error {
 	if err := rc.ensureCorrectCtrlGroup(); err != nil {
 		return fmt.Errorf("failed to ensure correct control group: %v", err)
 	}
-	
+
 	// Now sync the PIDs
 	return rc.syncCGroupPIDs()
 }
@@ -348,7 +348,6 @@ func (rc *RDTCollector) Collect() *dataframe.RDTMetrics {
 		return nil
 	}
 
-	// Ensure we're monitoring under the correct CtrlGroup before collecting
 	// This handles the case where a scheduler moved our PIDs to a different class
 	if err := rc.ensureCorrectCtrlGroup(); err != nil {
 		rc.logger.WithError(err).WithField("pid", rc.pid).Warn("Failed to ensure correct control group during collection")
