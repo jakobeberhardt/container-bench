@@ -3,6 +3,7 @@ package collectors
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"sync"
 	"syscall"
 
@@ -15,7 +16,7 @@ import (
 type PerfCollector struct {
 	events   []*perf.Event
 	cgroupFd int
-	cpus     []int // List of CPUs to monitor
+	cpus     []int // List of CPUs to monitor// TODOmay be no longer needed
 
 	lastValues map[int]uint64
 	mutex      sync.Mutex
@@ -24,9 +25,13 @@ type PerfCollector struct {
 func NewPerfCollector(pid int, cgroupPath string, cpus []int) (*PerfCollector, error) {
 	logger := logging.GetLogger()
 
-	if len(cpus) == 0 {
-		return nil, fmt.Errorf("no CPUs specified")
+	numCPUs := runtime.NumCPU() // TODO pass the host config
+	allCPUs := make([]int, numCPUs)
+	for i := 0; i < numCPUs; i++ {
+		allCPUs[i] = i
 	}
+
+	logger.WithField("num_cpus", numCPUs).Debug("Monitoring all CPUs for cgroup-based perf collection")
 
 	if _, err := os.Stat(cgroupPath); os.IsNotExist(err) {
 		logger.WithField("cgroup_path", cgroupPath).Error("Cgroup path does not exist")
@@ -41,7 +46,7 @@ func NewPerfCollector(pid int, cgroupPath string, cpus []int) (*PerfCollector, e
 
 	collector := &PerfCollector{
 		cgroupFd:   int(cgroupFd.Fd()),
-		cpus:       cpus,
+		cpus:       allCPUs,
 		lastValues: make(map[int]uint64),
 	}
 
@@ -57,11 +62,13 @@ func NewPerfCollector(pid int, cgroupPath string, cpus []int) (*PerfCollector, e
 	}
 
 	// Create perf events for each CPU and each counter
-	// TODO: What happens if we migrate a container to different cores?
-	for _, cpu := range cpus {
+	for _, cpu := range collector.cpus {
 		for _, counter := range hardwareCounters {
 			attr := &perf.Attr{}
 			counter.Configure(attr)
+			// Enable time tracking for multiplexing correction
+			attr.CountFormat.Enabled = true
+			attr.CountFormat.Running = true
 			event, err := perf.OpenCGroup(attr, collector.cgroupFd, cpu, nil)
 			if err != nil {
 				collector.Close()
@@ -97,7 +104,6 @@ func (pc *PerfCollector) Collect() *dataframe.PerfMetrics {
 
 	numCounters := 7
 
-	// Aggregate counters across all CPUs
 	counterSums := make([]uint64, numCounters)
 
 	// Read values from all events and aggregate by counter type
@@ -107,7 +113,15 @@ func (pc *PerfCollector) Collect() *dataframe.PerfMetrics {
 			continue
 		}
 
+		// Scale the value to account for multiplexing
+		// When counters are multiplexed, they only run for a fraction of the time
+		// Scaling: scaled_value = raw_value * (time_enabled / time_running)
 		currentValue := uint64(count.Value)
+		if count.Running > 0 && count.Enabled > 0 {
+			// Scale the raw value by the ratio of enabled to running time
+			scaleFactor := float64(count.Enabled) / float64(count.Running)
+			currentValue = uint64(float64(count.Value) * scaleFactor)
+		}
 
 		counterIndex := i % numCounters
 
