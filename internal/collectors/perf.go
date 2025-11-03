@@ -5,6 +5,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"time"
 
 	"container-bench/internal/dataframe"
 	"container-bench/internal/logging"
@@ -12,14 +13,20 @@ import (
 	"github.com/elastic/go-perf"
 )
 
+type eventState struct {
+	value   uint64
+	enabled time.Duration
+	running time.Duration
+}
+
 type PerfCollector struct {
 	events     []*perf.Event
 	cgroupFile *os.File
 	cgroupFd   int
 	cpus       []int // List of CPUs to monitor// TODOmay be no longer needed
 
-	lastValues map[int]uint64
-	mutex      sync.Mutex
+	lastState map[int]*eventState
+	mutex     sync.Mutex
 }
 
 func NewPerfCollector(pid int, cgroupPath string, cpus []int) (*PerfCollector, error) {
@@ -48,10 +55,9 @@ func NewPerfCollector(pid int, cgroupPath string, cpus []int) (*PerfCollector, e
 		cgroupFile: cgroupFile,
 		cgroupFd:   int(cgroupFile.Fd()),
 		cpus:       allCPUs,
-		lastValues: make(map[int]uint64),
+		lastState:  make(map[int]*eventState),
 	}
 
-	// Define the hardware events we want to monitor using proper go-perf constants
 	hardwareCounters := []perf.HardwareCounter{
 		perf.CacheMisses,
 		perf.CacheReferences,
@@ -62,7 +68,7 @@ func NewPerfCollector(pid int, cgroupPath string, cpus []int) (*PerfCollector, e
 		perf.BusCycles,
 	}
 
-	// Define raw events for CPU stall counters (Intel-specific)
+	// Intel-specific
 	// These are not available in go-perf predefined counters
 	rawStallEvents := []struct {
 		name   string
@@ -79,7 +85,6 @@ func NewPerfCollector(pid int, cgroupPath string, cpus []int) (*PerfCollector, e
 
 	// Create perf events for each CPU and each counter
 	for _, cpu := range collector.cpus {
-		// Add predefined hardware counters
 		for _, counter := range hardwareCounters {
 			attr := &perf.Attr{}
 			counter.Configure(attr)
@@ -150,22 +155,34 @@ func (pc *PerfCollector) Collect() *dataframe.PerfMetrics {
 			continue
 		}
 
-		// Scale the value to account for multiplexing
-		// When counters are multiplexed, they only run for a fraction of the time
-		// Scaling: scaled_value = raw_value * (time_enabled / time_running)
+		// Get the current cumulative values
 		currentValue := uint64(count.Value)
-		if count.Running > 0 && count.Enabled > 0 {
-			// Scale the raw value by the ratio of enabled to running time
-			scaleFactor := float64(count.Enabled) / float64(count.Running)
-			currentValue = uint64(float64(count.Value) * scaleFactor)
+		currentEnabled := count.Enabled
+		currentRunning := count.Running
+
+		// Calculate deltas from the last sample
+		if lastState, exists := pc.lastState[i]; exists {
+			deltaValue := currentValue - lastState.value
+			deltaEnabled := currentEnabled - lastState.enabled
+			deltaRunning := currentRunning - lastState.running
+
+			// Apply multiplexing correction to the delta using the delta times
+			// based on the time deltas for this interval
+			scaledDelta := deltaValue
+			if deltaRunning > 0 && deltaEnabled > 0 && deltaRunning != deltaEnabled {
+				// Scale the delta by the ratio of enabled to running time in this interval
+				scaleFactor := float64(deltaEnabled) / float64(deltaRunning)
+				scaledDelta = uint64(float64(deltaValue) * scaleFactor)
+			}
+
+			counterSums[count.Label] += scaledDelta
 		}
 
-		if lastValue, exists := pc.lastValues[i]; exists {
-			delta := currentValue - lastValue
-			counterSums[count.Label] += delta
+		pc.lastState[i] = &eventState{
+			value:   currentValue,
+			enabled: currentEnabled,
+			running: currentRunning,
 		}
-
-		pc.lastValues[i] = currentValue
 	}
 
 	hasAnyData := false
