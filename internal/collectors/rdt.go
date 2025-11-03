@@ -317,7 +317,7 @@ func (rc *RDTCollector) processL3MonitoringData(monData *rdt.MonData, metrics *d
 					"pid":       rc.pid,
 					"cache_id":  cacheID,
 					"occupancy": occupancy,
-				}).Debug("RDT: Non-zero LLC occupancy detected")
+				}).Trace("RDT: Non-zero LLC occupancy detected")
 			}
 		}
 
@@ -387,7 +387,7 @@ func (rc *RDTCollector) getAllocationInfo(metrics *dataframe.RDTMetrics) {
 			"rdt_class":             className,
 			"l3_allocation_ways":    allocation,
 			"l3_allocation_percent": percentage,
-		}).Debug("Retrieved RDT allocation information")
+		}).Trace("Retrieved RDT allocation information")
 	} else {
 		rc.logger.WithFields(logrus.Fields{
 			"pid":       rc.pid,
