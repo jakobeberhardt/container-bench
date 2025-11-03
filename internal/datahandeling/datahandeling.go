@@ -27,18 +27,29 @@ type MetricStep struct {
 	Timestamp    time.Time `json:"timestamp"`
 	RelativeTime int64     `json:"relative_time"` // Time from benchmark start in nanoseconds
 
-	PerfCacheMisses          *uint64  `json:"perf_cache_misses,omitempty"`
-	PerfCacheReferences      *uint64  `json:"perf_cache_references,omitempty"`
-	PerfInstructions         *uint64  `json:"perf_instructions,omitempty"`
-	PerfCycles               *uint64  `json:"perf_cycles,omitempty"`
-	PerfBranchInstructions   *uint64  `json:"perf_branch_instructions,omitempty"`
-	PerfBranchMisses         *uint64  `json:"perf_branch_misses,omitempty"`
-	PerfBusCycles            *uint64  `json:"perf_bus_cycles,omitempty"`
+	PerfCacheMisses        *uint64 `json:"perf_cache_misses,omitempty"`
+	PerfCacheReferences    *uint64 `json:"perf_cache_references,omitempty"`
+	PerfInstructions       *uint64 `json:"perf_instructions,omitempty"`
+	PerfCycles             *uint64 `json:"perf_cycles,omitempty"`
+	PerfBranchInstructions *uint64 `json:"perf_branch_instructions,omitempty"`
+	PerfBranchMisses       *uint64 `json:"perf_branch_misses,omitempty"`
+	PerfBusCycles          *uint64 `json:"perf_bus_cycles,omitempty"`
+
+	// CPU stall counters
+	PerfStallsTotal              *uint64 `json:"perf_stalls_total,omitempty"`
+	PerfStallsL3Miss             *uint64 `json:"perf_stalls_l3_miss,omitempty"`
+	PerfStallsL2Miss             *uint64 `json:"perf_stalls_l2_miss,omitempty"`
+	PerfStallsL1dMiss            *uint64 `json:"perf_stalls_l1d_miss,omitempty"`
+	PerfStallsMemAny             *uint64 `json:"perf_stalls_mem_any,omitempty"`
+	PerfResourceStallsSB         *uint64 `json:"perf_resource_stalls_sb,omitempty"`
+	PerfResourceStallsScoreboard *uint64 `json:"perf_resource_stalls_scoreboard,omitempty"`
+
 	PerfCacheMissRate        *float64 `json:"perf_cache_miss_rate,omitempty"`
 	PerfInstructionsPerCycle *float64 `json:"perf_instructions_per_cycle,omitempty"`
 
 	// Derived perf metrics
-	PerfBranchMissRate *float64 `json:"perf_branch_miss_rate,omitempty"`
+	PerfBranchMissRate       *float64 `json:"perf_branch_miss_rate,omitempty"`
+	PerfStalledCyclesPercent *float64 `json:"perf_stalled_cycles_percent,omitempty"`
 
 	DockerCPUUsageTotal      *uint64  `json:"docker_cpu_usage_total,omitempty"`
 	DockerCPUUsageKernel     *uint64  `json:"docker_cpu_usage_kernel,omitempty"`
@@ -175,6 +186,16 @@ func (h *DefaultDataHandler) processPerfMetrics(perf *dataframe.PerfMetrics, ste
 	step.PerfBusCycles = perf.BusCycles
 	step.PerfCacheMissRate = perf.CacheMissRate
 	step.PerfInstructionsPerCycle = perf.InstructionsPerCycle
+
+	step.PerfStallsTotal = perf.StallsTotal
+	step.PerfStallsL3Miss = perf.StallsL3Miss
+	step.PerfStallsL2Miss = perf.StallsL2Miss
+	step.PerfStallsL1dMiss = perf.StallsL1dMiss
+	step.PerfStallsMemAny = perf.StallsMemAny
+	step.PerfResourceStallsSB = perf.ResourceStallsSB
+	step.PerfResourceStallsScoreboard = perf.ResourceStallsScoreboard
+
+	step.PerfStalledCyclesPercent = perf.StalledCyclesPercent
 
 	// Calculate derived metrics: Branch miss rate
 	if perf.BranchInstructions != nil && perf.BranchMisses != nil && *perf.BranchInstructions > 0 {

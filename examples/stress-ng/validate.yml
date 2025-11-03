@@ -1,7 +1,7 @@
 benchmark:
   name: Validate
   description: Runs stress-ng workers which perform operations on matrices
-  max_t: 30
+  max_t: 90
   log_level: info
   scheduler:
     implementation: default
@@ -26,32 +26,32 @@ c0:
   core: 0
   command: "stress-ng --matrix-3d 1 --timeout 0"
   data:
-    frequency: 100
+    frequency: 1000
     perf: true
     docker: true
     rdt: true
 
-# c1:
-#   index: 1
-#   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-#   core: 1
-#   command: "sleep 15 && stress-ng --matrix-3d 1 --timeout 0" 
-#   data:
-#     frequency: 100
-#     perf: true
-#     docker: true
-#     rdt: true
+c1:
+  index: 1
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 2
+  command: "stress-ng --matrix-3d 1 --timeout 0" 
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
 
-# c2:
-#   index: 2
-#   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-#   core: 2
-#   command: "sleep 30 && stress-ng --matrix-3d 1 --timeout 0"
-#   data:
-#     frequency: 100
-#     perf: true
-#     docker: true
-#     rdt: true
+c2:
+  index: 2
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 4
+  command: "stress-ng --matrix-3d 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
 
 # c3:
 #   index: 3

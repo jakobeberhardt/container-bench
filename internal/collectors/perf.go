@@ -5,7 +5,6 @@ import (
 	"os"
 	"runtime"
 	"sync"
-	"syscall"
 
 	"container-bench/internal/dataframe"
 	"container-bench/internal/logging"
@@ -14,9 +13,10 @@ import (
 )
 
 type PerfCollector struct {
-	events   []*perf.Event
-	cgroupFd int
-	cpus     []int // List of CPUs to monitor// TODOmay be no longer needed
+	events     []*perf.Event
+	cgroupFile *os.File
+	cgroupFd   int
+	cpus       []int // List of CPUs to monitor// TODOmay be no longer needed
 
 	lastValues map[int]uint64
 	mutex      sync.Mutex
@@ -38,14 +38,15 @@ func NewPerfCollector(pid int, cgroupPath string, cpus []int) (*PerfCollector, e
 		return nil, err
 	}
 
-	cgroupFd, err := os.Open(cgroupPath)
+	cgroupFile, err := os.Open(cgroupPath)
 	if err != nil {
 		logger.WithField("cgroup_path", cgroupPath).WithError(err).Error("Failed to open cgroup path")
 		return nil, err
 	}
 
 	collector := &PerfCollector{
-		cgroupFd:   int(cgroupFd.Fd()),
+		cgroupFile: cgroupFile,
+		cgroupFd:   int(cgroupFile.Fd()),
 		cpus:       allCPUs,
 		lastValues: make(map[int]uint64),
 	}
@@ -61,8 +62,24 @@ func NewPerfCollector(pid int, cgroupPath string, cpus []int) (*PerfCollector, e
 		perf.BusCycles,
 	}
 
+	// Define raw events for CPU stall counters (Intel-specific)
+	// These are not available in go-perf predefined counters
+	rawStallEvents := []struct {
+		name   string
+		config uint64
+	}{
+		{"cycle_activity.stalls_total", 0x40004a3},
+		{"cycle_activity.stalls_l3_miss", 0x60006a3},
+		{"cycle_activity.stalls_l2_miss", 0x50005a3},
+		{"cycle_activity.stalls_l1d_miss", 0xc000ca3},
+		{"cycle_activity.stalls_mem_any", 0x140014a3},
+		{"resource_stalls.sb", 0x8a2},
+		{"resource_stalls.scoreboard", 0x2a2},
+	}
+
 	// Create perf events for each CPU and each counter
 	for _, cpu := range collector.cpus {
+		// Add predefined hardware counters
 		for _, counter := range hardwareCounters {
 			attr := &perf.Attr{}
 			counter.Configure(attr)
@@ -77,6 +94,27 @@ func NewPerfCollector(pid int, cgroupPath string, cpus []int) (*PerfCollector, e
 					"cpu":     cpu,
 				}).WithError(err).Error("Failed to open perf event")
 				return nil, err
+			}
+
+			collector.events = append(collector.events, event)
+		}
+
+		// Add raw stall events
+		for _, rawEvent := range rawStallEvents {
+			attr := &perf.Attr{
+				Type:   perf.RawEvent,
+				Config: rawEvent.config,
+				Label:  rawEvent.name,
+			}
+			attr.CountFormat.Enabled = true
+			attr.CountFormat.Running = true
+			event, err := perf.OpenCGroup(attr, collector.cgroupFd, cpu, nil)
+			if err != nil {
+				logger.WithFields(map[string]interface{}{
+					"event": rawEvent.name,
+					"cpu":   cpu,
+				}).WithError(err).Warn("Failed to open raw perf event, continuing without it")
+				continue
 			}
 
 			collector.events = append(collector.events, event)
@@ -102,9 +140,8 @@ func (pc *PerfCollector) Collect() *dataframe.PerfMetrics {
 	pc.mutex.Lock()
 	defer pc.mutex.Unlock()
 
-	numCounters := 7
-
-	counterSums := make([]uint64, numCounters)
+	// Aggregate counters by label/name across all CPUs
+	counterSums := make(map[string]uint64)
 
 	// Read values from all events and aggregate by counter type
 	for i, event := range pc.events {
@@ -123,11 +160,9 @@ func (pc *PerfCollector) Collect() *dataframe.PerfMetrics {
 			currentValue = uint64(float64(count.Value) * scaleFactor)
 		}
 
-		counterIndex := i % numCounters
-
 		if lastValue, exists := pc.lastValues[i]; exists {
 			delta := currentValue - lastValue
-			counterSums[counterIndex] += delta
+			counterSums[count.Label] += delta
 		}
 
 		pc.lastValues[i] = currentValue
@@ -147,29 +182,30 @@ func (pc *PerfCollector) Collect() *dataframe.PerfMetrics {
 
 	metrics := &dataframe.PerfMetrics{}
 
-	if counterSums[0] > 0 {
-		metrics.CacheMisses = &counterSums[0]
-	}
-	if counterSums[1] > 0 {
-		metrics.CacheReferences = &counterSums[1]
-	}
-	if counterSums[2] > 0 {
-		metrics.Instructions = &counterSums[2]
-	}
-	if counterSums[3] > 0 {
-		metrics.Cycles = &counterSums[3]
-	}
-	if counterSums[4] > 0 {
-		metrics.BranchInstructions = &counterSums[4]
-	}
-	if counterSums[5] > 0 {
-		metrics.BranchMisses = &counterSums[5]
-	}
-	if counterSums[6] > 0 {
-		metrics.BusCycles = &counterSums[6]
+	setValue := func(label string) *uint64 {
+		if val, ok := counterSums[label]; ok && val > 0 {
+			v := val
+			return &v
+		}
+		return nil
 	}
 
-	// Calculate derived metrics only if we have the base data
+	metrics.CacheMisses = setValue("cache-misses")
+	metrics.CacheReferences = setValue("cache-references")
+	metrics.Instructions = setValue("instructions")
+	metrics.Cycles = setValue("cpu-cycles")
+	metrics.BranchInstructions = setValue("branch-instructions")
+	metrics.BranchMisses = setValue("branch-misses")
+	metrics.BusCycles = setValue("bus-cycles")
+
+	metrics.StallsTotal = setValue("cycle_activity.stalls_total")
+	metrics.StallsL3Miss = setValue("cycle_activity.stalls_l3_miss")
+	metrics.StallsL2Miss = setValue("cycle_activity.stalls_l2_miss")
+	metrics.StallsL1dMiss = setValue("cycle_activity.stalls_l1d_miss")
+	metrics.StallsMemAny = setValue("cycle_activity.stalls_mem_any")
+	metrics.ResourceStallsSB = setValue("resource_stalls.sb")
+	metrics.ResourceStallsScoreboard = setValue("resource_stalls.scoreboard")
+
 	if metrics.CacheMisses != nil && metrics.CacheReferences != nil && *metrics.CacheReferences > 0 {
 		rate := float64(*metrics.CacheMisses) / float64(*metrics.CacheReferences)
 		metrics.CacheMissRate = &rate
@@ -178,6 +214,11 @@ func (pc *PerfCollector) Collect() *dataframe.PerfMetrics {
 	if metrics.Instructions != nil && metrics.Cycles != nil && *metrics.Cycles > 0 {
 		ipc := float64(*metrics.Instructions) / float64(*metrics.Cycles)
 		metrics.InstructionsPerCycle = &ipc
+	}
+
+	if metrics.StallsTotal != nil && metrics.Cycles != nil && *metrics.Cycles > 0 {
+		stalledPercent := (float64(*metrics.StallsTotal) / float64(*metrics.Cycles)) * 100.0
+		metrics.StalledCyclesPercent = &stalledPercent
 	}
 
 	return metrics
@@ -191,8 +232,9 @@ func (pc *PerfCollector) Close() {
 	}
 	pc.events = nil
 
-	if pc.cgroupFd >= 0 {
-		syscall.Close(pc.cgroupFd)
+	if pc.cgroupFile != nil {
+		pc.cgroupFile.Close()
+		pc.cgroupFile = nil
 		pc.cgroupFd = -1
 	}
 }
