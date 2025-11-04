@@ -19,11 +19,11 @@ type ProbeScheduler struct {
 	containers      []ContainerInfo
 	rdtAllocator    RDTAllocator
 	prober          *probe.Probe
-	
+
 	// Probing state
-	probingStarted  bool
-	nextProbeIndex  int
-	activeProbe     <-chan *probe.ProbeResult
+	probingStarted bool
+	nextProbeIndex int
+	activeProbe    <-chan *probe.ProbeResult
 }
 
 func NewProbeScheduler() *ProbeScheduler {
@@ -49,7 +49,7 @@ func (ps *ProbeScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) er
 	if ps.prober == nil {
 		return nil
 	}
-	
+
 	// Check if we have an active probe running
 	if ps.activeProbe != nil {
 		// Non-blocking check if probe completed
@@ -67,30 +67,30 @@ func (ps *ProbeScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) er
 			return nil
 		}
 	}
-	
+
 	// Start next probe if we have containers left to probe
 	if ps.nextProbeIndex < len(ps.containers) {
 		containerInfo := ps.containers[ps.nextProbeIndex]
-		
+
 		ps.schedulerLogger.WithFields(logrus.Fields{
 			"container_index": containerInfo.Index,
 			"container_name":  containerInfo.Config.GetContainerName(0), // Benchmark ID not available here
 			"probe_duration":  "60s",
 			"probe_core":      "5",
 		}).Info("Starting probe")
-		
+
 		// Create probe request
 		req := probe.ProbeRequest{
 			ContainerConfig: containerInfo.Config,
 			ContainerID:     containerInfo.ContainerID,
 			Dataframes:      dataframes,
 			ProbeDuration:   60 * time.Second,
-			ProbeCores:      "5",
+			ProbeCores:      "5-8",
 			ProbeSocket:     0,
 			Isolated:        true,
 			Abortable:       false,
 		}
-		
+
 		// Launch probe asynchronously
 		ps.activeProbe = ps.prober.Probe(context.Background(), req)
 		ps.nextProbeIndex++

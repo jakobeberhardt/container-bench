@@ -22,7 +22,7 @@ type ProbeSensitivities struct {
 	NetworkRead  *float64
 	NetworkWrite *float64
 	SysCall      *float64
-	
+
 	// Dataframe range used for analysis
 	FirstDataframeStep int
 	LastDataframeStep  int

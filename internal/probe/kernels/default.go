@@ -50,38 +50,38 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 	targetContainerIndex int,
 	targetContainerConfig *config.ContainerConfig,
 ) (*ProbeSensitivities, error) {
-	
+
 	result := &ProbeSensitivities{}
-	
+
 	// Divide time into 11 segments (baseline + 10 tests)
 	segmentTime := totalTime / 11
-	
+
 	// Get container dataframe for the TARGET container (the one being probed)
 	containerDF := dataframes.GetContainer(targetContainerIndex)
 	if containerDF == nil {
 		return nil, fmt.Errorf("container dataframe not found for index %d", targetContainerIndex)
 	}
-	
+
 	// Record starting dataframe step
 	startStep := dpk.getCurrentMaxStep(containerDF)
 	result.FirstDataframeStep = startStep
-	
+
 	dpk.logger.WithFields(logrus.Fields{
 		"target_container_index": targetContainerIndex,
 		"probing_container_id":   probingContainerID[:12],
 		"total_time":             totalTime,
 		"segment_time":           segmentTime,
 	}).Debug("Starting probe kernel execution sequence")
-	
+
 	// 1. Baseline: No interference, just measure target performance
-	baselineIPC, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF, 
+	baselineIPC, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
 		cores, "", segmentTime)
 	if err != nil {
 		return nil, fmt.Errorf("baseline measurement failed: %w", err)
 	}
-	
+
 	dpk.logger.WithField("baseline_ipc", baselineIPC).Info("Baseline IPC established")
-	
+
 	// 2. CPU Integer: stress-ng --cpu
 	cpuIntIPC, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
 		cores, "stress-ng --cpu 0", segmentTime)
@@ -95,7 +95,7 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 			"sensitivity":  val,
 		}).Info("CPU Integer sensitivity calculated")
 	}
-	
+
 	// 3. CPU Float: stress-ng --matrixprod
 	cpuFloatIPC, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
 		cores, "stress-ng --matrixprod 0", segmentTime)
@@ -104,7 +104,7 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 		val := clampSensitivity(sensitivity)
 		result.CPUFloat = &val
 	}
-	
+
 	// 4. LLC: stress-ng --cache
 	llcIPC, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
 		cores, "stress-ng --cache 0", segmentTime)
@@ -118,7 +118,7 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 			"sensitivity":  val,
 		}).Info("LLC sensitivity calculated")
 	}
-	
+
 	// 5. Memory Read: stress-ng --stream
 	memReadIPC, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
 		cores, "stress-ng --stream 0", segmentTime)
@@ -127,7 +127,7 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 		val := clampSensitivity(sensitivity)
 		result.MemRead = &val
 	}
-	
+
 	// 6. Memory Write: stress-ng --vm
 	memWriteIPC, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
 		cores, "stress-ng --vm 0", segmentTime)
@@ -136,7 +136,7 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 		val := clampSensitivity(sensitivity)
 		result.MemWrite = &val
 	}
-	
+
 	// 7. Store Buffer: stress-ng --memcpy
 	sbIPC, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
 		cores, "stress-ng --memcpy 0", segmentTime)
@@ -145,7 +145,7 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 		val := clampSensitivity(sensitivity)
 		result.StoreBuffer = &val
 	}
-	
+
 	// 8. Scoreboard: stress-ng --branch
 	scoreboardIPC, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
 		cores, "stress-ng --branch 0", segmentTime)
@@ -154,7 +154,7 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 		val := clampSensitivity(sensitivity)
 		result.Scoreboard = &val
 	}
-	
+
 	// 9. Network Read: stress-ng --sock
 	netReadIPC, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
 		cores, "stress-ng --sock 0", segmentTime)
@@ -163,7 +163,7 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 		val := clampSensitivity(sensitivity)
 		result.NetworkRead = &val
 	}
-	
+
 	// 10. Network Write: stress-ng --sock (same)
 	netWriteIPC, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
 		cores, "stress-ng --sock 0", segmentTime)
@@ -172,7 +172,7 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 		val := clampSensitivity(sensitivity)
 		result.NetworkWrite = &val
 	}
-	
+
 	// 11. SysCall: stress-ng --x86syscall
 	syscallIPC, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
 		cores, "stress-ng --x86syscall 1", segmentTime)
@@ -181,11 +181,11 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 		val := clampSensitivity(sensitivity)
 		result.SysCall = &val
 	}
-	
+
 	// Record ending dataframe step
 	endStep := dpk.getCurrentMaxStep(containerDF)
 	result.LastDataframeStep = endStep
-	
+
 	return result, nil
 }
 
@@ -199,10 +199,10 @@ func (dpk *DefaultProbeKernel) measureWithWorkload(
 	command string,
 	duration time.Duration,
 ) (float64, error) {
-	
+
 	// Get current max step before test
 	stepBefore := dpk.getCurrentMaxStep(targetContainerDF)
-	
+
 	if command == "" {
 		// Baseline: no interference, just sleep
 		dpk.logger.WithField("duration", duration).Debug("Running baseline measurement (no interference)")
@@ -210,47 +210,47 @@ func (dpk *DefaultProbeKernel) measureWithWorkload(
 	} else {
 		// Execute stress command in probing container
 		fullCommand := fmt.Sprintf("%s --timeout %ds", command, int(duration.Seconds()))
-		
+
 		dpk.logger.WithFields(logrus.Fields{
 			"command":              fullCommand,
 			"probing_container_id": probingContainerID[:12],
 			"duration":             duration,
 		}).Debug("Executing stress command in probing container")
-		
+
 		execConfig := types.ExecConfig{
 			Cmd:          []string{"sh", "-c", fullCommand},
 			AttachStdout: false,
 			AttachStderr: false,
 		}
-		
+
 		execResp, err := dockerClient.ContainerExecCreate(ctx, probingContainerID, execConfig)
 		if err != nil {
 			return 0, fmt.Errorf("failed to create exec for command '%s': %w", command, err)
 		}
-		
+
 		if err := dockerClient.ContainerExecStart(ctx, execResp.ID, types.ExecStartCheck{}); err != nil {
 			return 0, fmt.Errorf("failed to start exec for command '%s': %w", command, err)
 		}
-		
+
 		dpk.logger.WithField("exec_id", execResp.ID[:12]).Debug("Stress command started, waiting for completion")
-		
+
 		// Wait for the stress test to complete
 		time.Sleep(duration)
 	}
-	
+
 	// Get current max step after test
 	stepAfter := dpk.getCurrentMaxStep(targetContainerDF)
-	
+
 	// Calculate average IPC of the TARGET container during this period
 	avgIPC := dpk.getAvgIPC(targetContainerDF, stepBefore, stepAfter)
-	
+
 	dpk.logger.WithFields(logrus.Fields{
 		"step_before": stepBefore,
 		"step_after":  stepAfter,
 		"avg_ipc":     avgIPC,
 		"command":     command,
 	}).Debug("Workload measurement completed")
-	
+
 	return avgIPC, nil
 }
 
@@ -272,10 +272,10 @@ func (dpk *DefaultProbeKernel) getAvgIPC(containerDF *dataframe.ContainerDataFra
 
 	var totalIPC float64
 	var count int
-	
+
 	dpk.logger.WithFields(logrus.Fields{
-		"from_step":  fromStep,
-		"to_step":    toStep,
+		"from_step":   fromStep,
+		"to_step":     toStep,
 		"total_steps": len(steps),
 	}).Debug("Calculating average IPC")
 
@@ -293,12 +293,12 @@ func (dpk *DefaultProbeKernel) getAvgIPC(containerDF *dataframe.ContainerDataFra
 			}
 		}
 	}
-	
+
 	avgIPC := float64(0)
 	if count > 0 {
 		avgIPC = totalIPC / float64(count)
 	}
-	
+
 	dpk.logger.WithFields(logrus.Fields{
 		"count":   count,
 		"avg_ipc": avgIPC,

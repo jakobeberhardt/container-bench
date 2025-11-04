@@ -378,13 +378,13 @@ func runBenchmark(configFile string) error {
 	if bench.config.Benchmark.Scheduler.Prober != nil {
 		proberConfig := bench.config.Benchmark.Scheduler.Prober
 		logger.WithField("prober_implementation", proberConfig.Implementation).Info("Initializing probe")
-		
+
 		// Determine probe image
 		probeImage := proberConfig.ProbeImage
 		if probeImage == "" {
 			probeImage = "registry.jakob-eberhardt.de/rdt4nn/stress-ng" // Default probe image
 		}
-		
+
 		// Create probe kernel
 		var probeKernel kernels.ProbeKernel
 		switch proberConfig.Implementation {
@@ -394,7 +394,7 @@ func runBenchmark(configFile string) error {
 			logger.WithField("implementation", proberConfig.Implementation).Warn("Unknown probe kernel, using default")
 			probeKernel = kernels.NewDefaultProbeKernel()
 		}
-		
+
 		// Create Probe singleton
 		bench.prober = probe.NewProbe(
 			bench.dockerClient,
@@ -404,10 +404,10 @@ func runBenchmark(configFile string) error {
 			bench.config.Benchmark.Name,
 			probeImage,
 		)
-		
+
 		// Inject probe into scheduler
 		bench.scheduler.SetProbe(bench.prober)
-		
+
 		logger.WithFields(logrus.Fields{
 			"kernel":      probeKernel.GetName(),
 			"probe_image": probeImage,
@@ -560,7 +560,7 @@ func (cb *ContainerBench) pullImages(ctx context.Context) error {
 		}
 		uniqueImages[containerConfig.Image].containerCount++
 	}
-	
+
 	// Add probe image if prober is configured
 	if cb.prober != nil {
 		probeImage := cb.prober.GetProbeImage()
@@ -891,7 +891,7 @@ func (cb *ContainerBench) initializeSchedulerWithPIDs() error {
 		if !exists {
 			return fmt.Errorf("PID not found for container %d", containerConfig.Index)
 		}
-		
+
 		containerID, exists := cb.containerIDs[containerConfig.Index]
 		if !exists {
 			return fmt.Errorf("Container ID not found for container %d", containerConfig.Index)
@@ -1081,7 +1081,7 @@ func (cb *ContainerBench) writeDatabaseData() error {
 		logger.WithError(err).Error("Failed to export metadata")
 		return fmt.Errorf("failed to export metadata: %w", err)
 	}
-	
+
 	// Export probe results if prober was used
 	if cb.prober != nil {
 		probeResults := cb.prober.GetResults()
