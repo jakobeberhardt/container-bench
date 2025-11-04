@@ -10,6 +10,6 @@ echo "To use Go, add the following to your shell profile (~/.bashrc, ~/.zshrc, e
 echo "export PATH=/usr/local/go/bin:\$PATH"
 echo ""
 echo "Or run the following command in your current CloudLab session:"
-echo "echo 'export PATH=/usr/local/go/bin:\$PATH' >> /users/$USER/.bashrc && source /users/$USER/.bashrc"
+echo "echo 'export PATH=/usr/local/go/bin:\$PATH' >> \$HOME/.bashrc && source \$HOME/.bashrc"
 echo ""
 echo "Verify installation with: go version"
