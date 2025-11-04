@@ -21,6 +21,8 @@ import (
 	"container-bench/internal/datahandeling"
 	"container-bench/internal/host"
 	"container-bench/internal/logging"
+	"container-bench/internal/probe"
+	"container-bench/internal/probe/kernels"
 	"container-bench/internal/scheduler"
 
 	"github.com/docker/docker/api/types"
@@ -76,6 +78,7 @@ type ContainerBench struct {
 	scheduler     scheduler.Scheduler
 	hostConfig    *host.HostConfig
 	collectors    []*collectors.ContainerCollector
+	prober        *probe.Probe
 	benchmarkID   int
 	startTime     time.Time
 	endTime       time.Time
@@ -83,7 +86,7 @@ type ContainerBench struct {
 	// Container tracking for clean orchestration
 	containerIDs  map[int]string
 	containerPIDs map[int]int
-	networkID     string  
+	networkID     string
 }
 
 func (cb *ContainerBench) cleanup() {
@@ -124,7 +127,7 @@ func (cb *ContainerBench) stopAndRemoveContainer(ctx context.Context, containerI
 
 	removeOptions := types.ContainerRemoveOptions{
 		Force:         true,
-		RemoveVolumes: true, 
+		RemoveVolumes: true,
 	}
 
 	if err := cb.dockerClient.ContainerRemove(ctx, containerID, removeOptions); err != nil {
@@ -306,12 +309,12 @@ func runBenchmark(configFile string) error {
 	bench.hostConfig = hostConfig
 
 	logger.WithFields(logrus.Fields{
-		"hostname":      hostConfig.Hostname,
-		"cpu_model":     hostConfig.CPUModel,
+		"hostname":       hostConfig.Hostname,
+		"cpu_model":      hostConfig.CPUModel,
 		"physical_cores": hostConfig.Topology.PhysicalCores,
 		"logical_cores":  hostConfig.Topology.LogicalCores,
-		"l3_cache_mb":   hostConfig.L3Cache.SizeMB,
-		"rdt_supported": hostConfig.RDT.Supported,
+		"l3_cache_mb":    hostConfig.L3Cache.SizeMB,
+		"rdt_supported":  hostConfig.RDT.Supported,
 	}).Info("Host configuration initialized")
 
 	// Initialize Docker client
@@ -348,12 +351,6 @@ func runBenchmark(configFile string) error {
 	}
 
 	switch schedulerImpl {
-	case "cache-aware":
-		logger.Info("Using cache-aware scheduler")
-		bench.scheduler = scheduler.NewCacheAwareSchedulerWithRDT(bench.config.Benchmark.Scheduler.RDT)
-	case "fair":
-		logger.Info("Using fair scheduler")
-		bench.scheduler = scheduler.NewFairScheduler()
 	case "default":
 		logger.Info("Using default scheduler")
 		bench.scheduler = scheduler.NewDefaultScheduler()
@@ -373,6 +370,46 @@ func runBenchmark(configFile string) error {
 
 	// Set host config for scheduler
 	bench.scheduler.SetHostConfig(bench.hostConfig)
+
+	// Initialize Probe if configured
+	if bench.config.Benchmark.Scheduler.Prober != nil {
+		proberConfig := bench.config.Benchmark.Scheduler.Prober
+		logger.WithField("prober_implementation", proberConfig.Implementation).Info("Initializing probe")
+		
+		// Determine probe image
+		probeImage := proberConfig.ProbeImage
+		if probeImage == "" {
+			probeImage = "registry.jakob-eberhardt.de/rdt4nn/stress-ng" // Default probe image
+		}
+		
+		// Create probe kernel
+		var probeKernel kernels.ProbeKernel
+		switch proberConfig.Implementation {
+		case "default", "":
+			probeKernel = kernels.NewDefaultProbeKernel()
+		default:
+			logger.WithField("implementation", proberConfig.Implementation).Warn("Unknown probe kernel, using default")
+			probeKernel = kernels.NewDefaultProbeKernel()
+		}
+		
+		// Create Probe singleton
+		bench.prober = probe.NewProbe(
+			bench.dockerClient,
+			probeKernel,
+			bench.hostConfig,
+			bench.benchmarkID,
+			bench.config.Benchmark.Name,
+			probeImage,
+		)
+		
+		// Inject probe into scheduler
+		bench.scheduler.SetProbe(bench.prober)
+		
+		logger.WithFields(logrus.Fields{
+			"kernel":      probeKernel.GetName(),
+			"probe_image": probeImage,
+		}).Info("Probe initialized and injected into scheduler")
+	}
 
 	// NOTE: Scheduler Initialize() will be called after containers start to provide PIDs
 
@@ -503,9 +540,9 @@ func (cb *ContainerBench) pullImages(ctx context.Context) error {
 
 	// Deduplicate images
 	type imageInfo struct {
-		image           string
-		needsAuth       bool
-		containerCount  int
+		image          string
+		needsAuth      bool
+		containerCount int
 	}
 	uniqueImages := make(map[string]*imageInfo)
 
@@ -519,6 +556,20 @@ func (cb *ContainerBench) pullImages(ctx context.Context) error {
 			}
 		}
 		uniqueImages[containerConfig.Image].containerCount++
+	}
+	
+	// Add probe image if prober is configured
+	if cb.prober != nil {
+		probeImage := cb.prober.GetProbeImage()
+		if _, exists := uniqueImages[probeImage]; !exists {
+			needsAuth := registryConfig != nil && isPrivateRegistryImage(probeImage, registryConfig.Host)
+			uniqueImages[probeImage] = &imageInfo{
+				image:          probeImage,
+				needsAuth:      needsAuth,
+				containerCount: 1,
+			}
+			logger.WithField("probe_image", probeImage).Debug("Added probe image to pull list")
+		}
 	}
 
 	logger.WithFields(logrus.Fields{
@@ -616,7 +667,7 @@ func (cb *ContainerBench) createNetwork(ctx context.Context) error {
 
 	// Create a bridge network for the benchmark
 	resp, err := cb.dockerClient.NetworkCreate(ctx, networkName, types.NetworkCreate{
-		Driver: "bridge",
+		Driver:         "bridge",
 		CheckDuplicate: true,
 	})
 	if err != nil {
@@ -916,17 +967,6 @@ func (cb *ContainerBench) startCollectors(ctx context.Context) error {
 // Start scheduler
 func (cb *ContainerBench) startScheduler() error {
 	logger := logging.GetLogger()
-	containers := cb.config.GetContainersSorted()
-
-	// Notify scheduler of container PIDs for cache-aware scheduling
-	// Make this the general case for RDT-enabled schedulers
-	if cacheAwareScheduler, ok := cb.scheduler.(*scheduler.CacheAwareScheduler); ok {
-		for _, containerConfig := range containers {
-			pid := cb.containerPIDs[containerConfig.Index]
-			cacheAwareScheduler.SetContainerPID(containerConfig.Index, pid)
-		}
-	}
-
 	logger.Info("Scheduler started and configured")
 	return nil
 }
@@ -1031,6 +1071,18 @@ func (cb *ContainerBench) writeDatabaseData() error {
 	if err := cb.dbClient.WriteMetadata(metadata); err != nil {
 		logger.WithError(err).Error("Failed to export metadata")
 		return fmt.Errorf("failed to export metadata: %w", err)
+	}
+	
+	// Export probe results if prober was used
+	if cb.prober != nil {
+		probeResults := cb.prober.GetResults()
+		if len(probeResults) > 0 {
+			logger.WithField("probe_count", len(probeResults)).Info("Exporting probe results")
+			if err := cb.dbClient.WriteProbeResults(probeResults); err != nil {
+				logger.WithError(err).Error("Failed to export probe results")
+				return fmt.Errorf("failed to export probe results: %w", err)
+			}
+		}
 	}
 
 	duration := cb.endTime.Sub(cb.startTime)

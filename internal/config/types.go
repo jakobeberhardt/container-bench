@@ -32,9 +32,17 @@ type RegistryConfig struct {
 }
 
 type SchedulerConfig struct {
+	Implementation string        `yaml:"implementation"`
+	RDT            bool          `yaml:"rdt"`
+	LogLevel       string        `yaml:"log_level,omitempty"`
+	Prober         *ProberConfig `yaml:"prober,omitempty"`
+}
+
+type ProberConfig struct {
 	Implementation string `yaml:"implementation"`
-	RDT            bool   `yaml:"rdt"`
-	LogLevel       string `yaml:"log_level,omitempty"`
+	Abortable      bool   `yaml:"abortable"`
+	Isolated       bool   `yaml:"isolated"`
+	ProbeImage     string `yaml:"probe_image,omitempty"`
 }
 
 type DataConfig struct {

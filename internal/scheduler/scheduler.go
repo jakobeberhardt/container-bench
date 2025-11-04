@@ -5,6 +5,7 @@ import (
 	"container-bench/internal/dataframe"
 	"container-bench/internal/host"
 	"container-bench/internal/logging"
+	"container-bench/internal/probe"
 	"github.com/sirupsen/logrus"
 )
 
@@ -24,6 +25,9 @@ type Scheduler interface {
 	
 	// Host configuration for scheduler decisions
 	SetHostConfig(hostConfig *host.HostConfig)
+	
+	// Probe injection for sensitivity analysis
+	SetProbe(prober *probe.Probe)
 }
 
 type DefaultScheduler struct {
@@ -33,6 +37,7 @@ type DefaultScheduler struct {
 	hostConfig      *host.HostConfig
 	containers      []ContainerInfo
 	rdtAllocator    RDTAllocator
+	prober          *probe.Probe
 }
 
 func NewDefaultScheduler() *DefaultScheduler {
@@ -100,3 +105,9 @@ func (ds *DefaultScheduler) SetLogLevel(level string) error {
 func (ds *DefaultScheduler) SetHostConfig(hostConfig *host.HostConfig) {
 	ds.hostConfig = hostConfig
 }
+
+func (ds *DefaultScheduler) SetProbe(prober *probe.Probe) {
+	ds.prober = prober
+	ds.schedulerLogger.Debug("Probe injected into scheduler")
+}
+

@@ -15,6 +15,7 @@ import (
 	"container-bench/internal/datahandeling"
 	"container-bench/internal/host"
 	"container-bench/internal/logging"
+	"container-bench/internal/probe"
 
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/influxdata/influxdb-client-go/v2/api"
@@ -27,6 +28,7 @@ type DatabaseClient interface {
 	GetLastBenchmarkID() (int, error)
 	WriteBenchmarkMetrics(benchmarkID int, benchmarkConfig *config.BenchmarkConfig, metrics *datahandeling.BenchmarkMetrics, startTime, endTime time.Time) error
 	WriteMetadata(metadata *BenchmarkMetadata) error
+	WriteProbeResults(probeResults []*probe.ProbeResult) error
 	Close()
 }
 
@@ -464,6 +466,112 @@ func (idb *InfluxDBClient) WriteMetadata(metadata *BenchmarkMetadata) error {
 	}
 
 	return idb.retryWithBackoff(operation, "write_metadata")
+}
+
+// WriteProbeResults writes probe results to the benchmark_probes table
+func (idb *InfluxDBClient) WriteProbeResults(probeResults []*probe.ProbeResult) error {
+	logger := logging.GetLogger()
+	
+	if len(probeResults) == 0 {
+		logger.Info("No probe results to write")
+		return nil
+	}
+	
+	logger.WithField("probe_count", len(probeResults)).Info("Writing probe results to InfluxDB")
+	
+	var points []*write.Point
+	
+	for _, result := range probeResults {
+		tags := map[string]string{
+			"benchmark_id":             fmt.Sprintf("%d", result.BenchmarkID),
+			"container_id":             result.ContainerID,
+			"container_name":           result.ContainerName,
+			"container_index":          fmt.Sprintf("%d", result.ContainerIndex),
+			"container_cores":          result.ContainerCores,
+			"container_image":          result.ContainerImage,
+			"probing_container_id":     result.ProbingContainerID,
+			"probing_container_name":   result.ProbingContainerName,
+			"probing_container_cores":  result.ProbingContainerCores,
+			"used_probe_kernel":        result.UsedProbeKernel,
+		}
+		
+		fields := map[string]interface{}{
+			"container_command":        result.ContainerCommand,
+			"probe_time_ns":            result.ProbeTime.Nanoseconds(),
+			"isolated":                 result.Isolated,
+			"aborted":                  result.Aborted,
+			"started":                  result.Started.Format(time.RFC3339),
+			"finished":                 result.Finished.Format(time.RFC3339),
+			"first_dataframe_step":     result.FirstDataframeStep,
+			"last_dataframe_step":      result.LastDataframeStep,
+		}
+		
+		// Add optional fields
+		if result.ContainerSocket > 0 {
+			fields["container_socket"] = result.ContainerSocket
+		}
+		if result.ProbingContainerSocket > 0 {
+			fields["probing_container_socket"] = result.ProbingContainerSocket
+		}
+		if result.AbortedAt != nil {
+			fields["aborted_at"] = result.AbortedAt.Format(time.RFC3339)
+		}
+		
+		// Add sensitivity metrics (only if not nil)
+		if result.CPUInteger != nil {
+			fields["cpu_integer"] = *result.CPUInteger
+		}
+		if result.CPUFloat != nil {
+			fields["cpu_float"] = *result.CPUFloat
+		}
+		if result.LLC != nil {
+			fields["llc"] = *result.LLC
+		}
+		if result.MemRead != nil {
+			fields["mem_read"] = *result.MemRead
+		}
+		if result.MemWrite != nil {
+			fields["mem_write"] = *result.MemWrite
+		}
+		if result.StoreBuffer != nil {
+			fields["store_buffer"] = *result.StoreBuffer
+		}
+		if result.Scoreboard != nil {
+			fields["scoreboard"] = *result.Scoreboard
+		}
+		if result.NetworkRead != nil {
+			fields["network_read"] = *result.NetworkRead
+		}
+		if result.NetworkWrite != nil {
+			fields["network_write"] = *result.NetworkWrite
+		}
+		if result.SysCall != nil {
+			fields["syscall"] = *result.SysCall
+		}
+		
+		point := influxdb2.NewPoint("benchmark_probes", tags, fields, result.Started)
+		points = append(points, point)
+	}
+	
+	// Write all probe result points
+	operation := func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		
+		for _, point := range points {
+			if err := idb.writeAPI.WritePoint(ctx, point); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	
+	if err := idb.retryWithBackoff(operation, "write_probe_results"); err != nil {
+		return fmt.Errorf("failed to write probe results: %w", err)
+	}
+	
+	logger.WithField("probe_count", len(probeResults)).Info("Probe results written successfully")
+	return nil
 }
 
 func CollectBenchmarkMetadata(benchmarkID int, config *config.BenchmarkConfig, configContent string, dataframes *dataframe.DataFrames, startTime, endTime time.Time, driverVersion string) (*BenchmarkMetadata, error) {
