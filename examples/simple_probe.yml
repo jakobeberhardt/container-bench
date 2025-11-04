@@ -19,13 +19,11 @@ benchmark:
       password: ${INFLUXDB_TOKEN}
       org: ${INFLUXDB_ORG}    
 
-container0:
+c0:
   index: 0
-  name: nginx-workload
-  image: nginx:alpine
-  port: 8080:8080
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
   core: 0
-  command: "while :; do dd if=/dev/zero of=/dev/null bs=1M count=100 2>/dev/null; done"
+  command: "stress-ng --cpu 1 --cpu-method matrixprod --timeout 0"
   data:
     frequency: 100
     perf: true

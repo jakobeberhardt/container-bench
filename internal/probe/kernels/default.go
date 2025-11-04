@@ -80,6 +80,8 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 		return nil, fmt.Errorf("baseline measurement failed: %w", err)
 	}
 	
+	dpk.logger.WithField("baseline_ipc", baselineIPC).Info("Baseline IPC established")
+	
 	// 2. CPU Integer: stress-ng --cpu
 	cpuIntIPC, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
 		cores, "stress-ng --cpu 0", segmentTime)
@@ -87,6 +89,11 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 		sensitivity := (baselineIPC - cpuIntIPC) / baselineIPC
 		val := clampSensitivity(sensitivity)
 		result.CPUInteger = &val
+		dpk.logger.WithFields(logrus.Fields{
+			"baseline_ipc": baselineIPC,
+			"stressed_ipc": cpuIntIPC,
+			"sensitivity":  val,
+		}).Info("CPU Integer sensitivity calculated")
 	}
 	
 	// 3. CPU Float: stress-ng --matrixprod
@@ -105,6 +112,11 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 		sensitivity := (baselineIPC - llcIPC) / baselineIPC
 		val := clampSensitivity(sensitivity)
 		result.LLC = &val
+		dpk.logger.WithFields(logrus.Fields{
+			"baseline_ipc": baselineIPC,
+			"stressed_ipc": llcIPC,
+			"sensitivity":  val,
+		}).Info("LLC sensitivity calculated")
 	}
 	
 	// 5. Memory Read: stress-ng --stream
@@ -130,7 +142,7 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 		cores, "stress-ng --memcpy 0", segmentTime)
 	if err == nil && baselineIPC > 0 {
 		sensitivity := (baselineIPC - sbIPC) / baselineIPC
-		val := clampSensitivity(sensitivity * 0.5)
+		val := clampSensitivity(sensitivity)
 		result.StoreBuffer = &val
 	}
 	
@@ -260,20 +272,39 @@ func (dpk *DefaultProbeKernel) getAvgIPC(containerDF *dataframe.ContainerDataFra
 
 	var totalIPC float64
 	var count int
+	
+	dpk.logger.WithFields(logrus.Fields{
+		"from_step":  fromStep,
+		"to_step":    toStep,
+		"total_steps": len(steps),
+	}).Debug("Calculating average IPC")
 
 	for stepNum, step := range steps {
 		if stepNum > fromStep && stepNum <= toStep {
 			if step != nil && step.Perf != nil && step.Perf.InstructionsPerCycle != nil {
 				totalIPC += *step.Perf.InstructionsPerCycle
 				count++
+				dpk.logger.WithFields(logrus.Fields{
+					"step": stepNum,
+					"ipc":  *step.Perf.InstructionsPerCycle,
+				}).Trace("Found IPC data point")
+			} else {
+				dpk.logger.WithField("step", stepNum).Trace("Step has no IPC data")
 			}
 		}
 	}
-
-	if count == 0 {
-		return 0
+	
+	avgIPC := float64(0)
+	if count > 0 {
+		avgIPC = totalIPC / float64(count)
 	}
-	return totalIPC / float64(count)
+	
+	dpk.logger.WithFields(logrus.Fields{
+		"count":   count,
+		"avg_ipc": avgIPC,
+	}).Debug("Average IPC calculated")
+
+	return avgIPC
 }
 
 // clampSensitivity ensures sensitivity values are in [0.0, 1.0] range
