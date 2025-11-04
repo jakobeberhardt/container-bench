@@ -23,7 +23,7 @@ c0:
   index: 0
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
   core: 0
-  command: "stress-ng --cpu 1 --cpu-method matrixprod --timeout 0"
+  command: "stress-ng --matrix-3d 1 --timeout 0"
   data:
     frequency: 100
     perf: true

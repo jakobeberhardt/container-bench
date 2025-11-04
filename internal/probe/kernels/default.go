@@ -107,7 +107,7 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 
 	// 4. LLC: stress-ng --cache
 	llcIPC, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
-		cores, "stress-ng --cache 0", segmentTime)
+		cores, "stress-ng --matrix-3d 0", segmentTime)
 	if err == nil && baselineIPC > 0 {
 		sensitivity := (baselineIPC - llcIPC) / baselineIPC
 		val := clampSensitivity(sensitivity)

@@ -6,6 +6,7 @@ import (
 	"container-bench/internal/logging"
 	"container-bench/internal/probe"
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -55,11 +56,20 @@ func (ps *ProbeScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) er
 		// Non-blocking check if probe completed
 		select {
 		case result := <-ps.activeProbe:
+			llcVal := "nil"
+			if result.LLC != nil {
+				llcVal = fmt.Sprintf("%.4f", *result.LLC)
+			}
+			cpuVal := "nil"
+			if result.CPUInteger != nil {
+				cpuVal = fmt.Sprintf("%.4f", *result.CPUInteger)
+			}
+			
 			ps.schedulerLogger.WithFields(logrus.Fields{
 				"container_index": result.ContainerIndex,
 				"container_name":  result.ContainerName,
-				"llc_sensitivity": result.LLC,
-				"cpu_sensitivity": result.CPUInteger,
+				"llc_sensitivity": llcVal,
+				"cpu_sensitivity": cpuVal,
 			}).Info("Probe completed and received")
 			ps.activeProbe = nil
 		default:
@@ -104,9 +114,21 @@ func (ps *ProbeScheduler) Shutdown() error {
 	if ps.activeProbe != nil {
 		ps.schedulerLogger.Info("Waiting for active probe to complete before shutdown")
 		result := <-ps.activeProbe
+		
+		llcVal := "nil"
+		if result.LLC != nil {
+			llcVal = fmt.Sprintf("%.4f", *result.LLC)
+		}
+		cpuVal := "nil"
+		if result.CPUInteger != nil {
+			cpuVal = fmt.Sprintf("%.4f", *result.CPUInteger)
+		}
+		
 		ps.schedulerLogger.WithFields(logrus.Fields{
 			"container_index": result.ContainerIndex,
 			"container_name":  result.ContainerName,
+			"llc_sensitivity": llcVal,
+			"cpu_sensitivity": cpuVal,
 		}).Info("Final probe completed and received")
 	}
 	return nil

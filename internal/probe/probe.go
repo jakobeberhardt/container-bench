@@ -171,10 +171,20 @@ func (p *Probe) executeProbe(ctx context.Context, req ProbeRequest) *ProbeResult
 
 	result.Finished = time.Now()
 
+	// Log with dereferenced values
+	llcVal := "nil"
+	if sensitivities.LLC != nil {
+		llcVal = fmt.Sprintf("%.4f", *sensitivities.LLC)
+	}
+	cpuVal := "nil"
+	if sensitivities.CPUInteger != nil {
+		cpuVal = fmt.Sprintf("%.4f", *sensitivities.CPUInteger)
+	}
+
 	p.logger.WithFields(logrus.Fields{
 		"container_index": req.ContainerConfig.Index,
-		"llc_sensitivity": sensitivities.LLC,
-		"cpu_sensitivity": sensitivities.CPUInteger,
+		"llc_sensitivity": llcVal,
+		"cpu_sensitivity": cpuVal,
 	}).Info("Probe completed")
 
 	return result
