@@ -1,7 +1,7 @@
 benchmark:
   name: Validate
   description: Runs stress-ng workers which perform operations on matrices
-  max_t: 50
+  max_t: 60
   log_level: info
   scheduler:
     implementation: default
@@ -22,57 +22,57 @@ benchmark:
 
 c0:
   index: 0
-  core: 0
+  core: 0-7
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-  command: "stress-ng --nop 1"
+  command: "stress-ng --heapsort 6  --nop 2"
   data:
-    frequency: 100
+    frequency: 1000
     perf: true
     docker: true
     rdt: true
 
 c1:
   index: 1
-  core: 2
+  core: 8-15 # 16-23 #
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-  command: "stress-ng --nop 1" 
+  command: "stress-ng --heapsort 8" 
   data:
-    frequency: 100
+    frequency: 1000
     perf: true
     docker: true
     rdt: true
 
-c2:
-  index: 2
-  core: 4
-  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-  command: "stress-ng --nop 1"
-  data:
-    frequency: 100
-    perf: true
-    docker: true
-    rdt: true
+# c2:
+#   index: 2
+#   core: 4
+#   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+#   command: "stress-ng --nop 1"
+#   data:
+#     frequency: 100
+#     perf: true
+#     docker: true
+#     rdt: true
 
-c3:
-  index: 3
-  core: 6
-  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-  command: "stress-ng --nop 1"
-  data:
-    frequency: 100
-    perf: true
-    docker: true
-    rdt: true
+# c3:
+#   index: 3
+#   core: 6
+#   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+#   command: "stress-ng --nop 1"
+#   data:
+#     frequency: 100
+#     perf: true
+#     docker: true
+#     rdt: true
 
-c4:
-  index: 8
-  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-  command: "stress-ng --nop 1"
-  data:
-    frequency: 100
-    perf: true
-    docker: true
-    rdt: true
+# c4:
+#   index: 8
+#   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+#   command: "stress-ng --nop 1"
+#   data:
+#     frequency: 100
+#     perf: true
+#     docker: true
+#     rdt: true
 
 # c5:
 #   index: 5

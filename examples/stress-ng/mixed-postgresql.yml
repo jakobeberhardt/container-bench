@@ -1,0 +1,209 @@
+benchmark:
+  name: Mixed Multi Sequential
+  description: Victim runs continuously while other workloads with 4 workers run sequentially for 15s each on cores 2,4,6,8
+  max_t: 250
+  log_level: info
+  scheduler:
+    implementation: default
+    rdt: false
+    log_level: warn
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+postgres:
+  index: 0
+  image: registry.jakob-eberhardt.de/rdt4nn/postgres:latest
+  port: 5432:5432
+  core: 0
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+load:
+  index: 16
+  image: registry.jakob-eberhardt.de/rdt4nn/postgres:latest
+  core: 16-31
+  command: "sleep 5 && pgbench -i -h postgres -U benchmark benchmark && pgbench -c 16 -j 16 -T 245 -h postgres -U benchmark benchmark"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+# Sequential workloads all mapped to cores 2,4,6,8 with 4 workers each
+l1:
+  index: 1
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 2,4,6,8
+  command: "sleep 15 && stress-ng --cache 4 --cache-level 1 --timeout 15"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+l2:
+  index: 2
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 2,4,6,8
+  command: "sleep 30 && stress-ng --cache 4 --cache-level 2 --timeout 15"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+l3:
+  index: 3
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 2,4,6,8
+  command: "sleep 45 && stress-ng --cache 4 --cache-level 3 --timeout 15"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+all-cache:
+  index: 4
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 2,4,6,8
+  command: "sleep 60 && stress-ng --cache 4 --timeout 15"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+disk:
+  index: 5
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 2,4,6,8
+  command: "sleep 75 && stress-ng --hdd 4 --timeout 15"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+files:
+  index: 6
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 2,4,6,8
+  command: "sleep 90 && stress-ng --copy-file 4 --timeout 15"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+heapsort:
+  index: 7
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 2,4,6,8
+  command: "sleep 105 && stress-ng --heapsort 4 --timeout 15"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+io:
+  index: 8
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 2,4,6,8
+  command: "sleep 120 && stress-ng --io 4 --timeout 15"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+matrix-3d:
+  index: 9
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 2,4,6,8
+  command: "sleep 135 && stress-ng --matrix-3d 4 --timeout 15"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+nop:
+  index: 10
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 2,4,6,8
+  command: "sleep 150 && stress-ng --nop 4 --timeout 15"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+qsort:
+  index: 11
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 2,4,6,8
+  command: "sleep 165 && stress-ng --qsort 4 --timeout 15"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+sparse-matrix:
+  index: 12
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 2,4,6,8
+  command: "sleep 180 && stress-ng --sparsematrix 4 --timeout 15"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+stream:
+  index: 13
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 2,4,6,8
+  command: "sleep 195 && stress-ng --stream 4 --timeout 15"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+syscalls:
+  index: 14
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 2,4,6,8
+  command: "sleep 210 && stress-ng --x86syscall 4 --timeout 15"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+tree-search:
+  index: 15
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 2,4,6,8
+  command: "sleep 225 && stress-ng --tsearch 4 --timeout 20"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true

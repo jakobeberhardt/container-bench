@@ -1,0 +1,209 @@
+benchmark:
+  name: Mixed Multi Concurrent
+  description: Victim runs continuously while all other workloads run concurrently until max_t
+  max_t: 60
+  log_level: info
+  scheduler:
+    implementation: default
+    rdt: false
+    log_level: warn
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+postgres:
+  index: 0
+  image: registry.jakob-eberhardt.de/rdt4nn/postgres:latest
+  port: 5432:5432
+  core: 0
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+load:
+  index: 16
+  image: registry.jakob-eberhardt.de/rdt4nn/postgres:latest
+  core: 16-31
+  command: "sleep 5 && pgbench -i -h postgres -U benchmark benchmark && pgbench -c 16 -j 16 -T 245 -h postgres -U benchmark benchmark"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+# Concurrent workloads each mapped to a single core on socket 0 with 1 worker
+l1:
+  index: 1
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 1
+  command: "stress-ng --cache 1 --cache-level 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+l2:
+  index: 2
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 2
+  command: "stress-ng --cache 1 --cache-level 2 --timeout 0"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+l3:
+  index: 3
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 3
+  command: "stress-ng --cache 1 --cache-level 3 --timeout 0"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+all-cache:
+  index: 4
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 4
+  command: "stress-ng --cache 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+disk:
+  index: 5
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 5
+  command: "stress-ng --hdd 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+files:
+  index: 6
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 6
+  command: "stress-ng --copy-file 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+heapsort:
+  index: 7
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 7
+  command: "stress-ng --heapsort 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+io:
+  index: 8
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 8
+  command: "stress-ng --io 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+matrix-3d:
+  index: 9
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 9
+  command: "stress-ng --matrix-3d 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+nop:
+  index: 10
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 10
+  command: "stress-ng --nop 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+qsort:
+  index: 11
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 11
+  command: "stress-ng --qsort 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+sparse-matrix:
+  index: 12
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 12
+  command: "stress-ng --sparsematrix 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+stream:
+  index: 13
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 13
+  command: "stress-ng --stream 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+syscalls:
+  index: 14
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 14
+  command: "stress-ng --x86syscall 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+tree-search:
+  index: 15
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 15
+  command: "stress-ng --tsearch 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
