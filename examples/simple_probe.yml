@@ -2,9 +2,9 @@ benchmark:
   name: Simple Test
   description: A simple test benchmark that starts three containers with different workloads
   max_t: 10
-  log_level: debug
+  log_level: info
   scheduler:
-    implementation: default
+    implementation: probe
     rdt: false
     log_level: error
     prober:
