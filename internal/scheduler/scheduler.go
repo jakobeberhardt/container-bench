@@ -11,9 +11,10 @@ import (
 
 // ContainerInfo holds complete information about a container including its PID
 type ContainerInfo struct {
-	Index  int
-	Config *config.ContainerConfig
-	PID    int
+	Index       int
+	Config      *config.ContainerConfig
+	PID         int
+	ContainerID string
 }
 
 type Scheduler interface {

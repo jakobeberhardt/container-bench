@@ -1,37 +1,17 @@
 package scheduler
 
 import (
-	"container-bench/internal/config"
 	"container-bench/internal/dataframe"
 	"container-bench/internal/host"
 	"container-bench/internal/logging"
 	"container-bench/internal/probe"
+	"context"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
 
-// ContainerInfo holds complete information about a container including its PID
-type ContainerInfo struct {
-	Index  int
-	Config *config.ContainerConfig
-	PID    int
-}
-
-type Scheduler interface {
-	Initialize(allocator RDTAllocator, containers []ContainerInfo) error
-	ProcessDataFrames(dataframes *dataframe.DataFrames) error
-	Shutdown() error
-	GetVersion() string
-	SetLogLevel(level string) error
-
-	// Host configuration for scheduler decisions
-	SetHostConfig(hostConfig *host.HostConfig)
-
-	// Probe injection for sensitivity analysis
-	SetProbe(prober *probe.Probe)
-}
-
-type DefaultScheduler struct {
+type ProbeScheduler struct {
 	name            string
 	version         string
 	schedulerLogger *logrus.Logger
@@ -39,75 +19,117 @@ type DefaultScheduler struct {
 	containers      []ContainerInfo
 	rdtAllocator    RDTAllocator
 	prober          *probe.Probe
+	
+	// Probing state
+	probingStarted  bool
+	nextProbeIndex  int
+	activeProbe     <-chan *probe.ProbeResult
 }
 
-func NewDefaultScheduler() *DefaultScheduler {
-	return &DefaultScheduler{
+func NewProbeScheduler() *ProbeScheduler {
+	return &ProbeScheduler{
 		name:            "probe",
 		version:         "1.0.0",
 		schedulerLogger: logging.GetSchedulerLogger(),
+		probingStarted:  false,
+		nextProbeIndex:  0,
 	}
 }
 
-func (ds *DefaultScheduler) Initialize(allocator RDTAllocator, containers []ContainerInfo) error {
-	ds.rdtAllocator = allocator
-	ds.containers = containers
+func (ps *ProbeScheduler) Initialize(allocator RDTAllocator, containers []ContainerInfo) error {
+	ps.rdtAllocator = allocator
+	ps.containers = containers
 
-	ds.schedulerLogger.WithField("containers", len(containers)).Info("Default scheduler initialized")
+	ps.schedulerLogger.WithField("containers", len(containers)).Info("Probe scheduler initialized")
 	return nil
 }
 
-func (ds *DefaultScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) error {
-	containers := dataframes.GetAllContainers()
-
-	for containerIndex, containerDF := range containers {
-		latest := containerDF.GetLatestStep()
-		if latest == nil {
-			continue
+func (ps *ProbeScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) error {
+	// Check if we have a prober
+	if ps.prober == nil {
+		return nil
+	}
+	
+	// Check if we have an active probe running
+	if ps.activeProbe != nil {
+		// Non-blocking check if probe completed
+		select {
+		case result := <-ps.activeProbe:
+			ps.schedulerLogger.WithFields(logrus.Fields{
+				"container_index": result.ContainerIndex,
+				"container_name":  result.ContainerName,
+				"llc_sensitivity": result.LLC,
+				"cpu_sensitivity": result.CPUInteger,
+			}).Info("Probe completed and received")
+			ps.activeProbe = nil
+		default:
+			// Probe still running, nothing to do
+			return nil
 		}
-
-		// Simple and lightweight: just print current CPU and cache miss rate
-		if latest.Perf != nil && latest.Perf.CacheMissRate != nil {
-			ds.schedulerLogger.WithFields(logrus.Fields{
-				"container":       containerIndex,
-				"cache_miss_rate": *latest.Perf.CacheMissRate,
-			}).Info("Cache miss rate")
+	}
+	
+	// Start next probe if we have containers left to probe
+	if ps.nextProbeIndex < len(ps.containers) {
+		containerInfo := ps.containers[ps.nextProbeIndex]
+		
+		ps.schedulerLogger.WithFields(logrus.Fields{
+			"container_index": containerInfo.Index,
+			"container_name":  containerInfo.Config.GetContainerName(0), // Benchmark ID not available here
+			"probe_duration":  "60s",
+			"probe_core":      "5",
+		}).Info("Starting probe")
+		
+		// Create probe request
+		req := probe.ProbeRequest{
+			ContainerConfig: containerInfo.Config,
+			ContainerID:     containerInfo.ContainerID,
+			Dataframes:      dataframes,
+			ProbeDuration:   60 * time.Second,
+			ProbeCores:      "5",
+			ProbeSocket:     0,
+			Isolated:        true,
+			Abortable:       false,
 		}
-
-		if latest.Docker != nil && latest.Docker.CPUUsagePercent != nil {
-			ds.schedulerLogger.WithFields(logrus.Fields{
-				"container":   containerIndex,
-				"cpu_percent": *latest.Docker.CPUUsagePercent,
-			}).Info("CPU usage")
-		}
+		
+		// Launch probe asynchronously
+		ps.activeProbe = ps.prober.Probe(context.Background(), req)
+		ps.nextProbeIndex++
 	}
 
 	return nil
 }
 
-func (ds *DefaultScheduler) Shutdown() error {
-	// Default scheduler doesn't need cleanup
+func (ps *ProbeScheduler) Shutdown() error {
+	// Wait for active probe to complete
+	if ps.activeProbe != nil {
+		ps.schedulerLogger.Info("Waiting for active probe to complete before shutdown")
+		result := <-ps.activeProbe
+		ps.schedulerLogger.WithFields(logrus.Fields{
+			"container_index": result.ContainerIndex,
+			"container_name":  result.ContainerName,
+		}).Info("Final probe completed and received")
+	}
 	return nil
 }
 
-func (ds *DefaultScheduler) GetVersion() string {
-	return ds.version
+func (ps *ProbeScheduler) GetVersion() string {
+	return ps.version
 }
 
-func (ds *DefaultScheduler) SetLogLevel(level string) error {
+func (ps *ProbeScheduler) SetLogLevel(level string) error {
 	logLevel, err := logrus.ParseLevel(level)
 	if err != nil {
 		return err
 	}
-	ds.schedulerLogger.SetLevel(logLevel)
+	ps.schedulerLogger.SetLevel(logLevel)
 	return nil
 }
 
-func (ds *DefaultScheduler) SetHostConfig(hostConfig *host.HostConfig) {
-	ds.hostConfig = hostConfig
+func (ps *ProbeScheduler) SetHostConfig(hostConfig *host.HostConfig) {
+	ps.hostConfig = hostConfig
 }
 
-func (ds *DefaultScheduler) SetProbe(prober *probe.Probe) {
-	ds.prober = prober
-	ds.schedulerLogger.Debug("Probe injected into scheduler")
+func (ps *ProbeScheduler) SetProbe(prober *probe.Probe) {
+	ps.prober = prober
+	ps.schedulerLogger.Info("Probe injected into scheduler")
 }

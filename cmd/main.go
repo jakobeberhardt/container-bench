@@ -354,6 +354,9 @@ func runBenchmark(configFile string) error {
 	case "default":
 		logger.Info("Using default scheduler")
 		bench.scheduler = scheduler.NewDefaultScheduler()
+	case "probe":
+		logger.Info("Using probe scheduler")
+		bench.scheduler = scheduler.NewProbeScheduler()
 	default:
 		logger.WithField("implementation", schedulerImpl).Warn("Unknown scheduler implementation, using default")
 		bench.scheduler = scheduler.NewDefaultScheduler()
@@ -888,11 +891,17 @@ func (cb *ContainerBench) initializeSchedulerWithPIDs() error {
 		if !exists {
 			return fmt.Errorf("PID not found for container %d", containerConfig.Index)
 		}
+		
+		containerID, exists := cb.containerIDs[containerConfig.Index]
+		if !exists {
+			return fmt.Errorf("Container ID not found for container %d", containerConfig.Index)
+		}
 
 		containerInfos = append(containerInfos, scheduler.ContainerInfo{
-			Index:  containerConfig.Index,
-			Config: &containerConfig,
-			PID:    pid,
+			Index:       containerConfig.Index,
+			Config:      &containerConfig,
+			PID:         pid,
+			ContainerID: containerID,
 		})
 	}
 
