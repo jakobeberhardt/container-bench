@@ -53,13 +53,13 @@ second:
     docker: true
     rdt: true
 
-# third:
-#   index: 3
-#   image: registry.jakob-eberhardt.de/neighbor:default  
-#   core: 3
-#   command: "sleep 45 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
-#   data:
-#     frequency: 100
-#     perf: true
-#     docker: true
-#     rdt: true
+third:
+  index: 3
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  core: 3
+  command: "sleep 45 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true

@@ -9,7 +9,7 @@ The application facilitates benchmarking and enables a comprehensive overview of
 
 ![IPC](./docs/img/simple/simple-ipc.png)
 
-The benchmark configuration can be seen in the respective [examples/benchmark.yml](./examples/benchmark.yml). It includes four different containers, each running different applications. `default` copies values, `install` installs packages using a package manager, `sequential` accesses memory in a sequential pattern, while `random` performs random memory accesses. As can be seen, each workload results in a different amount of instructions per cycle executed inside the container. In addition, depending on the kind of workloads executed on the same CPU, containers may interfere with regard to shared resources such as the last-level cache, memory bandwidth, branch predictors, or prefetchers. As can be seen in the following figure, the application integration with Intel's Resource Director (RDT) framework allows us to study the caching behavior of the different workloads. 
+The benchmark configuration can be seen in the respective [benchmarks/examples/benchmark.yml](./benchmarks/examples/benchmark.yml). It includes four different containers, each running different applications. `default` copies values, `install` installs packages using a package manager, `sequential` accesses memory in a sequential pattern, while `random` performs random memory accesses. As can be seen, each workload results in a different amount of instructions per cycle executed inside the container. In addition, depending on the kind of workloads executed on the same CPU, containers may interfere with regard to shared resources such as the last-level cache, memory bandwidth, branch predictors, or prefetchers. As can be seen in the following figure, the application integration with Intel's Resource Director (RDT) framework allows us to study the caching behavior of the different workloads. 
 
 ![LLC](./docs/img/simple/simple-llc.png)
 
@@ -65,7 +65,7 @@ INFLUXDB_BUCKET=benchmarks
 ```
 
 ### Benchmark Configuration
-Define benchmarks in YAML files. See `examples/benchmark.yml` for a complete example:
+Define benchmarks in YAML files. See `benchmarks/examples/benchmark.yml` for a complete example:
 
 ```yaml
 benchmark:
@@ -100,13 +100,13 @@ container0:
 ## Usage
 ### Validate Configuration
 ```bash
-./container-bench validate -c examples/benchmark.yml
+./container-bench validate -c benchmarks/examples/benchmark.yml
 ```
 
 ### Running a Benchmark
 ```bash
 # Using the .env file 
-sudo ./container-bench run -c examples/benchmark.yml
+sudo ./container-bench run -c benchmarks/examples/benchmark.yml
 ```
 
 ## Data
@@ -165,14 +165,14 @@ Data is exported to InfluxDB with the following structure:
 
 ## Examples
 ### High Concurrency
-The results of this benchmark are available [here](https://info.jakob-eberhardt.de/dashboard/snapshot/DPO4XqekVeIm54BdQh3FgHOhZE2yRmhh) on Grafana. The `examples/lots_of_neigbors` configuration files start more and more containers running a simple workload that accesses the buffer in a random pattern. In the following figures, we can see how the initial container executes fewer and fewer instructions while the pressure on the L3 cache rises as more and more containers have to share it. Collecting a wide range of data from many containers at the same time is possible because of the asynchronous and concurrent design of the benchmark driver, as well as the small memory footprint of the data collection. 
+The results of this benchmark are available [here](https://info.jakob-eberhardt.de/dashboard/snapshot/DPO4XqekVeIm54BdQh3FgHOhZE2yRmhh) on Grafana. The `benchmarks/examples/lots_of_neigbors` configuration files start more and more containers running a simple workload that accesses the buffer in a random pattern. In the following figures, we can see how the initial container executes fewer and fewer instructions while the pressure on the L3 cache rises as more and more containers have to share it. Collecting a wide range of data from many containers at the same time is possible because of the asynchronous and concurrent design of the benchmark driver, as well as the small memory footprint of the data collection. 
 
 ![Instruction](./docs/img/sixteen/inst.png)
 
 ![L3](./docs/img/sixteen/llc.png)
 
 ## Compression
-In this example, which was created using the [7zip benchmark](./examples/7z.yml) file `examples/7z.yml`, we can compare the different compression levels of `7zip` from one (low) to nine (high), which each run in a separate container. The full data is available [here](https://info.jakob-eberhardt.de/dashboard/snapshot/KxMaNhyyRod5k4Uxup34Tgw95MyN2Olt) on Grafana. The following heat map indicates the IPC throughout the benchmark for each level. In general, we see that for higher levels, the IPC decreases over time. We can correlate this with the respective heat map of the cache misses. 
+In this example, which was created using the [7zip benchmark](./examples/7z.yml) file `benchmarks/examples/7z.yml`, we can compare the different compression levels of `7zip` from one (low) to nine (high), which each run in a separate container. The full data is available [here](https://info.jakob-eberhardt.de/dashboard/snapshot/KxMaNhyyRod5k4Uxup34Tgw95MyN2Olt) on Grafana. The following heat map indicates the IPC throughout the benchmark for each level. In general, we see that for higher levels, the IPC decreases over time. We can correlate this with the respective heat map of the cache misses. 
 
 ![Heat Map](./docs/img/compression/heatmap.png)
 
@@ -183,6 +183,6 @@ Additionally, we can observe that the higher the compression level and the longe
 ![Branches](./docs/img/compression/branches.png)
 
 ## Neighbor
-The `examples/neighbors.yml` file starts the same container image at the same time with some delay. The benchmark results are available [here](https://info.jakob-eberhardt.de/dashboard/snapshot/UmubASgXPqqDkdp1IqllLENTMpS7FhnT). The application inside allocates a 12 MB buffer, which it then fills with random numbers and reads them in a random pattern. In the following figure, we can see how the first container `victim` heats up the cache with its buffer. The more neighbors we start, the less the victim container can utilize the cache.
+The `benchmarks/examples/neighbors.yml` file starts the same container image at the same time with some delay. The benchmark results are available [here](https://info.jakob-eberhardt.de/dashboard/snapshot/UmubASgXPqqDkdp1IqllLENTMpS7FhnT). The application inside allocates a 12 MB buffer, which it then fills with random numbers and reads them in a random pattern. In the following figure, we can see how the first container `victim` heats up the cache with its buffer. The more neighbors we start, the less the victim container can utilize the cache.
 
 ![Neighbor](./docs/img/neigbor/llc.png)
