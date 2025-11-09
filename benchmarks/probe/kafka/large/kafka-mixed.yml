@@ -1,0 +1,49 @@
+benchmark:
+  name: Kafka Probe Mixed/Large
+  description: Probes a Kafka container with large data set performing mixed operations
+  max_t: 60
+  log_level: info
+  scheduler:
+    implementation: probe
+    rdt: false
+    log_level: error
+    prober:
+      implementation: default
+      abortable: false
+      isolated: true
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+kafka:
+  index: 0
+  image: bashj79/kafka-kraft
+  port: 9092:9092
+  core: 0
+  environment:
+    KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+load:
+  index: 1
+  image: bashj79/kafka-kraft
+  core: 15,16,17,18
+  command: "sleep 10 && /opt/kafka/bin/kafka-topics.sh --create --topic test --bootstrap-server kafka:9092 --partitions 4 --replication-factor 1 && while :; do (/opt/kafka/bin/kafka-producer-perf-test.sh --topic test --num-records 500000 --record-size 1024 --throughput 10000 --producer-props bootstrap.servers=kafka:9092 & /opt/kafka/bin/kafka-consumer-perf-test.sh --topic test --messages 500000 --threads 8 --bootstrap-server kafka:9092 & wait); done"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
