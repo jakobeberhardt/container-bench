@@ -1,0 +1,49 @@
+benchmark:
+  name: PostgreSQL Probe Small
+  description: Probes a PostgreSQL container working on small data set (-s == 1) with mixed operations
+  max_t: 60
+  log_level: info
+  scheduler:
+    implementation: probe
+    rdt: false
+    log_level: error
+    prober:
+      implementation: default
+      abortable: false
+      isolated: true
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+postgres:
+  index: 0
+  image: registry.jakob-eberhardt.de/rdt4nn/postgres:latest
+  port: 5432:5432
+  core: 0
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+load:
+  index: 16
+  image: registry.jakob-eberhardt.de/rdt4nn/postgres:latest
+  core: 16-31
+  command: "sleep 1 && pgbench -i -s 1 -h postgres -U benchmark benchmark && pgbench -c 16 -j 16 -T 10 -h postgres -U benchmark benchmark"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+    #  pgbench -i -s 30 -h postgres -U benchmark benchmark
