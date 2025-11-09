@@ -10,7 +10,8 @@ import (
 	"github.com/docker/docker/client"
 )
 
-// ProbeSensitivities contains all computed sensitivity metrics
+// all computed sensitivity metrics
+// TODO reduce to minimum
 type ProbeSensitivities struct {
 	CPUInteger   *float64
 	CPUFloat     *float64
@@ -31,15 +32,13 @@ type ProbeSensitivities struct {
 // ProbeKernel defines the interface for probe kernel implementations
 // A probe kernel controls the probing sequence inside a running container
 type ProbeKernel interface {
-	// GetName returns the name of the probe kernel implementation
 	GetName() string
 
-	// GetVersion returns the version of the probe kernel implementation
 	GetVersion() string
 
-	// ExecuteProbe runs the complete probing sequence inside the container
+	// Runs the complete probing sequence inside the container
 	// It has full control over what commands to run, when, and for how long
-	// The kernel analyzes dataframes between commands and returns computed sensitivities
+	// Returns computed sensitivities
 	ExecuteProbe(
 		ctx context.Context,
 		dockerClient *client.Client,

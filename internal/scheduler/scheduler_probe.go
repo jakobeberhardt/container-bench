@@ -46,7 +46,6 @@ func (ps *ProbeScheduler) Initialize(allocator RDTAllocator, containers []Contai
 }
 
 func (ps *ProbeScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) error {
-	// Check if we have a prober
 	if ps.prober == nil {
 		return nil
 	}
@@ -64,7 +63,7 @@ func (ps *ProbeScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) er
 			if result.CPUInteger != nil {
 				cpuVal = fmt.Sprintf("%.4f", *result.CPUInteger)
 			}
-			
+
 			ps.schedulerLogger.WithFields(logrus.Fields{
 				"container_index": result.ContainerIndex,
 				"container_name":  result.ContainerName,
@@ -73,20 +72,21 @@ func (ps *ProbeScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) er
 			}).Info("Probe completed and received")
 			ps.activeProbe = nil
 		default:
-			// Probe still running, nothing to do
+			// Probe still running
 			return nil
 		}
 	}
 
 	// Start next probe if we have containers left to probe
+	// TODO: Add a check || container is active, e.g. CPU > x%
 	if ps.nextProbeIndex < len(ps.containers) {
 		containerInfo := ps.containers[ps.nextProbeIndex]
 
 		ps.schedulerLogger.WithFields(logrus.Fields{
 			"container_index": containerInfo.Index,
-			"container_name":  containerInfo.Config.GetContainerName(0), // Benchmark ID not available here
+			"container_name":  containerInfo.Config.GetContainerName(0),
 			"probe_duration":  "60s",
-			"probe_core":      "5",
+			"probe_core":      "5-8",
 		}).Info("Starting probe")
 
 		// Create probe request
@@ -114,7 +114,7 @@ func (ps *ProbeScheduler) Shutdown() error {
 	if ps.activeProbe != nil {
 		ps.schedulerLogger.Info("Waiting for active probe to complete before shutdown")
 		result := <-ps.activeProbe
-		
+
 		llcVal := "nil"
 		if result.LLC != nil {
 			llcVal = fmt.Sprintf("%.4f", *result.LLC)
@@ -123,7 +123,7 @@ func (ps *ProbeScheduler) Shutdown() error {
 		if result.CPUInteger != nil {
 			cpuVal = fmt.Sprintf("%.4f", *result.CPUInteger)
 		}
-		
+
 		ps.schedulerLogger.WithFields(logrus.Fields{
 			"container_index": result.ContainerIndex,
 			"container_name":  result.ContainerName,

@@ -2,7 +2,7 @@ benchmark:
   name: Simple Test
   description: A simple test benchmark that starts three containers with different workloads
   max_t: 70
-  log_level: debug
+  log_level: info
   scheduler:
     implementation: probe
     rdt: false
@@ -28,7 +28,7 @@ c0:
     frequency: 100
     perf: true
     docker: true
-    rdt: true
+    rdt: false
 
 # container1:
 #   index: 1

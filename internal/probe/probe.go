@@ -32,7 +32,6 @@ type Probe struct {
 	logger       *logrus.Logger
 }
 
-// NewProbe creates a new Probe singleton
 func NewProbe(
 	dockerClient *client.Client,
 	probeKernel kernels.ProbeKernel,
@@ -53,7 +52,6 @@ func NewProbe(
 	}
 }
 
-// ProbeRequest contains parameters for a probing operation
 type ProbeRequest struct {
 	ContainerConfig *config.ContainerConfig
 	ContainerID     string
@@ -65,7 +63,6 @@ type ProbeRequest struct {
 	Abortable       bool
 }
 
-// Probe executes a sensitivity probe on a target container
 // Returns a channel that will receive the ProbeResult asynchronously
 func (p *Probe) Probe(ctx context.Context, req ProbeRequest) <-chan *ProbeResult {
 	resultChan := make(chan *ProbeResult, 1)
@@ -85,7 +82,7 @@ func (p *Probe) Probe(ctx context.Context, req ProbeRequest) <-chan *ProbeResult
 	return resultChan
 }
 
-// executeProbe performs the actual probing operation
+// Performs the actual probing operation
 func (p *Probe) executeProbe(ctx context.Context, req ProbeRequest) *ProbeResult {
 	result := &ProbeResult{
 		BenchmarkID:      p.benchmarkID,
@@ -171,7 +168,6 @@ func (p *Probe) executeProbe(ctx context.Context, req ProbeRequest) *ProbeResult
 
 	result.Finished = time.Now()
 
-	// Log with dereferenced values
 	llcVal := "nil"
 	if sensitivities.LLC != nil {
 		llcVal = fmt.Sprintf("%.4f", *sensitivities.LLC)
@@ -190,7 +186,7 @@ func (p *Probe) executeProbe(ctx context.Context, req ProbeRequest) *ProbeResult
 	return result
 }
 
-// startProbingContainer starts a stress-ng container that sleeps, ready for exec commands
+// startProbingContainer that sleeps, ready for the kernel launch
 func (p *Probe) startProbingContainer(ctx context.Context, cores string, socket int) (string, error) {
 	p.logger.WithFields(logrus.Fields{
 		"image": p.probeImage,
@@ -199,7 +195,6 @@ func (p *Probe) startProbingContainer(ctx context.Context, cores string, socket 
 
 	containerName := fmt.Sprintf("probe-%d-%d", p.benchmarkID, time.Now().Unix())
 
-	// Container just sleeps - we'll exec stress-ng commands into it
 	config := &container.Config{
 		Image: p.probeImage,
 		Cmd:   []string{"sleep", "3600"},
@@ -227,7 +222,6 @@ func (p *Probe) startProbingContainer(ctx context.Context, cores string, socket 
 	return resp.ID, nil
 }
 
-// stopProbingContainer stops and removes a probing container
 func (p *Probe) stopProbingContainer(ctx context.Context, containerID string) {
 	p.logger.WithField("container_id", containerID[:12]).Debug("Stopping probing container")
 
@@ -241,7 +235,7 @@ func (p *Probe) stopProbingContainer(ctx context.Context, containerID string) {
 	}
 }
 
-// GetResults returns all probe results collected
+// Returns all probe results collected
 func (p *Probe) GetResults() []*ProbeResult {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -251,7 +245,7 @@ func (p *Probe) GetResults() []*ProbeResult {
 	return results
 }
 
-// GetProbeImage returns the configured probe image
+// Returns the configured probe image, e.g. a image with stress-ng
 func (p *Probe) GetProbeImage() string {
 	return p.probeImage
 }
