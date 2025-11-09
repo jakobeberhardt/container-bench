@@ -4,9 +4,13 @@ benchmark:
   max_t: 60
   log_level: info
   scheduler:
-    implementation: default
+    implementation: probe
     rdt: false
-    log_level: warn
+    log_level: error
+    prober:
+      implementation: default
+      abortable: false
+      isolated: true
   data:
     db:
       host: ${INFLUXDB_HOST}
@@ -26,7 +30,7 @@ benchmark:
   core: 0
   command: "while :; do rm -f /data/dummy.7z && /populate.sh 10 && 7z a -mx=5 -mmt=1  dummy.7z /data/*.bin; done"
   data:
-    frequency: 100
+    frequency: 1000
     perf: true
     docker: true
     rdt: true

@@ -29,27 +29,3 @@ c0:
     perf: true
     docker: true
     rdt: false
-
-# container1:
-#   index: 1
-#   name: cpu-stress
-#   image: nginx:alpine
-#   core: 2
-#   command: "while :; do dd if=/dev/zero of=/dev/null bs=1M count=100 2>/dev/null; done"
-#   data:
-#     frequency: 100
-#     perf: true
-#     docker: true
-#     rdt: true
-
-# container2:
-#   index: 2
-#   name: stress-ng-test
-#   image: nginx:alpine
-#   core: 4
-#   command: "apk add --no-cache stress-ng && stress-ng --cpu 1"
-#   data:
-#     frequency: 100
-#     perf: true
-#     docker: true
-#     rdt: true

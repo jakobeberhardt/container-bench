@@ -1,6 +1,6 @@
 benchmark:
-  name: 7zip Probe High/Small
-  description: Probes a 7zip container with high settings and small file size
+  name: PostgreSQL Probe Run 
+  description: Probes a PostgreSQL container working on large data set with mixed operations
   max_t: 60
   log_level: info
   scheduler:
@@ -24,13 +24,26 @@ benchmark:
       username: ${DOCKER_REGISTRY_USERNAME}
       password: ${DOCKER_REGISTRY_PASSWORD}
 
-7z:
+postgres:
   index: 0
-  image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+  image: registry.jakob-eberhardt.de/rdt4nn/postgres:latest
+  port: 5432:5432
   core: 0
-  command: "while :; do rm -f /data/dummy.7z && /populate.sh 10 && 7z a -mx=9 -mmt=1  dummy.7z /data/*.bin; done"
   data:
     frequency: 1000
     perf: true
     docker: true
     rdt: true
+
+load:
+  index: 16
+  image: registry.jakob-eberhardt.de/rdt4nn/postgres:latest
+  core: 16-31
+  command: "sleep 1 && pgbench -i -s 30 -h postgres -U benchmark benchmark && pgbench -c 16 -j 16 -T 10 -h postgres -U benchmark benchmark"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+    #  pgbench -i -s 30 -h postgres -U benchmark benchmark
