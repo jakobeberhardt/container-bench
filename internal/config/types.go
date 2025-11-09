@@ -58,16 +58,16 @@ type DatabaseConfig struct {
 }
 
 type ContainerConfig struct {
-	Index       int                `yaml:"index"`
-	Name        string             `yaml:"name,omitempty"`
-	KeyName     string             `yaml:"-"`
-	Image       string             `yaml:"image"`
-	Port        string             `yaml:"port,omitempty"`
-	Core        string             `yaml:"core"`
-	CPUCores    []int              `yaml:"-"`
-	Command     string             `yaml:"command,omitempty"`
-	Environment map[string]string  `yaml:"environment,omitempty"`
-	Data        CollectorConfig    `yaml:"data"`
+	Index       int               `yaml:"index"`
+	Name        string            `yaml:"name,omitempty"`
+	KeyName     string            `yaml:"-"`
+	Image       string            `yaml:"image"`
+	Port        string            `yaml:"port,omitempty"`
+	Core        string            `yaml:"core"`
+	CPUCores    []int             `yaml:"-"`
+	Command     string            `yaml:"command,omitempty"`
+	Environment map[string]string `yaml:"environment,omitempty"`
+	Data        CollectorConfig   `yaml:"data"`
 }
 
 type CollectorConfig struct {

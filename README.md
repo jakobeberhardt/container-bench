@@ -90,6 +90,9 @@ container0:
   image: nginx:alpine
   core: 0  # CPU core affinity, for multi-core e.g. '0,1,2' or 0-15
   command: "stress-ng --cpu 1 --timeout 25s" # Command which will be executed upon start. Can also be empty
+  environment:
+    FOO: hello
+    BAR: world
   data:
     frequency: 100  # Collection frequency in ms
     perf: true      # Enable perf monitoring
