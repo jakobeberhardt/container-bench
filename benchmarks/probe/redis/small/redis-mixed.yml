@@ -1,0 +1,47 @@
+benchmark:
+  name: Redis Probe Mixed/Small
+  description: Probes a Redis container with small data set performing mixed operations
+  max_t: 60
+  log_level: info
+  scheduler:
+    implementation: probe
+    rdt: false
+    log_level: error
+    prober:
+      implementation: default
+      abortable: false
+      isolated: true
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+redis:
+  index: 0
+  image: redis:latest
+  port: 6379:6379
+  core: 0
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+load:
+  index: 1
+  image: alpine:latest
+  core: 15,16,17,18
+  command: "apk add --no-cache redis && sleep 2 && while :; do redis-benchmark -h redis -t set,get -d 256 -r 100000 -n 99999999 -c 25 -P 8; done"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
