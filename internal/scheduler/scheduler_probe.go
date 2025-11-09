@@ -95,7 +95,7 @@ func (ps *ProbeScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) er
 			ContainerID:     containerInfo.ContainerID,
 			Dataframes:      dataframes,
 			ProbeDuration:   60 * time.Second,
-			ProbeCores:      "5-8",
+			ProbeCores:      "1-5",
 			ProbeSocket:     0,
 			Isolated:        true,
 			Abortable:       false,
