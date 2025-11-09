@@ -414,7 +414,7 @@ func runBenchmark(configFile string) error {
 		}).Info("Probe initialized and injected into scheduler")
 	}
 
-	// NOTE: Scheduler Initialize() will be called after containers start to provide PIDs
+	// Scheduler Initialize() will be called after containers start to provide PIDs
 
 	logger.WithFields(logrus.Fields{
 		"benchmark_id": bench.benchmarkID,
@@ -704,6 +704,14 @@ func (cb *ContainerBench) createContainers(ctx context.Context) error {
 
 		config := &container.Config{
 			Image: containerConfig.Image,
+		}
+
+		// Add environment variables if specified
+		if len(containerConfig.Environment) > 0 {
+			config.Env = make([]string, 0, len(containerConfig.Environment))
+			for key, value := range containerConfig.Environment {
+				config.Env = append(config.Env, fmt.Sprintf("%s=%s", key, value))
+			}
 		}
 
 		hostConfig := &container.HostConfig{}

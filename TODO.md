@@ -1,7 +1,7 @@
 # TODO
 - ~~Cache info in meta data, e.g. 3MB LCC, 1KB L1~~
 	- Write it to DB
-- Env variables in .yml file
+- ~~Env variables in .yml file~~
 - ~~Parallel start up and tear down~~
 - ~~Bulk write to DBs~~
 - ~~RDT Memory/s Field: Use Delta~~
