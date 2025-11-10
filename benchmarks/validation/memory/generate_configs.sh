@@ -1,9 +1,5 @@
 #!/bin/bash
 
-# Generator script for memory validation benchmark configurations
-# Usage: bash generate_configs.sh [output_directory] [max_t_seconds]
-# Example: bash generate_configs.sh ./short 15
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT_DIR="${1:-$SCRIPT_DIR}"
 MAX_T="${2:-120}"
