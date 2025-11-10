@@ -1,0 +1,59 @@
+benchmark:
+  name: container-bench
+  description: Runs container bench in a nested container
+  max_t: 20
+  log_level: info
+  scheduler:
+    implementation: default
+    rdt: false
+    log_level: warn
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+container-bench:
+  index: 0
+  core: 0
+  image: registry.jakob-eberhardt.de/rdt4nn/container-bench:latest
+  command: "sudo -E ./container-bench run -c benchmarks/examples/spin.yml"
+  privileged: true
+  volumes:
+    - /sys/fs/cgroup:/sys/fs/cgroup:ro
+    #- /sys/fs/resctrl:/sys/fs/resctrl:rw
+  environment:
+    INFLUXDB_HOST: http://influxdb:8086
+    INFLUXDB_USER: valid
+    INFLUXDB_TOKEN: passwd
+    INFLUXDB_ORG: rdt4nn
+    INFLUXDB_BUCKET: benchmarks
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: false
+
+influxdb:
+  index: 1
+  core: 1
+  image: influxdb:2.7
+  environment:
+    DOCKER_INFLUXDB_INIT_USERNAME: valid 
+    DOCKER_INFLUXDB_INIT_PASSWORD: passwd 
+    DOCKER_INFLUXDB_INIT_ORG: rdt4nn 
+    DOCKER_INFLUXDB_INIT_BUCKET: benchmarks 
+    DOCKER_INFLUXDB_INIT_RETENTION: 0s
+    DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: passwd
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: false

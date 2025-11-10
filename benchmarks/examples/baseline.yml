@@ -1,7 +1,7 @@
 benchmark:
   name: Baseline
   description: Test which starts a baseline, a victim and multiple neighbors
-  max_t: 60
+  max_t: 20
   log_level: info
   scheduler:
     implementation: default
