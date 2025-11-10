@@ -754,6 +754,16 @@ func (cb *ContainerBench) createContainers(ctx context.Context) error {
 		// Set CPU affinity
 		hostConfig.CpusetCpus = containerConfig.Core
 
+		// Set privileged mode if specified
+		if containerConfig.Privileged {
+			hostConfig.Privileged = true
+		}
+
+		// Add volume mounts if specified
+		if len(containerConfig.Volumes) > 0 {
+			hostConfig.Binds = containerConfig.Volumes
+		}
+
 		// Attach container to the benchmark network
 		networkName := fmt.Sprintf("container-bench-%d", cb.benchmarkID)
 		hostConfig.NetworkMode = container.NetworkMode(networkName)

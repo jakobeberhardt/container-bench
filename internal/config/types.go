@@ -66,7 +66,9 @@ type ContainerConfig struct {
 	Core        string            `yaml:"core"`
 	CPUCores    []int             `yaml:"-"`
 	Command     string            `yaml:"command,omitempty"`
+	Privileged  bool              `yaml:"privileged,omitempty"`
 	Environment map[string]string `yaml:"environment,omitempty"`
+	Volumes     []string          `yaml:"volumes,omitempty"`
 	Data        CollectorConfig   `yaml:"data"`
 }
 

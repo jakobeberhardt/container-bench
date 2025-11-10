@@ -93,6 +93,9 @@ container0:
   environment:
     FOO: hello
     BAR: world
+  privileged: false # default
+  volumes:
+    - ./data:/data
   data:
     frequency: 100  # Collection frequency in ms
     perf: true      # Enable perf monitoring
