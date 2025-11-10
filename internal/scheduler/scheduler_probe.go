@@ -86,7 +86,7 @@ func (ps *ProbeScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) er
 			"container_index": containerInfo.Index,
 			"container_name":  containerInfo.Config.GetContainerName(0),
 			"probe_duration":  "60s",
-			"probe_core":      "5-8",
+			"probe_core":      "1-4",
 		}).Info("Starting probe")
 
 		// Create probe request
@@ -95,7 +95,7 @@ func (ps *ProbeScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) er
 			ContainerID:     containerInfo.ContainerID,
 			Dataframes:      dataframes,
 			ProbeDuration:   60 * time.Second,
-			ProbeCores:      "1-5",
+			ProbeCores:      "1-4",
 			ProbeSocket:     0,
 			Isolated:        true,
 			Abortable:       false,
