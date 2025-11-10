@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"container-bench/internal/config"
 	"container-bench/internal/dataframe"
 	"container-bench/internal/logging"
 
@@ -34,9 +35,9 @@ type ContainerCollector struct {
 
 type CollectorConfig struct {
 	Frequency    time.Duration
-	EnablePerf   bool
-	EnableDocker bool
-	EnableRDT    bool
+	PerfConfig   *config.PerfConfig
+	DockerConfig *config.DockerMetricsConfig
+	RDTConfig    *config.RDTConfig
 }
 
 func NewContainerCollector(containerIndex int, containerID string, config CollectorConfig, df *dataframe.ContainerDataFrame) *ContainerCollector {
@@ -58,8 +59,8 @@ func (cc *ContainerCollector) SetContainerInfo(pid int, cgroupPath string, cpuCo
 func (cc *ContainerCollector) Start(ctx context.Context) error {
 	var err error
 
-	if cc.config.EnablePerf {
-		cc.perfCollector, err = NewPerfCollector(cc.containerPID, cc.cgroupPath, cc.cpuCores)
+	if cc.config.PerfConfig != nil && cc.config.PerfConfig.Enabled {
+		cc.perfCollector, err = NewPerfCollector(cc.containerPID, cc.cgroupPath, cc.cpuCores, cc.config.PerfConfig)
 		if err != nil {
 			// Log warning but don't fail the entire collector
 			logger := logging.GetLogger()
@@ -70,15 +71,15 @@ func (cc *ContainerCollector) Start(ctx context.Context) error {
 		}
 	}
 
-	if cc.config.EnableDocker {
-		cc.dockerCollector, err = NewDockerCollector(cc.ContainerID, cc.containerIndex)
+	if cc.config.DockerConfig != nil && cc.config.DockerConfig.Enabled {
+		cc.dockerCollector, err = NewDockerCollector(cc.ContainerID, cc.containerIndex, cc.config.DockerConfig)
 		if err != nil {
 			return err
 		}
 	}
 
-	if cc.config.EnableRDT {
-		cc.rdtCollector, err = NewRDTCollector(cc.containerPID, cc.cgroupPath)
+	if cc.config.RDTConfig != nil && cc.config.RDTConfig.Enabled {
+		cc.rdtCollector, err = NewRDTCollector(cc.containerPID, cc.cgroupPath, cc.config.RDTConfig)
 		if err != nil {
 			// Log warning but don't fail the entire collector
 			logger := logging.GetLogger()

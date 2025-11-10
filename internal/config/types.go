@@ -71,10 +71,72 @@ type ContainerConfig struct {
 }
 
 type CollectorConfig struct {
-	Frequency int  `yaml:"frequency"`
-	Perf      bool `yaml:"perf"`
-	Docker    bool `yaml:"docker"`
-	RDT       bool `yaml:"rdt"`
+	Frequency int         `yaml:"frequency"`
+	Perf      interface{} `yaml:"perf"`
+	Docker    interface{} `yaml:"docker"`
+	RDT       interface{} `yaml:"rdt"`
+}
+
+type PerfConfig struct {
+	Enabled                  bool `yaml:"-"`
+	CacheMisses              bool `yaml:"cache_misses,omitempty"`
+	CacheReferences          bool `yaml:"cache_references,omitempty"`
+	Instructions             bool `yaml:"instructions,omitempty"`
+	Cycles                   bool `yaml:"cycles,omitempty"`
+	BranchInstructions       bool `yaml:"branch_instructions,omitempty"`
+	BranchMisses             bool `yaml:"branch_misses,omitempty"`
+	BusCycles                bool `yaml:"bus_cycles,omitempty"`
+	StallsTotal              bool `yaml:"stalls_total,omitempty"`
+	StallsL3Miss             bool `yaml:"stalls_l3_miss,omitempty"`
+	StallsL2Miss             bool `yaml:"stalls_l2_miss,omitempty"`
+	StallsL1dMiss            bool `yaml:"stalls_l1d_miss,omitempty"`
+	StallsMemAny             bool `yaml:"stalls_mem_any,omitempty"`
+	ResourceStallsSB         bool `yaml:"resource_stalls_sb,omitempty"`
+	ResourceStallsScoreboard bool `yaml:"resource_stalls_scoreboard,omitempty"`
+	L1DCacheLoadMisses       bool `yaml:"l1d_cache_load_misses,omitempty"`
+	L1DCacheLoads            bool `yaml:"l1d_cache_loads,omitempty"`
+	L1DCacheStores           bool `yaml:"l1d_cache_stores,omitempty"`
+	L1ICacheLoadMisses       bool `yaml:"l1i_cache_load_misses,omitempty"`
+	LLCLoadMisses            bool `yaml:"llc_load_misses,omitempty"`
+	LLCLoads                 bool `yaml:"llc_loads,omitempty"`
+	LLCStoreMisses           bool `yaml:"llc_store_misses,omitempty"`
+	LLCStores                bool `yaml:"llc_stores,omitempty"`
+	CacheMissRate            bool `yaml:"cache_miss_rate,omitempty"`
+	InstructionsPerCycle     bool `yaml:"instructions_per_cycle,omitempty"`
+	StalledCyclesPercent     bool `yaml:"stalled_cycles_percent,omitempty"`
+}
+
+type DockerMetricsConfig struct {
+	Enabled            bool `yaml:"-"`
+	CPUUsageTotal      bool `yaml:"cpu_usage_total,omitempty"`
+	CPUUsageKernel     bool `yaml:"cpu_usage_kernel,omitempty"`
+	CPUUsageUser       bool `yaml:"cpu_usage_user,omitempty"`
+	CPUUsagePercent    bool `yaml:"cpu_usage_percent,omitempty"`
+	CPUThrottling      bool `yaml:"cpu_throttling,omitempty"`
+	MemoryUsage        bool `yaml:"memory_usage,omitempty"`
+	MemoryLimit        bool `yaml:"memory_limit,omitempty"`
+	MemoryCache        bool `yaml:"memory_cache,omitempty"`
+	MemoryRSS          bool `yaml:"memory_rss,omitempty"`
+	MemorySwap         bool `yaml:"memory_swap,omitempty"`
+	MemoryUsagePercent bool `yaml:"memory_usage_percent,omitempty"`
+	NetworkRxBytes     bool `yaml:"network_rx_bytes,omitempty"`
+	NetworkTxBytes     bool `yaml:"network_tx_bytes,omitempty"`
+	DiskReadBytes      bool `yaml:"disk_read_bytes,omitempty"`
+	DiskWriteBytes     bool `yaml:"disk_write_bytes,omitempty"`
+}
+
+type RDTConfig struct {
+	Enabled                     bool `yaml:"-"`
+	L3CacheOccupancy            bool `yaml:"l3_cache_occupancy,omitempty"`
+	MemoryBandwidthTotal        bool `yaml:"memory_bandwidth_total,omitempty"`
+	MemoryBandwidthLocal        bool `yaml:"memory_bandwidth_local,omitempty"`
+	RDTClassName                bool `yaml:"rdt_class_name,omitempty"`
+	MonGroupName                bool `yaml:"mon_group_name,omitempty"`
+	L3CacheAllocation           bool `yaml:"l3_cache_allocation,omitempty"`
+	L3CacheAllocationPct        bool `yaml:"l3_cache_allocation_pct,omitempty"`
+	MBAThrottle                 bool `yaml:"mba_throttle,omitempty"`
+	CacheLLCUtilizationPercent  bool `yaml:"cache_llc_utilization_percent,omitempty"`
+	BandwidthUtilizationPercent bool `yaml:"bandwidth_utilization_percent,omitempty"`
 }
 
 func (c *BenchmarkConfig) GetMaxDuration() time.Duration {
@@ -133,4 +195,392 @@ func (c *ContainerConfig) GetContainerName(benchmarkID int) string {
 	}
 	// Fallback to generated name if neither is available
 	return fmt.Sprintf("bench-%d-container-%d", benchmarkID, c.Index)
+}
+
+// GetPerfConfig parses the Perf field and returns a PerfConfig
+// If Perf is a bool true, returns config with all metrics enabled
+// If Perf is a bool false, returns nil
+// If Perf is a map, returns config with only specified metrics enabled
+func (cc *CollectorConfig) GetPerfConfig() *PerfConfig {
+	if cc.Perf == nil {
+		return nil
+	}
+
+	// Handle bool case
+	if enabled, ok := cc.Perf.(bool); ok {
+		if !enabled {
+			return nil
+		}
+		// All metrics enabled
+		return &PerfConfig{
+			Enabled:                  true,
+			CacheMisses:              true,
+			CacheReferences:          true,
+			Instructions:             true,
+			Cycles:                   true,
+			BranchInstructions:       true,
+			BranchMisses:             true,
+			BusCycles:                true,
+			StallsTotal:              true,
+			StallsL3Miss:             true,
+			StallsL2Miss:             true,
+			StallsL1dMiss:            true,
+			StallsMemAny:             true,
+			ResourceStallsSB:         true,
+			ResourceStallsScoreboard: true,
+			L1DCacheLoadMisses:       true,
+			L1DCacheLoads:            true,
+			L1DCacheStores:           true,
+			L1ICacheLoadMisses:       true,
+			LLCLoadMisses:            true,
+			LLCLoads:                 true,
+			LLCStoreMisses:           true,
+			LLCStores:                true,
+			CacheMissRate:            true,
+			InstructionsPerCycle:     true,
+			StalledCyclesPercent:     true,
+		}
+	}
+
+	// Handle map case - parse from interface{}
+	if perfMap, ok := cc.Perf.(map[string]interface{}); ok {
+		config := &PerfConfig{Enabled: true}
+
+		// Parse each field
+		if v, exists := perfMap["cache_misses"]; exists {
+			if b, ok := v.(bool); ok {
+				config.CacheMisses = b
+			}
+		}
+		if v, exists := perfMap["cache_references"]; exists {
+			if b, ok := v.(bool); ok {
+				config.CacheReferences = b
+			}
+		}
+		if v, exists := perfMap["instructions"]; exists {
+			if b, ok := v.(bool); ok {
+				config.Instructions = b
+			}
+		}
+		if v, exists := perfMap["cycles"]; exists {
+			if b, ok := v.(bool); ok {
+				config.Cycles = b
+			}
+		}
+		if v, exists := perfMap["branch_instructions"]; exists {
+			if b, ok := v.(bool); ok {
+				config.BranchInstructions = b
+			}
+		}
+		if v, exists := perfMap["branch_misses"]; exists {
+			if b, ok := v.(bool); ok {
+				config.BranchMisses = b
+			}
+		}
+		if v, exists := perfMap["bus_cycles"]; exists {
+			if b, ok := v.(bool); ok {
+				config.BusCycles = b
+			}
+		}
+		if v, exists := perfMap["stalls_total"]; exists {
+			if b, ok := v.(bool); ok {
+				config.StallsTotal = b
+			}
+		}
+		if v, exists := perfMap["stalls_l3_miss"]; exists {
+			if b, ok := v.(bool); ok {
+				config.StallsL3Miss = b
+			}
+		}
+		if v, exists := perfMap["stalls_l2_miss"]; exists {
+			if b, ok := v.(bool); ok {
+				config.StallsL2Miss = b
+			}
+		}
+		if v, exists := perfMap["stalls_l1d_miss"]; exists {
+			if b, ok := v.(bool); ok {
+				config.StallsL1dMiss = b
+			}
+		}
+		if v, exists := perfMap["stalls_mem_any"]; exists {
+			if b, ok := v.(bool); ok {
+				config.StallsMemAny = b
+			}
+		}
+		if v, exists := perfMap["resource_stalls_sb"]; exists {
+			if b, ok := v.(bool); ok {
+				config.ResourceStallsSB = b
+			}
+		}
+		if v, exists := perfMap["resource_stalls_scoreboard"]; exists {
+			if b, ok := v.(bool); ok {
+				config.ResourceStallsScoreboard = b
+			}
+		}
+		if v, exists := perfMap["l1d_cache_load_misses"]; exists {
+			if b, ok := v.(bool); ok {
+				config.L1DCacheLoadMisses = b
+			}
+		}
+		if v, exists := perfMap["l1d_cache_loads"]; exists {
+			if b, ok := v.(bool); ok {
+				config.L1DCacheLoads = b
+			}
+		}
+		if v, exists := perfMap["l1d_cache_stores"]; exists {
+			if b, ok := v.(bool); ok {
+				config.L1DCacheStores = b
+			}
+		}
+		if v, exists := perfMap["l1i_cache_load_misses"]; exists {
+			if b, ok := v.(bool); ok {
+				config.L1ICacheLoadMisses = b
+			}
+		}
+		if v, exists := perfMap["llc_load_misses"]; exists {
+			if b, ok := v.(bool); ok {
+				config.LLCLoadMisses = b
+			}
+		}
+		if v, exists := perfMap["llc_loads"]; exists {
+			if b, ok := v.(bool); ok {
+				config.LLCLoads = b
+			}
+		}
+		if v, exists := perfMap["llc_store_misses"]; exists {
+			if b, ok := v.(bool); ok {
+				config.LLCStoreMisses = b
+			}
+		}
+		if v, exists := perfMap["llc_stores"]; exists {
+			if b, ok := v.(bool); ok {
+				config.LLCStores = b
+			}
+		}
+		if v, exists := perfMap["cache_miss_rate"]; exists {
+			if b, ok := v.(bool); ok {
+				config.CacheMissRate = b
+			}
+		}
+		if v, exists := perfMap["instructions_per_cycle"]; exists {
+			if b, ok := v.(bool); ok {
+				config.InstructionsPerCycle = b
+			}
+		}
+		if v, exists := perfMap["stalled_cycles_percent"]; exists {
+			if b, ok := v.(bool); ok {
+				config.StalledCyclesPercent = b
+			}
+		}
+
+		return config
+	}
+
+	return nil
+}
+
+// GetDockerConfig parses the Docker field and returns a DockerMetricsConfig
+func (cc *CollectorConfig) GetDockerConfig() *DockerMetricsConfig {
+	if cc.Docker == nil {
+		return nil
+	}
+
+	// Handle bool case
+	if enabled, ok := cc.Docker.(bool); ok {
+		if !enabled {
+			return nil
+		}
+		// All metrics enabled
+		return &DockerMetricsConfig{
+			Enabled:            true,
+			CPUUsageTotal:      true,
+			CPUUsageKernel:     true,
+			CPUUsageUser:       true,
+			CPUUsagePercent:    true,
+			CPUThrottling:      true,
+			MemoryUsage:        true,
+			MemoryLimit:        true,
+			MemoryCache:        true,
+			MemoryRSS:          true,
+			MemorySwap:         true,
+			MemoryUsagePercent: true,
+			NetworkRxBytes:     true,
+			NetworkTxBytes:     true,
+			DiskReadBytes:      true,
+			DiskWriteBytes:     true,
+		}
+	}
+
+	// Handle map case
+	if dockerMap, ok := cc.Docker.(map[string]interface{}); ok {
+		config := &DockerMetricsConfig{Enabled: true}
+
+		if v, exists := dockerMap["cpu_usage_total"]; exists {
+			if b, ok := v.(bool); ok {
+				config.CPUUsageTotal = b
+			}
+		}
+		if v, exists := dockerMap["cpu_usage_kernel"]; exists {
+			if b, ok := v.(bool); ok {
+				config.CPUUsageKernel = b
+			}
+		}
+		if v, exists := dockerMap["cpu_usage_user"]; exists {
+			if b, ok := v.(bool); ok {
+				config.CPUUsageUser = b
+			}
+		}
+		if v, exists := dockerMap["cpu_usage_percent"]; exists {
+			if b, ok := v.(bool); ok {
+				config.CPUUsagePercent = b
+			}
+		}
+		if v, exists := dockerMap["cpu_throttling"]; exists {
+			if b, ok := v.(bool); ok {
+				config.CPUThrottling = b
+			}
+		}
+		if v, exists := dockerMap["memory_usage"]; exists {
+			if b, ok := v.(bool); ok {
+				config.MemoryUsage = b
+			}
+		}
+		if v, exists := dockerMap["memory_limit"]; exists {
+			if b, ok := v.(bool); ok {
+				config.MemoryLimit = b
+			}
+		}
+		if v, exists := dockerMap["memory_cache"]; exists {
+			if b, ok := v.(bool); ok {
+				config.MemoryCache = b
+			}
+		}
+		if v, exists := dockerMap["memory_rss"]; exists {
+			if b, ok := v.(bool); ok {
+				config.MemoryRSS = b
+			}
+		}
+		if v, exists := dockerMap["memory_swap"]; exists {
+			if b, ok := v.(bool); ok {
+				config.MemorySwap = b
+			}
+		}
+		if v, exists := dockerMap["memory_usage_percent"]; exists {
+			if b, ok := v.(bool); ok {
+				config.MemoryUsagePercent = b
+			}
+		}
+		if v, exists := dockerMap["network_rx_bytes"]; exists {
+			if b, ok := v.(bool); ok {
+				config.NetworkRxBytes = b
+			}
+		}
+		if v, exists := dockerMap["network_tx_bytes"]; exists {
+			if b, ok := v.(bool); ok {
+				config.NetworkTxBytes = b
+			}
+		}
+		if v, exists := dockerMap["disk_read_bytes"]; exists {
+			if b, ok := v.(bool); ok {
+				config.DiskReadBytes = b
+			}
+		}
+		if v, exists := dockerMap["disk_write_bytes"]; exists {
+			if b, ok := v.(bool); ok {
+				config.DiskWriteBytes = b
+			}
+		}
+
+		return config
+	}
+
+	return nil
+}
+
+// GetRDTConfig parses the RDT field and returns an RDTConfig
+func (cc *CollectorConfig) GetRDTConfig() *RDTConfig {
+	if cc.RDT == nil {
+		return nil
+	}
+
+	// Handle bool case
+	if enabled, ok := cc.RDT.(bool); ok {
+		if !enabled {
+			return nil
+		}
+		// All metrics enabled
+		return &RDTConfig{
+			Enabled:                     true,
+			L3CacheOccupancy:            true,
+			MemoryBandwidthTotal:        true,
+			MemoryBandwidthLocal:        true,
+			RDTClassName:                true,
+			MonGroupName:                true,
+			L3CacheAllocation:           true,
+			L3CacheAllocationPct:        true,
+			MBAThrottle:                 true,
+			CacheLLCUtilizationPercent:  true,
+			BandwidthUtilizationPercent: true,
+		}
+	}
+
+	// Handle map case
+	if rdtMap, ok := cc.RDT.(map[string]interface{}); ok {
+		config := &RDTConfig{Enabled: true}
+
+		if v, exists := rdtMap["l3_cache_occupancy"]; exists {
+			if b, ok := v.(bool); ok {
+				config.L3CacheOccupancy = b
+			}
+		}
+		if v, exists := rdtMap["memory_bandwidth_total"]; exists {
+			if b, ok := v.(bool); ok {
+				config.MemoryBandwidthTotal = b
+			}
+		}
+		if v, exists := rdtMap["memory_bandwidth_local"]; exists {
+			if b, ok := v.(bool); ok {
+				config.MemoryBandwidthLocal = b
+			}
+		}
+		if v, exists := rdtMap["rdt_class_name"]; exists {
+			if b, ok := v.(bool); ok {
+				config.RDTClassName = b
+			}
+		}
+		if v, exists := rdtMap["mon_group_name"]; exists {
+			if b, ok := v.(bool); ok {
+				config.MonGroupName = b
+			}
+		}
+		if v, exists := rdtMap["l3_cache_allocation"]; exists {
+			if b, ok := v.(bool); ok {
+				config.L3CacheAllocation = b
+			}
+		}
+		if v, exists := rdtMap["l3_cache_allocation_pct"]; exists {
+			if b, ok := v.(bool); ok {
+				config.L3CacheAllocationPct = b
+			}
+		}
+		if v, exists := rdtMap["mba_throttle"]; exists {
+			if b, ok := v.(bool); ok {
+				config.MBAThrottle = b
+			}
+		}
+		if v, exists := rdtMap["cache_llc_utilization_percent"]; exists {
+			if b, ok := v.(bool); ok {
+				config.CacheLLCUtilizationPercent = b
+			}
+		}
+		if v, exists := rdtMap["bandwidth_utilization_percent"]; exists {
+			if b, ok := v.(bool); ok {
+				config.BandwidthUtilizationPercent = b
+			}
+		}
+
+		return config
+	}
+
+	return nil
 }

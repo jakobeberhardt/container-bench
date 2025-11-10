@@ -281,7 +281,8 @@ func runBenchmark(configFile string) error {
 	// Check if RDT is needed for any container or scheduler
 	rdtNeeded := false
 	for _, container := range bench.config.Containers {
-		if container.Data.RDT {
+		rdtConfig := container.Data.GetRDTConfig()
+		if rdtConfig != nil {
 			rdtNeeded = true
 			break
 		}
@@ -947,12 +948,17 @@ func (cb *ContainerBench) startCollectors(ctx context.Context) error {
 		// Setup data frame for this container
 		containerDF := cb.dataframes.AddContainer(containerConfig.Index)
 
+		// Parse metric configs from YAML
+		perfConfig := containerConfig.Data.GetPerfConfig()
+		dockerConfig := containerConfig.Data.GetDockerConfig()
+		rdtConfig := containerConfig.Data.GetRDTConfig()
+
 		// Create collector
 		collectorConfig := collectors.CollectorConfig{
 			Frequency:    time.Duration(containerConfig.Data.Frequency) * time.Millisecond,
-			EnablePerf:   containerConfig.Data.Perf,
-			EnableDocker: containerConfig.Data.Docker,
-			EnableRDT:    containerConfig.Data.RDT,
+			PerfConfig:   perfConfig,
+			DockerConfig: dockerConfig,
+			RDTConfig:    rdtConfig,
 		}
 
 		collector := collectors.NewContainerCollector(containerConfig.Index, containerID, collectorConfig, containerDF)

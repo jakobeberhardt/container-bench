@@ -161,7 +161,12 @@ func validateConfig(config *BenchmarkConfig) error {
 			return fmt.Errorf("container %s: frequency must be greater than 0", name)
 		}
 
-		if !container.Data.Perf && !container.Data.Docker && !container.Data.RDT {
+		// Check if at least one collector is enabled
+		perfEnabled := container.Data.GetPerfConfig() != nil
+		dockerEnabled := container.Data.GetDockerConfig() != nil
+		rdtEnabled := container.Data.GetRDTConfig() != nil
+
+		if !perfEnabled && !dockerEnabled && !rdtEnabled {
 			return fmt.Errorf("container %s: at least one data collection method must be enabled", name)
 		}
 

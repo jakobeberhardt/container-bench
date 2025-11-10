@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"container-bench/internal/config"
 	"container-bench/internal/dataframe"
 	"container-bench/internal/host"
 	"container-bench/internal/logging"
@@ -21,7 +22,8 @@ type RDTCollector struct {
 	monGroupName string
 	className    string
 	rdtEnabled   bool
-	logger       *logrus.Logger // TODO: Perhaps remove this logger
+	config       *config.RDTConfig
+	logger       *logrus.Logger
 	hostConfig   *host.HostConfig
 
 	// RDT monitoring group for this container
@@ -33,7 +35,8 @@ type RDTCollector struct {
 	firstCollection    bool
 }
 
-func NewRDTCollector(pid int, cgroupPath string) (*RDTCollector, error) {
+// newRDTCollectorBase creates the base RDT collector (internal function)
+func newRDTCollectorBase(pid int, cgroupPath string) (*RDTCollector, error) {
 	logger := logging.GetLogger()
 
 	// Check if RDT is supported and initialized
@@ -263,6 +266,21 @@ func (rc *RDTCollector) SyncPIDs() error {
 	return rc.syncCGroupPIDs()
 }
 
+func NewRDTCollector(pid int, cgroupPath string, rdtConfig *config.RDTConfig) (*RDTCollector, error) {
+	// Create using the base constructor
+	// TODO: Make it selective
+	collector, err := newRDTCollectorBase(pid, cgroupPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set the config for potential future selective collection
+	// For now, RDT collects all available metrics regardless of config
+	collector.config = rdtConfig
+
+	return collector, nil
+}
+
 func (rc *RDTCollector) Collect() *dataframe.RDTMetrics {
 	if !rc.rdtEnabled || rc.monGroup == nil {
 		return nil
@@ -331,7 +349,6 @@ func (rc *RDTCollector) processL3MonitoringData(monData *rdt.MonData, metrics *d
 		}
 	}
 
-	// Calculate deltas for bandwidth metrics (similar to perf counters)
 	if !rc.firstCollection {
 		// Compute delta from last collection
 		if totalBandwidthTotal >= rc.lastBandwidthTotal {

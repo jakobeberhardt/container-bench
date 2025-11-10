@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"container-bench/internal/config"
 	"container-bench/internal/dataframe"
 	"container-bench/internal/host"
 	"container-bench/internal/logging"
@@ -23,13 +24,14 @@ type PerfCollector struct {
 	events     []*perf.Event
 	cgroupFile *os.File
 	cgroupFd   int
-	cpus       []int // List of CPUs to monitor// TODOmay be no longer needed
+	cpus       []int
 
+	config    *config.PerfConfig
 	lastState map[int]*eventState
 	mutex     sync.Mutex
 }
 
-func NewPerfCollector(pid int, cgroupPath string, cpus []int) (*PerfCollector, error) {
+func NewPerfCollector(pid int, cgroupPath string, cpus []int, perfConfig *config.PerfConfig) (*PerfCollector, error) {
 	logger := logging.GetLogger()
 
 	hostConfig, err := host.GetHostConfig()
@@ -43,7 +45,7 @@ func NewPerfCollector(pid int, cgroupPath string, cpus []int) (*PerfCollector, e
 		allCPUs[i] = i
 	}
 
-	logger.WithField("num_cpus", numCPUs).Debug("Monitoring all CPUs for cgroup-based perf collection")
+	logger.WithField("num_cpus", numCPUs).Debug("Monitoring all CPUs for cgroup-based perf collection with selective metrics")
 
 	if _, err := os.Stat(cgroupPath); os.IsNotExist(err) {
 		logger.WithField("cgroup_path", cgroupPath).Error("Cgroup path does not exist")
@@ -60,57 +62,88 @@ func NewPerfCollector(pid int, cgroupPath string, cpus []int) (*PerfCollector, e
 		cgroupFile: cgroupFile,
 		cgroupFd:   int(cgroupFile.Fd()),
 		cpus:       allCPUs,
+		config:     perfConfig,
 		lastState:  make(map[int]*eventState),
 	}
 
-	hardwareCounters := []perf.HardwareCounter{
-		perf.CacheMisses,
-		perf.CacheReferences,
-		perf.Instructions,
-		perf.CPUCycles,
-		perf.BranchInstructions,
-		perf.BranchMisses,
-		perf.BusCycles,
+	// Only add hardware counters that are enabled in config
+	type counterInfo struct {
+		counter perf.HardwareCounter
+		enabled bool
 	}
 
-	// Intel-specific
-	// These are not available in go-perf predefined counters
+	hardwareCounters := []counterInfo{
+		{perf.CacheMisses, perfConfig.CacheMisses},
+		{perf.CacheReferences, perfConfig.CacheReferences},
+		{perf.Instructions, perfConfig.Instructions},
+		{perf.CPUCycles, perfConfig.Cycles},
+		{perf.BranchInstructions, perfConfig.BranchInstructions},
+		{perf.BranchMisses, perfConfig.BranchMisses},
+		{perf.BusCycles, perfConfig.BusCycles},
+	}
+
+	// Intel-specific raw events
 	rawStallEvents := []struct {
-		name   string
-		config uint64
+		name    string
+		config  uint64
+		enabled bool
 	}{
-		{"cycle_activity.stalls_total", 0x40004a3},
-		{"cycle_activity.stalls_l3_miss", 0x60006a3},
-		{"cycle_activity.stalls_l2_miss", 0x50005a3},
-		{"cycle_activity.stalls_l1d_miss", 0xc000ca3},
-		{"cycle_activity.stalls_mem_any", 0x140014a3},
-		{"resource_stalls.sb", 0x8a2},
-		{"resource_stalls.scoreboard", 0x2a2},
+		{"cycle_activity.stalls_total", 0x40004a3, perfConfig.StallsTotal},
+		{"cycle_activity.stalls_l3_miss", 0x60006a3, perfConfig.StallsL3Miss},
+		{"cycle_activity.stalls_l2_miss", 0x50005a3, perfConfig.StallsL2Miss},
+		{"cycle_activity.stalls_l1d_miss", 0xc000ca3, perfConfig.StallsL1dMiss},
+		{"cycle_activity.stalls_mem_any", 0x140014a3, perfConfig.StallsMemAny},
+		{"resource_stalls.sb", 0x8a2, perfConfig.ResourceStallsSB},
+		{"resource_stalls.scoreboard", 0x2a2, perfConfig.ResourceStallsScoreboard},
 	}
 
-	// Create perf events for each CPU and each counter
+	// Cache events via raw config (using Linux perf event codes)
+	// TODO: Check if there are constants
+	rawCacheEvents := []struct {
+		name    string
+		config  uint64
+		enabled bool
+	}{
+		{"L1-dcache-load-misses", 0x10000, perfConfig.L1DCacheLoadMisses},
+		{"L1-dcache-loads", 0x0, perfConfig.L1DCacheLoads},
+		{"L1-dcache-stores", 0x10001, perfConfig.L1DCacheStores},
+		{"L1-icache-load-misses", 0x10100, perfConfig.L1ICacheLoadMisses},
+		{"LLC-load-misses", 0x10300, perfConfig.LLCLoadMisses},
+		{"LLC-loads", 0x300, perfConfig.LLCLoads},
+		{"LLC-store-misses", 0x10301, perfConfig.LLCStoreMisses},
+		{"LLC-stores", 0x301, perfConfig.LLCStores},
+	}
+
+	// Create perf events for each CPU and each enabled counter
 	for _, cpu := range collector.cpus {
-		for _, counter := range hardwareCounters {
+		// Hardware counters
+		for _, counterInfo := range hardwareCounters {
+			if !counterInfo.enabled {
+				continue
+			}
+
 			attr := &perf.Attr{}
-			counter.Configure(attr)
-			// Enable time tracking for multiplexing correction
+			counterInfo.counter.Configure(attr)
 			attr.CountFormat.Enabled = true
 			attr.CountFormat.Running = true
 			event, err := perf.OpenCGroup(attr, collector.cgroupFd, cpu, nil)
 			if err != nil {
 				collector.Close()
 				logger.WithFields(map[string]interface{}{
-					"counter": counter,
+					"counter": counterInfo.counter,
 					"cpu":     cpu,
 				}).WithError(err).Error("Failed to open perf event")
 				return nil, err
 			}
-
 			collector.events = append(collector.events, event)
 		}
 
-		// Add raw stall events
+		// Raw stall events
 		for _, rawEvent := range rawStallEvents {
+			if !rawEvent.enabled {
+				continue
+			}
+
 			attr := &perf.Attr{
 				Type:   perf.RawEvent,
 				Config: rawEvent.config,
@@ -126,7 +159,30 @@ func NewPerfCollector(pid int, cgroupPath string, cpus []int) (*PerfCollector, e
 				}).WithError(err).Warn("Failed to open raw perf event, continuing without it")
 				continue
 			}
+			collector.events = append(collector.events, event)
+		}
 
+		// Cache events
+		for _, cacheEvent := range rawCacheEvents {
+			if !cacheEvent.enabled {
+				continue
+			}
+
+			attr := &perf.Attr{
+				Type:   perf.HardwareCacheEvent,
+				Config: cacheEvent.config,
+				Label:  cacheEvent.name,
+			}
+			attr.CountFormat.Enabled = true
+			attr.CountFormat.Running = true
+			event, err := perf.OpenCGroup(attr, collector.cgroupFd, cpu, nil)
+			if err != nil {
+				logger.WithFields(map[string]interface{}{
+					"event": cacheEvent.name,
+					"cpu":   cpu,
+				}).WithError(err).Warn("Failed to open cache perf event, continuing without it")
+				continue
+			}
 			collector.events = append(collector.events, event)
 		}
 	}
@@ -138,6 +194,8 @@ func NewPerfCollector(pid int, cgroupPath string, cpus []int) (*PerfCollector, e
 			return nil, fmt.Errorf("failed to enable perf event: %w", err)
 		}
 	}
+
+	logger.WithField("event_count", len(collector.events)).Debug("Perf collector initialized with selective metrics")
 
 	return collector, nil
 }

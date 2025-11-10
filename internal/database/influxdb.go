@@ -588,13 +588,13 @@ func CollectBenchmarkMetadata(benchmarkID int, config *config.BenchmarkConfig, c
 	rdtEnabled := false
 
 	for _, container := range config.Containers {
-		if container.Data.Perf {
+		if container.Data.GetPerfConfig() != nil {
 			perfEnabled = true
 		}
-		if container.Data.Docker {
+		if container.Data.GetDockerConfig() != nil {
 			dockerStatsEnabled = true
 		}
-		if container.Data.RDT {
+		if container.Data.GetRDTConfig() != nil {
 			rdtEnabled = true
 		}
 	}

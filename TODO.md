@@ -1,13 +1,13 @@
 # TODO
 - ~~Cache info in meta data, e.g. 3MB LCC, 1KB L1~~
-	- Write it to DB
+	~~- Write it to DB~~
 - ~~Env variables in .yml file~~
 - ~~Parallel start up and tear down~~
 - ~~Bulk write to DBs~~
 - ~~RDT Memory/s Field: Use Delta~~
 - ~~Add relative time~~
 - Handle docker timeouts using context
-- Preallocation of Dataframes according to sice, e.g. if sampling rate is different
+~~- Preallocation of Dataframes according to sice, e.g. if sampling rate is different~~
 - ~~Start collectors faster and earlier (we want to see the cache warming up)~~
 - Add support for container exit (e.g. when benchmark finished)
 - ~~Make perf counters count all cores~~
