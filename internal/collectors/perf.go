@@ -104,14 +104,14 @@ func NewPerfCollector(pid int, cgroupPath string, cpus []int, perfConfig *config
 		config  uint64
 		enabled bool
 	}{
-		{"L1-dcache-load-misses", 0x10000, perfConfig.L1DCacheLoadMisses},
-		{"L1-dcache-loads", 0x0, perfConfig.L1DCacheLoads},
-		{"L1-dcache-stores", 0x10001, perfConfig.L1DCacheStores},
-		{"L1-icache-load-misses", 0x10100, perfConfig.L1ICacheLoadMisses},
-		{"LLC-load-misses", 0x10300, perfConfig.LLCLoadMisses},
-		{"LLC-loads", 0x300, perfConfig.LLCLoads},
-		{"LLC-store-misses", 0x10301, perfConfig.LLCStoreMisses},
-		{"LLC-stores", 0x301, perfConfig.LLCStores},
+		// {"L1-dcache-load-misses", 0x10000, perfConfig.L1DCacheLoadMisses},
+		// {"L1-dcache-loads", 0x0, perfConfig.L1DCacheLoads},
+		// {"L1-dcache-stores", 0x10001, perfConfig.L1DCacheStores},
+		// {"L1-icache-load-misses", 0x10100, perfConfig.L1ICacheLoadMisses},
+		// {"LLC-load-misses", 0x10300, perfConfig.LLCLoadMisses},
+		// {"LLC-loads", 0x300, perfConfig.LLCLoads},
+		// {"LLC-store-misses", 0x10301, perfConfig.LLCStoreMisses},
+		// {"LLC-stores", 0x301, perfConfig.LLCStores},
 	}
 
 	// Create perf events for each CPU and each enabled counter
