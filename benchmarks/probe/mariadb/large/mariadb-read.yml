@@ -1,0 +1,47 @@
+benchmark:
+  name: MariaDB Probe Read/Large
+  description: Probes a MariaDB container with large data set performing read operations
+  max_t: 60
+  log_level: info
+  scheduler:
+    implementation: probe
+    rdt: false
+    log_level: error
+    prober:
+      implementation: default
+      abortable: false
+      isolated: true
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+mariadb:
+  index: 0
+  image: mariadb:latest
+  port: 3306:3306
+  core: 0
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+load:
+  index: 1
+  image: alpine:latest
+  core: 15,16,17,18
+  command: "apk add --no-cache mariadb-client sysbench && sleep 5 && sysbench --db-driver=mysql --mysql-host=mariadb --mysql-user=root --mysql-password=rootpassword --mysql-db=sbtest --table-size=1000000 oltp_read_only prepare && sysbench --db-driver=mysql --mysql-host=mariadb --mysql-user=root --mysql-password=rootpassword --mysql-db=sbtest --table-size=1000000 --threads=16 --time=3600 oltp_read_only run"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
