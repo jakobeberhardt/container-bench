@@ -4,10 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"os"
-	"runtime"
-	"strconv"
-	"strings"
 	"time"
 
 	"container-bench/internal/config"
@@ -52,7 +48,15 @@ type BenchmarkMetadata struct {
 	CPUModel               string `json:"cpu_model"`
 	TotalCPUCores          int    `json:"total_cpu_cores"`
 	CPUThreads             int    `json:"cpu_threads"`
+	CPUSockets             int    `json:"cpu_sockets"`
+	L1CacheSizeKB          float64 `json:"l1_cache_size_kb"`
+	L2CacheSizeKB          float64 `json:"l2_cache_size_kb"`
 	L3CacheSizeBytes       int64  `json:"l3_cache_size_bytes"`
+	L3CacheSizeMB          float64 `json:"l3_cache_size_mb"`
+	L3CacheWays            int    `json:"l3_cache_ways"`
+	RDTSupported           bool   `json:"rdt_supported"`
+	RDTMonitoringSupported bool   `json:"rdt_monitoring_supported"`
+	RDTAllocationSupported bool   `json:"rdt_allocation_supported"`
 	MaxMemoryBandwidthMBps int64  `json:"max_memory_bandwidth_mbps"`
 	MaxDurationSeconds     int    `json:"max_duration_seconds"`
 	SamplingFrequencyMS    int    `json:"sampling_frequency_ms"`
@@ -60,9 +64,21 @@ type BenchmarkMetadata struct {
 	TotalMeasurements      int    `json:"total_measurements"`
 	TotalDataSizeBytes     int64  `json:"total_data_size_bytes"`
 	ConfigFile             string `json:"config_file"`
+	
+	// Probe configuration
+	ProberEnabled        bool   `json:"prober_enabled"`
+	ProberImplementation string `json:"prober_implementation"`
+	ProberAbortable      bool   `json:"prober_abortable"`
+	ProberIsolated       bool   `json:"prober_isolated"`
+	
+	// Feature flags
+	PerfEnabled        bool `json:"perf_enabled"`
+	DockerStatsEnabled bool `json:"docker_stats_enabled"`
+	RDTEnabled         bool `json:"rdt_enabled"`
 }
 
 // contains host system information
+// DEPRECATED: Use host.GetHostConfig() instead
 type SystemInfo struct {
 	Hostname               string
 	OSInfo                 string
@@ -72,78 +88,7 @@ type SystemInfo struct {
 	CPUCores               int
 	CPUThreads             int
 	L3CacheSizeBytes       int64
-	MaxMemoryBandwidthMBps int64
-}
-
-// collectSystemInfo gathers host system information
-// TODO: We should use the hostconfig here for consistency
-func collectSystemInfo() (*SystemInfo, error) {
-	info := &SystemInfo{}
-
-	hostname, err := os.Hostname()
-	if err != nil {
-		hostname = "unknown"
-	}
-	info.Hostname = hostname
-
-	info.OSInfo = runtime.GOOS + "/" + runtime.GOARCH
-
-	// Get kernel version from /proc/version
-	if data, err := os.ReadFile("/proc/version"); err == nil {
-		parts := strings.Fields(string(data))
-		if len(parts) >= 3 {
-			info.KernelVersion = parts[2]
-		}
-	}
-	if info.KernelVersion == "" {
-		info.KernelVersion = "unknown"
-	}
-
-	// Get CPU info from /proc/cpuinfo
-	if data, err := os.ReadFile("/proc/cpuinfo"); err == nil {
-		lines := strings.Split(string(data), "\n")
-		for _, line := range lines {
-			if strings.HasPrefix(line, "vendor_id") {
-				parts := strings.Split(line, ":")
-				if len(parts) >= 2 {
-					info.CPUVendor = strings.TrimSpace(parts[1])
-				}
-			} else if strings.HasPrefix(line, "model name") {
-				parts := strings.Split(line, ":")
-				if len(parts) >= 2 {
-					info.CPUModel = strings.TrimSpace(parts[1])
-				}
-			}
-		}
-	}
-
-	// Set defaults if not found
-	if info.CPUVendor == "" {
-		info.CPUVendor = "unknown"
-	}
-	if info.CPUModel == "" {
-		info.CPUModel = "unknown"
-	}
-
-	// Get CPU core/thread count
-	info.CPUCores = runtime.NumCPU()
-	info.CPUThreads = runtime.NumCPU()
-
-	// Try to collect L3 cache size from /sys/devices/system/cpu/cpu0/cache/index3/size
-	if data, err := os.ReadFile("/sys/devices/system/cpu/cpu0/cache/index3/size"); err == nil {
-		sizeStr := strings.TrimSpace(string(data))
-		if strings.HasSuffix(sizeStr, "K") {
-			if size, err := strconv.ParseInt(strings.TrimSuffix(sizeStr, "K"), 10, 64); err == nil {
-				info.L3CacheSizeBytes = size * 1024
-			}
-		} else if strings.HasSuffix(sizeStr, "M") {
-			if size, err := strconv.ParseInt(strings.TrimSuffix(sizeStr, "M"), 10, 64); err == nil {
-				info.L3CacheSizeBytes = size * 1024 * 1024
-			}
-		}
-	}
-
-	return info, nil
+	MaxMemoryBandwidthMbps int64
 }
 
 type InfluxDBClient struct {
@@ -263,7 +208,11 @@ func (idb *InfluxDBClient) validateConnection() error {
 	}
 
 	if health.Status != "pass" {
-		return fmt.Errorf("health check failed: status %s, message: %s", health.Status, health.Message)
+		msg := ""
+		if health.Message != nil {
+			msg = *health.Message
+		}
+		return fmt.Errorf("health check failed: status %s, message: %s", health.Status, msg)
 	}
 
 	return nil
@@ -368,7 +317,7 @@ func (idb *InfluxDBClient) WriteBenchmarkMetrics(benchmarkID int, benchmarkConfi
 					"container_index":    fmt.Sprintf("%d", containerMetrics.ContainerIndex),
 					"container_name":     containerMetrics.ContainerName,
 					"container_image":    containerMetrics.ContainerImage,
-					"container_core":     fmt.Sprintf("%d", containerMetrics.ContainerCore),
+					"container_core":     containerMetrics.ContainerCore,
 					"benchmark_started":  startTime.Format(time.RFC3339),
 					"benchmark_finished": endTime.Format(time.RFC3339),
 				},
@@ -444,7 +393,15 @@ func (idb *InfluxDBClient) WriteMetadata(metadata *BenchmarkMetadata) error {
 			"cpu_model":                 metadata.CPUModel,
 			"total_cpu_cores":           metadata.TotalCPUCores,
 			"cpu_threads":               metadata.CPUThreads,
+			"cpu_sockets":               metadata.CPUSockets,
+			"l1_cache_size_kb":          metadata.L1CacheSizeKB,
+			"l2_cache_size_kb":          metadata.L2CacheSizeKB,
 			"l3_cache_size_bytes":       metadata.L3CacheSizeBytes,
+			"l3_cache_size_mb":          metadata.L3CacheSizeMB,
+			"l3_cache_ways":             metadata.L3CacheWays,
+			"rdt_supported":             metadata.RDTSupported,
+			"rdt_monitoring_supported":  metadata.RDTMonitoringSupported,
+			"rdt_allocation_supported":  metadata.RDTAllocationSupported,
 			"max_memory_bandwidth_mbps": metadata.MaxMemoryBandwidthMBps,
 			"max_duration_seconds":      metadata.MaxDurationSeconds,
 			"sampling_frequency_ms":     metadata.SamplingFrequencyMS,
@@ -452,6 +409,13 @@ func (idb *InfluxDBClient) WriteMetadata(metadata *BenchmarkMetadata) error {
 			"total_measurements":        metadata.TotalMeasurements,
 			"total_data_size_bytes":     metadata.TotalDataSizeBytes,
 			"config_file":               metadata.ConfigFile,
+			"prober_enabled":            metadata.ProberEnabled,
+			"prober_implementation":     metadata.ProberImplementation,
+			"prober_abortable":          metadata.ProberAbortable,
+			"prober_isolated":           metadata.ProberIsolated,
+			"perf_enabled":              metadata.PerfEnabled,
+			"docker_stats_enabled":      metadata.DockerStatsEnabled,
+			"rdt_enabled":               metadata.RDTEnabled,
 		},
 		time.Now())
 
@@ -591,7 +555,6 @@ func CollectBenchmarkMetadata(benchmarkID int, config *config.BenchmarkConfig, c
 		totalSteps += len(steps)
 
 		// Count measurements (each step with data counts as multiple measurements)
-		// TODO: We should use sizeof()
 		for _, step := range steps {
 			if step != nil {
 				measurements := 0
@@ -619,6 +582,36 @@ func CollectBenchmarkMetadata(benchmarkID int, config *config.BenchmarkConfig, c
 		avgFrequency = totalFreq / len(config.Containers)
 	}
 
+	// Determine feature flags from containers
+	perfEnabled := false
+	dockerStatsEnabled := false
+	rdtEnabled := false
+	
+	for _, container := range config.Containers {
+		if container.Data.Perf {
+			perfEnabled = true
+		}
+		if container.Data.Docker {
+			dockerStatsEnabled = true
+		}
+		if container.Data.RDT {
+			rdtEnabled = true
+		}
+	}
+
+	// Extract probe configuration if available
+	proberEnabled := false
+	proberImplementation := ""
+	proberAbortable := false
+	proberIsolated := false
+	
+	if config.Benchmark.Scheduler.Prober != nil {
+		proberEnabled = true
+		proberImplementation = config.Benchmark.Scheduler.Prober.Implementation
+		proberAbortable = config.Benchmark.Scheduler.Prober.Abortable
+		proberIsolated = config.Benchmark.Scheduler.Prober.Isolated
+	}
+
 	// Estimate data size
 	estimatedDataSize := int64(totalMeasurements * 16)
 
@@ -641,7 +634,15 @@ func CollectBenchmarkMetadata(benchmarkID int, config *config.BenchmarkConfig, c
 		CPUModel:               hostConfig.CPUModel,
 		TotalCPUCores:          hostConfig.Topology.PhysicalCores,
 		CPUThreads:             hostConfig.Topology.LogicalCores,
+		CPUSockets:             hostConfig.Topology.Sockets,
+		L1CacheSizeKB:          hostConfig.L1Cache.SizeKB,
+		L2CacheSizeKB:          hostConfig.L2Cache.SizeKB,
 		L3CacheSizeBytes:       hostConfig.L3Cache.SizeBytes,
+		L3CacheSizeMB:          hostConfig.L3Cache.SizeMB,
+		L3CacheWays:            hostConfig.L3Cache.WaysPerCache,
+		RDTSupported:           hostConfig.RDT.Supported,
+		RDTMonitoringSupported: hostConfig.RDT.MonitoringSupported,
+		RDTAllocationSupported: hostConfig.RDT.AllocationSupported,
 		MaxMemoryBandwidthMBps: 0, // NYI: No reliable source for memory bandwidth
 		MaxDurationSeconds:     config.Benchmark.MaxT,
 		SamplingFrequencyMS:    avgFrequency,
@@ -649,6 +650,13 @@ func CollectBenchmarkMetadata(benchmarkID int, config *config.BenchmarkConfig, c
 		TotalMeasurements:      totalMeasurements,
 		TotalDataSizeBytes:     estimatedDataSize,
 		ConfigFile:             configContent,
+		ProberEnabled:          proberEnabled,
+		ProberImplementation:   proberImplementation,
+		ProberAbortable:        proberAbortable,
+		ProberIsolated:         proberIsolated,
+		PerfEnabled:            perfEnabled,
+		DockerStatsEnabled:     dockerStatsEnabled,
+		RDTEnabled:             rdtEnabled,
 	}
 
 	return metadata, nil

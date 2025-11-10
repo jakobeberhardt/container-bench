@@ -3,11 +3,11 @@ package collectors
 import (
 	"fmt"
 	"os"
-	"runtime"
 	"sync"
 	"time"
 
 	"container-bench/internal/dataframe"
+	"container-bench/internal/host"
 	"container-bench/internal/logging"
 
 	"github.com/elastic/go-perf"
@@ -32,7 +32,12 @@ type PerfCollector struct {
 func NewPerfCollector(pid int, cgroupPath string, cpus []int) (*PerfCollector, error) {
 	logger := logging.GetLogger()
 
-	numCPUs := runtime.NumCPU() // TODO pass the host config
+	hostConfig, err := host.GetHostConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get host config: %w", err)
+	}
+
+	numCPUs := hostConfig.Topology.LogicalCores
 	allCPUs := make([]int, numCPUs)
 	for i := 0; i < numCPUs; i++ {
 		allCPUs[i] = i
