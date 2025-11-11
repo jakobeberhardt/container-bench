@@ -1,0 +1,36 @@
+#!/bin/bash
+
+set -e
+
+if [ "$#" -ne 1 ]; then
+    echo "Usage: $0 <input_csv>"
+    echo "Example: $0 ./out.csv"
+    exit 1
+fi
+
+INPUT_CSV="$1"
+
+if [ ! -f "$INPUT_CSV" ]; then
+    echo "Error: File $INPUT_CSV does not exist"
+    exit 1
+fi
+
+# Skip header line and process each row
+tail -n +2 "$INPUT_CSV" | while IFS=',' read -r benchmark baseline_ipc llc_stressed llc_sens memread_stressed memread_sens memwrite_stressed memwrite_sens syscall_stressed syscall_sens prefetch_stressed prefetch_sens; do
+    
+    # Format the benchmark name for legend (replace underscores/hyphens with spaces, capitalize)
+    legend_name=$(echo "$benchmark" | sed 's/[-_]/ /g' | sed 's/\b\(.\)/\u\1/g')
+    
+    # Generate the plot coordinates
+    # Angles: 0° (LLC), 72° (MemRead), 144° (MemWrite), 216° (SysCall), 288° (Prefetch)
+    echo "\\addplot+[thick,mark=none] coordinates {"
+    echo "  (0,   $llc_sens)   % LLC"
+    echo "  (72,  $memread_sens)   % Mem Read"
+    echo "  (144, $memwrite_sens)                  % Mem Write"
+    echo "  (216, $syscall_sens) % Syscall"
+    echo "  (288, $prefetch_sens)   % Prefetch"
+    echo "  (0,   $llc_sens)"
+    echo "};"
+    echo "\\addlegendentry{$legend_name};"
+    echo ""
+done

@@ -1,0 +1,96 @@
+#!/bin/bash
+
+if [ "$#" -ne 2 ]; then
+    echo "Usage: $0 <benchmark_directory> <output_csv>"
+    echo "Example: $0 benchmarks/probe/stress-ng ./out.csv"
+    exit 1
+fi
+
+BENCH_DIR="$1"
+OUTPUT_CSV="$2"
+
+if [ ! -d "$BENCH_DIR" ]; then
+    echo "Error: Directory $BENCH_DIR does not exist"
+    exit 1
+fi
+
+echo "benchmark,baseline_ipc,llc_stressed_ipc,llc_sensitivity,memread_stressed_ipc,memread_sensitivity,memwrite_stressed_ipc,memwrite_sensitivity,syscall_stressed_ipc,syscall_sensitivity,prefetch_stressed_ipc,prefetch_sensitivity" > "$OUTPUT_CSV"
+
+success_count=0
+fail_count=0
+
+for yml_file in "$BENCH_DIR"/*.yml; do
+    if [ ! -f "$yml_file" ]; then
+        continue
+    fi
+    
+    benchmark_name=$(basename "$yml_file" .yml)
+    echo "Running benchmark: $benchmark_name"
+    
+    # Run benchmark with timeout and capture exit code
+    log_output=$(timeout 300 sudo ./container-bench run -c "$yml_file" 2>&1 || true)
+    exit_code=$?
+    
+    if [ $exit_code -eq 124 ]; then
+        echo "Benchmark timed out (300s)"
+        fail_count=$((fail_count + 1))
+        continue
+    elif [ $exit_code -ne 0 ]; then
+        echo "Benchmark failed with exit code $exit_code"
+        fail_count=$((fail_count + 1))
+        continue
+    fi
+    
+    baseline_ipc=""
+    llc_stressed=""
+    llc_sensitivity=""
+    memread_stressed=""
+    memread_sensitivity=""
+    memwrite_stressed=""
+    memwrite_sensitivity=""
+    syscall_stressed=""
+    syscall_sensitivity=""
+    prefetch_stressed=""
+    prefetch_sensitivity=""
+    
+    while IFS= read -r line; do
+        if [[ "$line" =~ "LLC sensitivity calculated" ]]; then
+            baseline_ipc=$(echo "$line" | grep -oP 'baseline_ipc=\K[0-9.]+(?=\s)')
+            llc_sensitivity=$(echo "$line" | grep -oP 'sensitivity=\K[0-9.]+(?=\s)')
+            llc_stressed=$(echo "$line" | grep -oP 'stressed_ipc=\K[0-9.]+')
+        elif [[ "$line" =~ "Memory read sensitivity calculated" ]]; then
+            memread_sensitivity=$(echo "$line" | grep -oP 'sensitivity=\K[0-9.]+(?=\s)')
+            memread_stressed=$(echo "$line" | grep -oP 'stressed_ipc=\K[0-9.]+')
+        elif [[ "$line" =~ "Memory write sensitivity calculated" ]]; then
+            memwrite_sensitivity=$(echo "$line" | grep -oP 'sensitivity=\K[0-9.]+(?=\s)')
+            memwrite_stressed=$(echo "$line" | grep -oP 'stressed_ipc=\K[0-9.]+')
+        elif [[ "$line" =~ "SysCall sensitivity calculated" ]]; then
+            syscall_sensitivity=$(echo "$line" | grep -oP 'sensitivity=\K[0-9.]+(?=\s)')
+            syscall_stressed=$(echo "$line" | grep -oP 'stressed_ipc=\K[0-9.]+')
+        elif [[ "$line" =~ "Prefetch sensitivity calculated" ]]; then
+            prefetch_sensitivity=$(echo "$line" | grep -oP 'sensitivity=\K[0-9.]+(?=\s)')
+            prefetch_stressed=$(echo "$line" | grep -oP 'stressed_ipc=\K[0-9.]+')
+        fi
+    done <<< "$log_output"
+    
+    if [ -n "$baseline_ipc" ]; then
+        echo "$benchmark_name,$baseline_ipc,$llc_stressed,$llc_sensitivity,$memread_stressed,$memread_sensitivity,$memwrite_stressed,$memwrite_sensitivity,$syscall_stressed,$syscall_sensitivity,$prefetch_stressed,$prefetch_sensitivity" >> "$OUTPUT_CSV"
+        echo "Extracted: baseline=$baseline_ipc, LLC=$llc_sensitivity, MemRead=$memread_sensitivity, MemWrite=$memwrite_sensitivity, SysCall=$syscall_sensitivity, Prefetch=$prefetch_sensitivity"
+        success_count=$((success_count + 1))
+    else
+        echo "Failed to extract data from benchmark"
+        fail_count=$((fail_count + 1))
+    fi
+done
+
+echo ""
+echo "========================================="
+echo "Results saved to: $OUTPUT_CSV"
+echo "Total benchmarks: $((success_count + fail_count))"
+echo "Successful: $success_count"
+echo "Failed: $fail_count"
+echo "========================================="
+echo "Total benchmarks: $(( success_count + fail_count ))"
+echo "Successful: $success_count"
+echo "Failed: $fail_count"
+echo "========================================="
