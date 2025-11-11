@@ -39,14 +39,9 @@ type ProbeResult struct {
 	LastDataframeStep  int `json:"last_dataframe_step"`
 
 	// computed by the ProbeKernel implementation
-	CPUInteger   *float64 `json:"cpu_integer,omitempty"`
-	CPUFloat     *float64 `json:"cpu_float,omitempty"`
-	LLC          *float64 `json:"llc,omitempty"`
-	MemRead      *float64 `json:"mem_read,omitempty"`
-	MemWrite     *float64 `json:"mem_write,omitempty"`
-	StoreBuffer  *float64 `json:"store_buffer,omitempty"`
-	Scoreboard   *float64 `json:"scoreboard,omitempty"`
-	NetworkRead  *float64 `json:"network_read,omitempty"`
-	NetworkWrite *float64 `json:"network_write,omitempty"`
-	SysCall      *float64 `json:"syscall,omitempty"`
+	LLC      *float64 `json:"llc,omitempty"`
+	MemRead  *float64 `json:"mem_read,omitempty"`
+	MemWrite *float64 `json:"mem_write,omitempty"`
+	SysCall  *float64 `json:"syscall,omitempty"`
+	Prefetch *float64 `json:"prefetch,omitempty"`
 }

@@ -155,16 +155,11 @@ func (p *Probe) executeProbe(ctx context.Context, req ProbeRequest) *ProbeResult
 	// Populate result from kernel sensitivities
 	result.FirstDataframeStep = sensitivities.FirstDataframeStep
 	result.LastDataframeStep = sensitivities.LastDataframeStep
-	result.CPUInteger = sensitivities.CPUInteger
-	result.CPUFloat = sensitivities.CPUFloat
 	result.LLC = sensitivities.LLC
 	result.MemRead = sensitivities.MemRead
 	result.MemWrite = sensitivities.MemWrite
-	result.StoreBuffer = sensitivities.StoreBuffer
-	result.Scoreboard = sensitivities.Scoreboard
-	result.NetworkRead = sensitivities.NetworkRead
-	result.NetworkWrite = sensitivities.NetworkWrite
 	result.SysCall = sensitivities.SysCall
+	result.Prefetch = sensitivities.Prefetch
 
 	result.Finished = time.Now()
 
@@ -172,15 +167,15 @@ func (p *Probe) executeProbe(ctx context.Context, req ProbeRequest) *ProbeResult
 	if sensitivities.LLC != nil {
 		llcVal = fmt.Sprintf("%.4f", *sensitivities.LLC)
 	}
-	cpuVal := "nil"
-	if sensitivities.CPUInteger != nil {
-		cpuVal = fmt.Sprintf("%.4f", *sensitivities.CPUInteger)
+	memReadVal := "nil"
+	if sensitivities.MemRead != nil {
+		memReadVal = fmt.Sprintf("%.4f", *sensitivities.MemRead)
 	}
 
 	p.logger.WithFields(logrus.Fields{
-		"container_index": req.ContainerConfig.Index,
-		"llc_sensitivity": llcVal,
-		"cpu_sensitivity": cpuVal,
+		"container_index":     req.ContainerConfig.Index,
+		"llc_sensitivity":     llcVal,
+		"memread_sensitivity": memReadVal,
 	}).Info("Probe completed")
 
 	return result

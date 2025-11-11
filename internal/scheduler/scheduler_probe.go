@@ -59,16 +59,16 @@ func (ps *ProbeScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) er
 			if result.LLC != nil {
 				llcVal = fmt.Sprintf("%.4f", *result.LLC)
 			}
-			cpuVal := "nil"
-			if result.CPUInteger != nil {
-				cpuVal = fmt.Sprintf("%.4f", *result.CPUInteger)
+			memReadVal := "nil"
+			if result.MemRead != nil {
+				memReadVal = fmt.Sprintf("%.4f", *result.MemRead)
 			}
 
 			ps.schedulerLogger.WithFields(logrus.Fields{
 				"container_index": result.ContainerIndex,
 				"container_name":  result.ContainerName,
 				"llc_sensitivity": llcVal,
-				"cpu_sensitivity": cpuVal,
+				"mem_sensitivity": memReadVal,
 			}).Info("Probe completed and received")
 			ps.activeProbe = nil
 		default:
@@ -85,8 +85,8 @@ func (ps *ProbeScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) er
 		ps.schedulerLogger.WithFields(logrus.Fields{
 			"container_index": containerInfo.Index,
 			"container_name":  containerInfo.Config.GetContainerName(0),
-			"probe_duration":  "60s",
-			"probe_core":      "1-4",
+			"probe_duration":  "30s",
+			"probe_core":      "1",
 		}).Info("Starting probe")
 
 		// Create probe request
@@ -94,8 +94,8 @@ func (ps *ProbeScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) er
 			ContainerConfig: containerInfo.Config,
 			ContainerID:     containerInfo.ContainerID,
 			Dataframes:      dataframes,
-			ProbeDuration:   60 * time.Second,
-			ProbeCores:      "1-4",
+			ProbeDuration:   30 * time.Second,
+			ProbeCores:      "1",
 			ProbeSocket:     0,
 			Isolated:        true,
 			Abortable:       false,
@@ -119,16 +119,16 @@ func (ps *ProbeScheduler) Shutdown() error {
 		if result.LLC != nil {
 			llcVal = fmt.Sprintf("%.4f", *result.LLC)
 		}
-		cpuVal := "nil"
-		if result.CPUInteger != nil {
-			cpuVal = fmt.Sprintf("%.4f", *result.CPUInteger)
+		memReadVal := "nil"
+		if result.MemRead != nil {
+			memReadVal = fmt.Sprintf("%.4f", *result.MemRead)
 		}
 
 		ps.schedulerLogger.WithFields(logrus.Fields{
 			"container_index": result.ContainerIndex,
 			"container_name":  result.ContainerName,
 			"llc_sensitivity": llcVal,
-			"cpu_sensitivity": cpuVal,
+			"mem_sensitivity": memReadVal,
 		}).Info("Final probe completed and received")
 	}
 	return nil

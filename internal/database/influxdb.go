@@ -482,12 +482,6 @@ func (idb *InfluxDBClient) WriteProbeResults(probeResults []*probe.ProbeResult) 
 		}
 
 		// Add sensitivity metrics (only if not nil)
-		if result.CPUInteger != nil {
-			fields["cpu_integer"] = *result.CPUInteger
-		}
-		if result.CPUFloat != nil {
-			fields["cpu_float"] = *result.CPUFloat
-		}
 		if result.LLC != nil {
 			fields["llc"] = *result.LLC
 		}
@@ -497,20 +491,11 @@ func (idb *InfluxDBClient) WriteProbeResults(probeResults []*probe.ProbeResult) 
 		if result.MemWrite != nil {
 			fields["mem_write"] = *result.MemWrite
 		}
-		if result.StoreBuffer != nil {
-			fields["store_buffer"] = *result.StoreBuffer
-		}
-		if result.Scoreboard != nil {
-			fields["scoreboard"] = *result.Scoreboard
-		}
-		if result.NetworkRead != nil {
-			fields["network_read"] = *result.NetworkRead
-		}
-		if result.NetworkWrite != nil {
-			fields["network_write"] = *result.NetworkWrite
-		}
 		if result.SysCall != nil {
 			fields["syscall"] = *result.SysCall
+		}
+		if result.Prefetch != nil {
+			fields["prefetch"] = *result.Prefetch
 		}
 
 		point := influxdb2.NewPoint("benchmark_probes", tags, fields, result.Started)

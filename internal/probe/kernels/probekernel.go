@@ -11,18 +11,12 @@ import (
 )
 
 // all computed sensitivity metrics
-// TODO reduce to minimum
 type ProbeSensitivities struct {
-	CPUInteger   *float64
-	CPUFloat     *float64
-	LLC          *float64
-	MemRead      *float64
-	MemWrite     *float64
-	StoreBuffer  *float64
-	Scoreboard   *float64
-	NetworkRead  *float64
-	NetworkWrite *float64
-	SysCall      *float64
+	LLC      *float64
+	MemRead  *float64
+	MemWrite *float64
+	SysCall  *float64
+	Prefetch *float64
 
 	// Dataframe range used for analysis
 	FirstDataframeStep int

@@ -50,8 +50,8 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 
 	result := &ProbeSensitivities{}
 
-	// Divide time into 11 segments (baseline + 10 tests)
-	segmentTime := totalTime / 11
+	// Divide time into 6 segments (baseline + 5 tests)
+	segmentTime := totalTime / 6
 
 	// Get container dataframe for the victim container
 	containerDF := dataframes.GetContainer(targetContainerIndex)
@@ -70,7 +70,7 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 		"segment_time":           segmentTime,
 	}).Debug("Starting probe kernel execution sequence")
 
-	// 1.) Baseline
+	// 1. Baseline
 	baselineIPC, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
 		cores, "", segmentTime)
 	if err != nil {
@@ -79,30 +79,7 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 
 	dpk.logger.WithField("baseline_ipc", baselineIPC).Info("Baseline IPC established")
 
-	// 2. CPU Integer
-	cpuIntIPC, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
-		cores, "stress-ng --cpu 0", segmentTime)
-	if err == nil && baselineIPC > 0 {
-		sensitivity := (baselineIPC - cpuIntIPC) / baselineIPC
-		val := clampSensitivity(sensitivity)
-		result.CPUInteger = &val
-		dpk.logger.WithFields(logrus.Fields{
-			"baseline_ipc": baselineIPC,
-			"stressed_ipc": cpuIntIPC,
-			"sensitivity":  val,
-		}).Info("CPU Integer sensitivity calculated")
-	}
-
-	// 3.) CPU Float
-	cpuFloatIPC, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
-		cores, "stress-ng --matrixprod 0", segmentTime)
-	if err == nil && baselineIPC > 0 {
-		sensitivity := (baselineIPC - cpuFloatIPC) / baselineIPC
-		val := clampSensitivity(sensitivity)
-		result.CPUFloat = &val
-	}
-
-	// 4.) LLC
+	// 2. LLC
 	llcIPC, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
 		cores, "stress-ng --matrix-3d 0", segmentTime)
 	if err == nil && baselineIPC > 0 {
@@ -116,69 +93,60 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 		}).Info("LLC sensitivity calculated")
 	}
 
-	// 5.) Memory Read
+	// 3. Memory Read
 	memReadIPC, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
 		cores, "stress-ng --stream 0", segmentTime)
 	if err == nil && baselineIPC > 0 {
 		sensitivity := (baselineIPC - memReadIPC) / baselineIPC
 		val := clampSensitivity(sensitivity)
 		result.MemRead = &val
+		dpk.logger.WithFields(logrus.Fields{
+			"baseline_ipc": baselineIPC,
+			"stressed_ipc": memReadIPC,
+			"sensitivity":  val,
+		}).Info("Memory read sensitivity calculated")
 	}
 
-	// 6. Memory Write
+	// 4. Memory Write
 	memWriteIPC, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
 		cores, "stress-ng --vm 0", segmentTime)
 	if err == nil && baselineIPC > 0 {
 		sensitivity := (baselineIPC - memWriteIPC) / baselineIPC
 		val := clampSensitivity(sensitivity)
 		result.MemWrite = &val
+		dpk.logger.WithFields(logrus.Fields{
+			"baseline_ipc": baselineIPC,
+			"stressed_ipc": memWriteIPC,
+			"sensitivity":  val,
+		}).Info("Memory write sensitivity calculated")
 	}
 
-	// 7. Store Buffer
-	sbIPC, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
-		cores, "stress-ng --memcpy 0", segmentTime)
-	if err == nil && baselineIPC > 0 {
-		sensitivity := (baselineIPC - sbIPC) / baselineIPC
-		val := clampSensitivity(sensitivity)
-		result.StoreBuffer = &val
-	}
-
-	// 8. Scoreboard
-	scoreboardIPC, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
-		cores, "stress-ng --branch 0", segmentTime)
-	if err == nil && baselineIPC > 0 {
-		sensitivity := (baselineIPC - scoreboardIPC) / baselineIPC
-		val := clampSensitivity(sensitivity)
-		result.Scoreboard = &val
-	}
-
-	// 9. Network Read
-	// TODO Drop this
-	netReadIPC, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
-		cores, "stress-ng --sock 0", segmentTime)
-	if err == nil && baselineIPC > 0 {
-		sensitivity := (baselineIPC - netReadIPC) / baselineIPC
-		val := clampSensitivity(sensitivity)
-		result.NetworkRead = &val
-	}
-
-	// 10. Network Write
-	// TODO Drop this
-	netWriteIPC, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
-		cores, "stress-ng --sock 0", segmentTime)
-	if err == nil && baselineIPC > 0 {
-		sensitivity := (baselineIPC - netWriteIPC) / baselineIPC
-		val := clampSensitivity(sensitivity)
-		result.NetworkWrite = &val
-	}
-
-	// 11. SysCall (contention on the kernel)
+	// 5. SysCall (contention on the kernel)
 	syscallIPC, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
-		cores, "stress-ng --x86syscall 1", segmentTime)
+		cores, "stress-ng --x86syscall 0", segmentTime)
 	if err == nil && baselineIPC > 0 {
 		sensitivity := (baselineIPC - syscallIPC) / baselineIPC
 		val := clampSensitivity(sensitivity)
 		result.SysCall = &val
+		dpk.logger.WithFields(logrus.Fields{
+			"baseline_ipc": baselineIPC,
+			"stressed_ipc": syscallIPC,
+			"sensitivity":  val,
+		}).Info("SysCall sensitivity calculated")
+	}
+
+	// 6. Prefetch
+	prefetchIPC, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
+		cores, "stress-ng --prefetch 0", segmentTime)
+	if err == nil && baselineIPC > 0 {
+		sensitivity := (baselineIPC - prefetchIPC) / baselineIPC
+		val := clampSensitivity(sensitivity)
+		result.Prefetch = &val
+		dpk.logger.WithFields(logrus.Fields{
+			"baseline_ipc": baselineIPC,
+			"stressed_ipc": prefetchIPC,
+			"sensitivity":  val,
+		}).Info("Prefetch sensitivity calculated")
 	}
 
 	// Record ending
