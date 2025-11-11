@@ -1,0 +1,33 @@
+container-bench Memory Validation Report
+Generated: Tue Nov 11 02:34:41 AM CST 2025
+Config Folder: /users/eberhard/container-bench/benchmarks/validation/memory/short
+==========================================
+
+Results:
+
+Configuration                            |  Peak Memory |      Runtime
+---------------------------------------------+-------------+-------------
+branch1000                               |      19.61 MB |      0:26.56
+branch100                                |      21.22 MB |      0:26.53
+branch2000                               |      19.30 MB |      0:26.13
+branch5000                               |      19.10 MB |      0:26.10
+docker1000                               |      19.41 MB |      0:26.08
+docker100                                |      21.01 MB |      0:26.55
+docker2000                               |      19.53 MB |      0:26.04
+docker5000                               |      19.30 MB |      0:26.10
+full1000                                 |      20.87 MB |      0:26.75
+full100                                  |      24.90 MB |      0:26.87
+full2000                                 |      20.32 MB |      0:26.52
+full5000                                 |      19.55 MB |      0:26.41
+ipc1000                                  |      19.73 MB |      0:26.19
+ipc100                                   |      21.92 MB |      0:26.91
+ipc2000                                  |      19.02 MB |      0:26.32
+ipc5000                                  |      19.16 MB |      0:26.31
+mixed1000                                |      19.73 MB |      0:26.46
+mixed100                                 |      22.87 MB |      0:26.78
+mixed2000                                |      19.52 MB |      0:26.31
+mixed5000                                |      19.09 MB |      0:26.13
+
+Baseline: 20.32 MB (full2000)
+Best: 19.02 MB (ipc2000)
+Worst: 24.90 MB (full100)

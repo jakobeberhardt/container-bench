@@ -24,7 +24,7 @@ container0:
     frequency: 1000
     perf: true
     docker: true
-    rdt: false
+    rdt: true
 
 container1:
   index: 1
@@ -35,7 +35,7 @@ container1:
     frequency: 1000
     perf: true
     docker: true
-    rdt: false
+    rdt: true
 
 container2:
   index: 2
@@ -46,4 +46,4 @@ container2:
     frequency: 1000
     perf: true
     docker: true
-    rdt: false
+    rdt: true

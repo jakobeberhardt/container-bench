@@ -25,9 +25,7 @@ container0:
     perf:
       instructions: true
       cycles: true
-    docker:
-      cpu_usage_percent: true
-      memory_usage: true
+    docker: false
     rdt: false
 
 container1:
@@ -40,9 +38,7 @@ container1:
     perf:
       instructions: true
       cycles: true
-    docker:
-      cpu_usage_percent: true
-      memory_usage: true
+    docker: false
     rdt: false
 
 container2:
@@ -55,7 +51,5 @@ container2:
     perf:
       instructions: true
       cycles: true
-    docker:
-      cpu_usage_percent: true
-      memory_usage: true
+    docker: false
     rdt: false
