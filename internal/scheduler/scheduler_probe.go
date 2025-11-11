@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"container-bench/internal/config"
 	"container-bench/internal/dataframe"
 	"container-bench/internal/host"
 	"container-bench/internal/logging"
@@ -20,11 +21,14 @@ type ProbeScheduler struct {
 	containers      []ContainerInfo
 	rdtAllocator    RDTAllocator
 	prober          *probe.Probe
+	config          *config.SchedulerConfig
 
 	// Probing state
-	probingStarted bool
-	nextProbeIndex int
-	activeProbe    <-chan *probe.ProbeResult
+	probingStarted      bool
+	nextProbeIndex      int
+	activeProbe         <-chan *probe.ProbeResult
+	lastProbeFinishTime time.Time
+	warmupCompleteTime  time.Time
 }
 
 func NewProbeScheduler() *ProbeScheduler {
@@ -37,16 +41,32 @@ func NewProbeScheduler() *ProbeScheduler {
 	}
 }
 
-func (ps *ProbeScheduler) Initialize(allocator RDTAllocator, containers []ContainerInfo) error {
+func (ps *ProbeScheduler) Initialize(allocator RDTAllocator, containers []ContainerInfo, schedulerConfig *config.SchedulerConfig) error {
 	ps.rdtAllocator = allocator
 	ps.containers = containers
+	ps.config = schedulerConfig
 
-	ps.schedulerLogger.WithField("containers", len(containers)).Info("Probe scheduler initialized")
+	// Set warmup complete time
+	warmupSeconds := 0
+	if schedulerConfig != nil && schedulerConfig.Prober != nil && schedulerConfig.Prober.WarmupT > 0 {
+		warmupSeconds = schedulerConfig.Prober.WarmupT
+	}
+	ps.warmupCompleteTime = time.Now().Add(time.Duration(warmupSeconds) * time.Second)
+
+	ps.schedulerLogger.WithFields(logrus.Fields{
+		"containers":     len(containers),
+		"warmup_seconds": warmupSeconds,
+	}).Info("Probe scheduler initialized")
 	return nil
 }
 
 func (ps *ProbeScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) error {
 	if ps.prober == nil {
+		return nil
+	}
+
+	// Check warmup period
+	if time.Now().Before(ps.warmupCompleteTime) {
 		return nil
 	}
 
@@ -71,22 +91,52 @@ func (ps *ProbeScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) er
 				"mem_sensitivity": memReadVal,
 			}).Info("Probe completed and received")
 			ps.activeProbe = nil
+			ps.lastProbeFinishTime = time.Now()
 		default:
 			// Probe still running
 			return nil
 		}
 	}
 
+	// Check cooldown period
+	cooldownSeconds := 0
+	if ps.config != nil && ps.config.Prober != nil && ps.config.Prober.CooldownT > 0 {
+		cooldownSeconds = ps.config.Prober.CooldownT
+	}
+	if !ps.lastProbeFinishTime.IsZero() {
+		cooldownEnd := ps.lastProbeFinishTime.Add(time.Duration(cooldownSeconds) * time.Second)
+		if time.Now().Before(cooldownEnd) {
+			return nil
+		}
+	}
+
 	// Start next probe if we have containers left to probe
-	// TODO: Add a check || container is active, e.g. CPU > x%
 	if ps.nextProbeIndex < len(ps.containers) {
 		containerInfo := ps.containers[ps.nextProbeIndex]
+
+		// Get probe configuration
+		abortable := false
+		isolated := true
+		probeDuration := 30 * time.Second
+		probeCores := "1"
+		if ps.config != nil && ps.config.Prober != nil {
+			abortable = ps.config.Prober.Abortable
+			isolated = ps.config.Prober.Isolated
+			if ps.config.Prober.DefaultT > 0 {
+				probeDuration = time.Duration(ps.config.Prober.DefaultT) * time.Second
+			}
+			if ps.config.Prober.DefaultProbeCores != "" {
+				probeCores = ps.config.Prober.DefaultProbeCores
+			}
+		}
 
 		ps.schedulerLogger.WithFields(logrus.Fields{
 			"container_index": containerInfo.Index,
 			"container_name":  containerInfo.Config.GetContainerName(0),
-			"probe_duration":  "30s",
-			"probe_core":      "1",
+			"probe_duration":  probeDuration,
+			"probe_cores":     probeCores,
+			"abortable":       abortable,
+			"isolated":        isolated,
 		}).Info("Starting probe")
 
 		// Create probe request
@@ -94,11 +144,11 @@ func (ps *ProbeScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) er
 			ContainerConfig: containerInfo.Config,
 			ContainerID:     containerInfo.ContainerID,
 			Dataframes:      dataframes,
-			ProbeDuration:   30 * time.Second,
-			ProbeCores:      "1",
+			ProbeDuration:   probeDuration,
+			ProbeCores:      probeCores,
 			ProbeSocket:     0,
-			Isolated:        true,
-			Abortable:       false,
+			Isolated:        isolated,
+			Abortable:       abortable,
 		}
 
 		// Launch probe asynchronously

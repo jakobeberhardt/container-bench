@@ -1,7 +1,7 @@
 benchmark:
   name: Simple Test
   description: A simple test benchmark that starts three containers with different workloads
-  max_t: 70
+  max_t: 80
   log_level: info
   scheduler:
     implementation: probe
@@ -11,6 +11,10 @@ benchmark:
       implementation: default
       abortable: false
       isolated: true
+      default_t: 30
+      warmup_t: 5
+      cooldown_t: 7
+      default_probe_cores: 2
   data:
     db:
       host: ${INFLUXDB_HOST}
@@ -23,9 +27,24 @@ c0:
   index: 0
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
   core: 0
-  command: "stress-ng --matrix-3d 1 --timeout 0"
+  command: "stress-ng --x86syscall 1 --timeout 0"
   data:
     frequency: 100
-    perf: true
-    docker: true
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+c1:
+  index: 1
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 1
+  command: "stress-ng --x86syscall 1 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
     rdt: false

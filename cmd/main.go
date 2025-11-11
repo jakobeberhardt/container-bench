@@ -934,7 +934,7 @@ func (cb *ContainerBench) initializeSchedulerWithPIDs() error {
 	}
 
 	// Initialize scheduler with allocator and container information
-	if err := cb.scheduler.Initialize(rdtAllocator, containerInfos); err != nil {
+	if err := cb.scheduler.Initialize(rdtAllocator, containerInfos, &cb.config.Benchmark.Scheduler); err != nil {
 		return fmt.Errorf("failed to initialize scheduler: %w", err)
 	}
 

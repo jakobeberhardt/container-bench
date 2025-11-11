@@ -19,7 +19,7 @@ type ContainerInfo struct {
 }
 
 type Scheduler interface {
-	Initialize(allocator RDTAllocator, containers []ContainerInfo) error
+	Initialize(allocator RDTAllocator, containers []ContainerInfo, schedulerConfig *config.SchedulerConfig) error
 	ProcessDataFrames(dataframes *dataframe.DataFrames) error
 	Shutdown() error
 	GetVersion() string
@@ -40,6 +40,7 @@ type DefaultScheduler struct {
 	containers      []ContainerInfo
 	rdtAllocator    RDTAllocator
 	prober          *probe.Probe
+	config          *config.SchedulerConfig
 }
 
 func NewDefaultScheduler() *DefaultScheduler {
@@ -50,9 +51,10 @@ func NewDefaultScheduler() *DefaultScheduler {
 	}
 }
 
-func (ds *DefaultScheduler) Initialize(allocator RDTAllocator, containers []ContainerInfo) error {
+func (ds *DefaultScheduler) Initialize(allocator RDTAllocator, containers []ContainerInfo, schedulerConfig *config.SchedulerConfig) error {
 	ds.rdtAllocator = allocator
 	ds.containers = containers
+	ds.config = schedulerConfig
 
 	ds.schedulerLogger.WithField("containers", len(containers)).Info("Default scheduler initialized")
 	return nil

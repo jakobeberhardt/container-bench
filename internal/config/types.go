@@ -39,10 +39,14 @@ type SchedulerConfig struct {
 }
 
 type ProberConfig struct {
-	Implementation string `yaml:"implementation"`
-	Abortable      bool   `yaml:"abortable"`
-	Isolated       bool   `yaml:"isolated"`
-	ProbeImage     string `yaml:"probe_image,omitempty"`
+	Implementation    string `yaml:"implementation"`
+	Abortable         bool   `yaml:"abortable"`
+	Isolated          bool   `yaml:"isolated"`
+	DefaultT          int    `yaml:"default_t,omitempty"`
+	WarmupT           int    `yaml:"warmup_t,omitempty"`
+	CooldownT         int    `yaml:"cooldown_t,omitempty"`
+	DefaultProbeCores string `yaml:"default_probe_cores,omitempty"`
+	ProbeImage        string `yaml:"probe_image,omitempty"`
 }
 
 type DataConfig struct {
