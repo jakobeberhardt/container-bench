@@ -1,7 +1,7 @@
 benchmark:
   name: 7zip Probe Medium/Small
   description: Probes a 7zip container with medium settings and small file size
-  max_t: 60
+  max_t: 75
   log_level: info
   scheduler:
     implementation: probe
@@ -11,6 +11,10 @@ benchmark:
       implementation: default
       abortable: false
       isolated: true
+      default_t: 60
+      warmup_t: 10
+      cooldown_t: 0
+      default_probe_cores: 1
   data:
     db:
       host: ${INFLUXDB_HOST}
@@ -30,7 +34,9 @@ benchmark:
   core: 0
   command: "while :; do rm -f /data/dummy.7z && /populate.sh 10 && 7z a -mx=5 -mmt=1  dummy.7z /data/*.bin; done"
   data:
-    frequency: 1000
-    perf: true
-    docker: true
-    rdt: true
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false

@@ -1,7 +1,7 @@
 benchmark:
   name: PostgreSQL Probe Write/Large
   description: Probes a PostgreSQL container working on large data set with write operations
-  max_t: 60
+  max_t: 75
   log_level: info
   scheduler:
     implementation: probe
@@ -11,6 +11,10 @@ benchmark:
       implementation: default
       abortable: false
       isolated: true
+      default_t: 60
+      warmup_t: 10
+      cooldown_t: 0
+      default_probe_cores: 1
   data:
     db:
       host: ${INFLUXDB_HOST}
@@ -30,18 +34,21 @@ postgres:
   port: 5432:5432
   core: 0
   data:
-    frequency: 1000
-    perf: true
-    docker: true
-    rdt: true
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
 
 load:
   index: 1
   image: registry.jakob-eberhardt.de/rdt4nn/postgres:latest
-  core: 15,16,17,18
+  core: 16-19
   command: "sleep 1 && pgbench -i -s 30 -h postgres -U benchmark benchmark && pgbench -c 16 -j 16 -T 3600 -N -h postgres -U benchmark benchmark"
   data:
-    frequency: 1000
-    perf: true
-    docker: true
-    rdt: true
+    frequency: 100
+    perf: false
+    docker:
+      cpu_usage_percent: true
+    rdt: false

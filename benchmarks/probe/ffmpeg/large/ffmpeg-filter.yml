@@ -1,7 +1,7 @@
 benchmark:
   name: FFmpeg Probe Filter/Large
   description: Probes an FFmpeg container applying complex filters to large video file
-  max_t: 60
+  max_t: 75
   log_level: info
   scheduler:
     implementation: probe
@@ -11,6 +11,10 @@ benchmark:
       implementation: default
       abortable: false
       isolated: true
+      default_t: 60
+      warmup_t: 10
+      cooldown_t: 0
+      default_probe_cores: 1
   data:
     db:
       host: ${INFLUXDB_HOST}
@@ -30,7 +34,9 @@ ffmpeg:
   core: 0
   command: "/generate_video.sh 30 && while :; do ffmpeg -i /data/video.mov -vf 'scale=1280:720,hue=s=0' -c:v libx264 -preset medium -crf 23 -c:a copy -y /tmp/output.mp4; done"
   data:
-    frequency: 1000
-    perf: true
-    docker: true
-    rdt: true
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false

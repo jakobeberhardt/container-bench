@@ -1,7 +1,7 @@
 benchmark:
   name: Hadoop Probe Write/Large
   description: Probes a Hadoop container with large data set performing write operations
-  max_t: 60
+  max_t: 75
   log_level: info
   scheduler:
     implementation: probe
@@ -11,6 +11,10 @@ benchmark:
       implementation: default
       abortable: false
       isolated: true
+      default_t: 60
+      warmup_t: 10
+      cooldown_t: 0
+      default_probe_cores: 1
   data:
     db:
       host: ${INFLUXDB_HOST}
@@ -30,18 +34,21 @@ hadoop:
   port: 9870:9870
   core: 0
   data:
-    frequency: 1000
-    perf: true
-    docker: true
-    rdt: true
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
 
 load:
   index: 1
   image: apache/hadoop:latest
-  core: 15,16,17,18
+  core: 16-19
   command: "sleep 15 && while :; do hadoop fs -rm -r /test-data; hadoop jar /opt/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-examples-*.jar teragen -Dmapreduce.job.maps=16 10000000 /test-data; done"
   data:
-    frequency: 1000
-    perf: true
-    docker: true
-    rdt: true
+    frequency: 100
+    perf: false
+    docker:
+      cpu_usage_percent: true
+    rdt: false

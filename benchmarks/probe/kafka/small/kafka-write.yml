@@ -1,7 +1,7 @@
 benchmark:
   name: Kafka Probe Write/Small
   description: Probes a Kafka container with small data set performing write operations
-  max_t: 60
+  max_t: 75
   log_level: info
   scheduler:
     implementation: probe
@@ -11,6 +11,10 @@ benchmark:
       implementation: default
       abortable: false
       isolated: true
+      default_t: 60
+      warmup_t: 10
+      cooldown_t: 0
+      default_probe_cores: 1
   data:
     db:
       host: ${INFLUXDB_HOST}
@@ -32,18 +36,21 @@ kafka:
   environment:
     KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
   data:
-    frequency: 1000
-    perf: true
-    docker: true
-    rdt: true
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
 
 load:
   index: 1
   image: bashj79/kafka-kraft
-  core: 15,16,17,18
+  core: 16-19
   command: "sleep 10 && /opt/kafka/bin/kafka-topics.sh --create --topic test --bootstrap-server kafka:9092 --partitions 2 --replication-factor 1 && while :; do /opt/kafka/bin/kafka-producer-perf-test.sh --topic test --num-records 100000 --record-size 256 --throughput -1 --producer-props bootstrap.servers=kafka:9092 acks=all; done"
   data:
-    frequency: 1000
-    perf: true
-    docker: true
-    rdt: true
+    frequency: 100
+    perf: false
+    docker:
+      cpu_usage_percent: true
+    rdt: false

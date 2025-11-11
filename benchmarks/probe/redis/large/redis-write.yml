@@ -1,7 +1,7 @@
 benchmark:
   name: Redis Probe Write/Large
   description: Probes a Redis container with large data set performing write operations
-  max_t: 60
+  max_t: 75
   log_level: info
   scheduler:
     implementation: probe
@@ -11,6 +11,10 @@ benchmark:
       implementation: default
       abortable: false
       isolated: true
+      default_t: 60
+      warmup_t: 10
+      cooldown_t: 0
+      default_probe_cores: 1
   data:
     db:
       host: ${INFLUXDB_HOST}
@@ -30,18 +34,21 @@ redis:
   port: 6379:6379
   core: 0
   data:
-    frequency: 1000
-    perf: true
-    docker: true
-    rdt: true
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
 
 load:
   index: 1
   image: alpine:latest
-  core: 15,16,17,18
+  core: 16-19
   command: "apk add --no-cache redis && sleep 2 && while :; do redis-benchmark -h redis -t set -d 1024 -r 1000000 -n 99999999 -c 50 -P 16; done"
   data:
-    frequency: 1000
-    perf: true
-    docker: true
-    rdt: true
+    frequency: 100
+    perf: false
+    docker:
+      cpu_usage_percent: true
+    rdt: false
