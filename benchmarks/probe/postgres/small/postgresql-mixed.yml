@@ -1,7 +1,7 @@
 benchmark:
   name: PostgreSQL Probe Mixed/Small
   description: Probes a PostgreSQL container working on small data set with mixed operations
-  max_t: 75
+  max_t: 80
   log_level: info
   scheduler:
     implementation: probe
@@ -9,10 +9,10 @@ benchmark:
     log_level: error
     prober:
       implementation: default
-      abortable: false
+      abortable: true
       isolated: true
       default_t: 60
-      warmup_t: 10
+      warmup_t: 15
       cooldown_t: 0
       default_probe_cores: 1
   data:
@@ -41,14 +41,14 @@ postgres:
     docker: false
     rdt: false
 
-load:
-  index: 1
-  image: registry.jakob-eberhardt.de/rdt4nn/postgres:latest
-  core: 16-19
-  command: "sleep 1 && pgbench -i -s 10 -h postgres -U benchmark benchmark && pgbench -c 8 -j 8 -T 3600 -h postgres -U benchmark benchmark"
-  data:
-    frequency: 100
-    perf: false
-    docker:
-      cpu_usage_percent: true
-    rdt: false
+# load:
+#   index: 1
+#   image: registry.jakob-eberhardt.de/rdt4nn/postgres:latest
+#   core: 16-19
+#   command: "sleep 1 && pgbench -i -s 1 -h postgres -U benchmark benchmark && pgbench -c 8 -j 8 -T 3600 -h postgres -U benchmark benchmark"
+#   data:
+#     frequency: 100
+#     perf: false
+#     docker:
+#       cpu_usage_percent: true
+#     rdt: false
