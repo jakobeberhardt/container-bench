@@ -41,14 +41,14 @@ nginx:
     docker: false
     rdt: false
 
-load:
-  index: 1
-  image: alpine:latest
-  core: 16-19
-  command: "apk add --no-cache apache2-utils && sleep 2 && while :; do ab -n 1000000 -c 100 -k http://nginx/; done"
-  data:
-    frequency: 100
-    perf: false
-    docker:
-      cpu_usage_percent: true
-    rdt: false
+# load:
+#   index: 1
+#   image: alpine:latest
+#   core: 16-19
+#   command: "apk add --no-cache apache2-utils && sleep 2 && while :; do ab -n 1000000 -c 100 -k http://nginx/; done"
+#   data:
+#     frequency: 100
+#     perf: false
+#     docker:
+#       cpu_usage_percent: true
+#     rdt: false

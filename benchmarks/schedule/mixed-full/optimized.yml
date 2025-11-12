@@ -1,0 +1,480 @@
+benchmark:
+  name: scheduler test (optimized)
+  description: Runs stress-ng workers on all cores with optimized placement to minimize noisy neighbor effects
+  max_t: 30
+  log_level: info
+  scheduler:
+    implementation: default
+    rdt: false
+    log_level: warn
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+
+# Socket 0 - Core 0: matrixprod (LOW - swapped from container16)
+matrixprod-0:
+  index: 0
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 16
+  command: "stress-ng --cpu 1 --cpu-method matrixprod --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+cache-l3-0:
+  index: 1
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 1
+  command: "stress-ng --cache 1 --cache-level 3 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+# Socket 0 - Core 2: matrixprod (LOW - swapped from container18)
+cache-l3-1:
+  index: 2
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 18
+  command: "stress-ng --cache 1 --cache-level 3 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+cache-l3-2:
+  index: 3
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 3
+  command: "stress-ng --cache 1 --cache-level 3 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+# Socket 0 - Core 4: heapsort (LOW - swapped from container20)
+matrix-3d-0:
+  index: 4
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 20
+  command: "stress-ng --matrix-3d 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+matrix-3d-1:
+  index: 5
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 5
+  command: "stress-ng --matrix-3d 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+# Socket 0 - Core 6: heapsort (LOW - swapped from container22)
+matrix-3d-2:
+  index: 6
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 22
+  command: "stress-ng --matrix-3d 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+matrix-3d-3:
+  index: 7
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 7
+  command: "stress-ng --matrix-3d 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+# Socket 0 - Core 8: qsort (LOW - swapped from container24)
+stream-0:
+  index: 8
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 24
+  command: "stress-ng --stream 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+stream-1:
+  index: 9
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 9
+  command: "stress-ng --stream 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+# Socket 0 - Core 10: qsort (LOW - swapped from container26)
+stream-2:
+  index: 10
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 26
+  command: "stress-ng --stream 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+stream-3:
+  index: 11
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 11
+  command: "stress-ng --stream 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+# Socket 0 - Core 12: cache-l1 (LOW - swapped from container28)
+tsearch-0:
+  index: 12
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 28
+  command: "stress-ng --tsearch 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+tsearch-1:
+  index: 13
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 13
+  command: "stress-ng --tsearch 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+# Socket 0 - Core 14: cache-l1 (LOW - swapped from container30)
+tsearch-2:
+  index: 14
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 30
+  command: "stress-ng --tsearch 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+tsearch-3:
+  index: 15
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 15
+  command: "stress-ng --tsearch 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+# Socket 1 - Core 16: cache-l3 (HIGH - swapped from container0)
+matrixprod-1:
+  index: 16
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 0
+  command: "stress-ng --cpu 1 --cpu-method matrixprod --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+matrixprod-2:
+  index: 17
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 17
+  command: "stress-ng --cpu 1 --cpu-method matrixprod --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+# Socket 1 - Core 18: cache-l3 (HIGH - swapped from container2)
+matrixprod-3:
+  index: 18
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 2
+  command: "stress-ng --cpu 1 --cpu-method matrixprod --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+matrixprod-4:
+  index: 19
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 19
+  command: "stress-ng --cpu 1 --cpu-method matrixprod --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+# Socket 1 - Core 20: matrix-3d (HIGH - swapped from container4)
+heapsort-0:
+  index: 20
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 4
+  command: "stress-ng --heapsort 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+heapsort-1:
+  index: 21
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 21
+  command: "stress-ng --heapsort 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+# Socket 1 - Core 22: matrix-3d (HIGH - swapped from container6)
+heapsort-2:
+  index: 22
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 6
+  command: "stress-ng --heapsort 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+heapsort-3:
+  index: 23
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 23
+  command: "stress-ng --heapsort 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+# Socket 1 - Core 24: stream (HIGH - swapped from container8)
+qsort-0:
+  index: 24
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 8
+  command: "stress-ng --qsort 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+qsort-1:
+  index: 25
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 25
+  command: "stress-ng --qsort 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+# Socket 1 - Core 26: stream (HIGH - swapped from container10)
+qsort-2:
+  index: 26
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 10
+  command: "stress-ng --qsort 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+qsort-3:
+  index: 27
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 27
+  command: "stress-ng --qsort 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+# Socket 1 - Core 28: tsearch (HIGH - swapped from container12)
+cache-l1-0:
+  index: 28
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 12
+  command: "stress-ng --cache 1 --cache-level 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+cache-l1-1:
+  index: 29
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 29
+  command: "stress-ng --cache 1 --cache-level 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+# Socket 1 - Core 30: tsearch (HIGH - swapped from container14)
+cache-l1-2:
+  index: 30
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 14
+  command: "stress-ng --cache 1 --cache-level 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false
+
+cache-l1-3:
+  index: 31
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 31
+  command: "stress-ng --cache 1 --cache-level 1 --timeout 0"
+  data:
+    frequency: 1000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: false
+    rdt: false

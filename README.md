@@ -17,6 +17,16 @@ Similarly, `container-bench` can be used to determine if the branching behavior 
 
 ![Branch](./docs/img/simple/simple-branch.png)
 
+
+
+Using the collected metrics, a `scheduler` implementation can make optimization decisions, such as moving containers that cause a specific kind of inference regarding shared resources to a different socket or isolating them using CGroups or the Intel Resource Director. The profiling for these decisions happens completely online, meaning that while the workloads are running concurrently. The scheduler can issue a probe to analyze the resource and inference profile of a given container using a `probe kernel`. The following figure illustrates how the IPC of distinct workloads can be improved, boosting the overall performance.
+
+![Default Allocation](./docs/img/schedule/default.png) 
+> **_Note:_**  In this example, we run a total of 32 concurrent containers on a two-socket server. Some containers that run shared-resource-intensive workloads, e.g., `stress-ng` microbenchmarks that target the LLC, such as `matrix-3d` or `cache-level 3`, are allocated to the same socket, forcing them to share the given resources, which leads to consistently poor IPC. Unlike this, the performance of other workloads, such as `matrixprod` or `heapsort`, is determined by exclusive resources such as L1 or L2 caches. 
+
+![Scheduled Allocation](./docs/img/schedule/scheduled.png) 
+> **_Dynamic Improvement by relocating Containers:_**  In this example, we run same set of cotnainers initially mapped to the same cores and sockets. Fifty percent of the workloads can be considered highly sensitive to inference on shared resources, while the rest are insensitive. Initially, all sensitive workloads are running on socket one, which results in the worst-case performance. However, the dynamic scheduler detects and continuously balances the inference across the sockets such that the overall performance and IPC increase. The scheduler achieves this by swapping core affinities of *high* and *low* sensitivity workloads across the two sockets. 
+
 More benchmarks are available in the respective [example section](#examples)
 
 ## Features

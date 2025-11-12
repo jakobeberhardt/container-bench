@@ -1,0 +1,450 @@
+benchmark:
+  name: scheduler test (worst-case)
+  description: Worst-case placement - all HIGH sensitivity workloads on Socket 0, all LOW sensitivity on Socket 1
+  max_t: 360
+  log_level: info
+  scheduler:
+    implementation: default
+    rdt: false
+    log_level: warn
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+
+# Socket 0 - HIGH SENSITIVITY WORKLOADS ONLY
+# Core 0,1: cache-l3 (0.31-0.43 sensitivity)
+cache-l3-0:
+  index: 0
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 0
+  command: "stress-ng --cache 1 --cache-level 3 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+cache-l3-1:
+  index: 1
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 1
+  command: "stress-ng --cache 1 --cache-level 3 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+# Core 2,3: cache-l3 (0.31-0.43 sensitivity)
+cache-l3-2:
+  index: 2
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 2
+  command: "stress-ng --cache 1 --cache-level 3 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+cache-l3-3:
+  index: 3
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 3
+  command: "stress-ng --cache 1 --cache-level 3 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+# Core 4,5: matrix-3d (0.25-0.34 sensitivity)
+matrix-3d-0:
+  index: 4
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 4
+  command: "stress-ng --matrix-3d 1 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+matrix-3d-1:
+  index: 5
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 5
+  command: "stress-ng --matrix-3d 1 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+# Core 6,7: matrix-3d (0.25-0.34 sensitivity)
+matrix-3d-2:
+  index: 6
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 6
+  command: "stress-ng --matrix-3d 1 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+matrix-3d-3:
+  index: 7
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 7
+  command: "stress-ng --matrix-3d 1 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+# Core 8,9: stream (0.06-0.25 sensitivity)
+stream-0:
+  index: 8
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 8
+  command: "stress-ng --stream 1 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+stream-1:
+  index: 9
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 9
+  command: "stress-ng --stream 1 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+# Core 10,11: stream (0.06-0.25 sensitivity)
+stream-2:
+  index: 10
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 10
+  command: "stress-ng --stream 1 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+stream-3:
+  index: 11
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 11
+  command: "stress-ng --stream 1 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+# Core 12,13: tsearch (0.14-0.29 sensitivity)
+tsearch-0:
+  index: 12
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 12
+  command: "stress-ng --tsearch 1 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+tsearch-1:
+  index: 13
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 13
+  command: "stress-ng --tsearch 1 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+# Core 14,15: tsearch (0.14-0.29 sensitivity)
+tsearch-2:
+  index: 14
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 14
+  command: "stress-ng --tsearch 1 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+tsearch-3:
+  index: 15
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 15
+  command: "stress-ng --tsearch 1 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+# Socket 1 - LOW SENSITIVITY WORKLOADS ONLY
+# Core 16,17: cpu-matrixprod (0.00 sensitivity)
+matrixprod-0:
+  index: 16
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 16
+  command: "stress-ng --cpu 1 --cpu-method matrixprod --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+matrixprod-1:
+  index: 17
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 17
+  command: "stress-ng --cpu 1 --cpu-method matrixprod --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+# Core 18,19: cpu-matrixprod (0.00 sensitivity)
+matrixprod-2:
+  index: 18
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 18
+  command: "stress-ng --cpu 1 --cpu-method matrixprod --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+matrixprod-3:
+  index: 19
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 19
+  command: "stress-ng --cpu 1 --cpu-method matrixprod --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+# Core 20,21: heapsort (0.00 sensitivity)
+heapsort-0:
+  index: 20
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 20
+  command: "stress-ng --heapsort 1 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+heapsort-1:
+  index: 21
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 21
+  command: "stress-ng --heapsort 1 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+# Core 22,23: heapsort (0.00 sensitivity)
+heapsort-2:
+  index: 22
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 22
+  command: "stress-ng --heapsort 1 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+heapsort-3:
+  index: 23
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 23
+  command: "stress-ng --heapsort 1 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+# Core 24,25: qsort (0.00 sensitivity)
+qsort-0:
+  index: 24
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 24
+  command: "stress-ng --qsort 1 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+qsort-1:
+  index: 25
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 25
+  command: "stress-ng --qsort 1 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+# Core 26,27: qsort (0.00 sensitivity)
+qsort-2:
+  index: 26
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 26
+  command: "stress-ng --qsort 1 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+qsort-3:
+  index: 27
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 27
+  command: "stress-ng --qsort 1 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+# Core 28,29: cache-l1 (0.00 sensitivity)
+cache-l1-0:
+  index: 28
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 28
+  command: "stress-ng --cache 1 --cache-level 1 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+cache-l1-1:
+  index: 29
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 29
+  command: "stress-ng --cache 1 --cache-level 1 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+# Core 30,31: cache-l1 (0.00 sensitivity)
+cache-l1-2:
+  index: 30
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 30
+  command: "stress-ng --cache 1 --cache-level 1 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+cache-l1-3:
+  index: 31
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 31
+  command: "stress-ng --cache 1 --cache-level 1 --timeout 0"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false

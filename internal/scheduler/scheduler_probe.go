@@ -114,6 +114,16 @@ func (ps *ProbeScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) er
 	if ps.nextProbeIndex < len(ps.containers) {
 		containerInfo := ps.containers[ps.nextProbeIndex]
 
+		// // Only probe containers with index 0
+		// if containerInfo.Index != 0 {
+		// 	ps.schedulerLogger.WithFields(logrus.Fields{
+		// 		"container_index": containerInfo.Index,
+		// 		"container_name":  containerInfo.Config.GetContainerName(0),
+		// 	}).Info("Skipping probe for container (only probing index 0)")
+		// 	ps.nextProbeIndex++
+		// 	return nil
+		// }
+
 		// Get probe configuration
 		abortable := false
 		isolated := true
