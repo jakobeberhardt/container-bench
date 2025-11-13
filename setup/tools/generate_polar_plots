@@ -15,6 +15,7 @@ if [ ! -f "$INPUT_CSV" ]; then
     exit 1
 fi
 
+# Define 6 distinct colors (RGB values for TikZ)
 COLORS=(
     "red"
     "blue"
@@ -24,23 +25,30 @@ COLORS=(
     "cyan!50!black"
 )
 
+# Define line styles (solid and dashed)
 STYLES=("solid" "dashed")
 
+# Counter for plot index
 plot_index=0
 
+# Skip header line and process each row
 tail -n +2 "$INPUT_CSV" | while IFS=',' read -r benchmark baseline_ipc llc_stressed llc_sens memread_stressed memread_sens memwrite_stressed memwrite_sens syscall_stressed syscall_sens prefetch_stressed prefetch_sens; do
     
+    # Format the benchmark name for legend (replace underscores/hyphens with spaces, capitalize)
     legend_name=$(echo "$benchmark" | sed 's/[-_]/ /g' | sed 's/\b\(.\)/\u\1/g')
     
+    # Calculate color index (0-5, cycling through 6 colors)
     color_index=$((plot_index % 6))
     
+    # Calculate style index (0=solid for first 6, 1=dashed for next 6)
     style_index=$((plot_index / 6))
-
+    
+    # Get color and style
     color="${COLORS[$color_index]}"
     style="${STYLES[$style_index]}"
     
     # Generate the plot coordinates
-    # Angles: 0° (LLC), 72 (MemRead), 144 (MemWrite), 216 (SysCall), 288 (Prefetch)
+    # Angles: 0° (LLC), 72° (MemRead), 144° (MemWrite), 216° (SysCall), 288° (Prefetch)
     echo "\\addplot+[thick,mark=none,color=$color,$style] coordinates {"
     echo "  (0,   $llc_sens)   % LLC"
     echo "  (72,  $memread_sens)   % Mem Read"
@@ -52,5 +60,6 @@ tail -n +2 "$INPUT_CSV" | while IFS=',' read -r benchmark baseline_ipc llc_stres
     echo "\\addlegendentry{$legend_name};"
     echo ""
     
+    # Increment plot index
     plot_index=$((plot_index + 1))
 done
