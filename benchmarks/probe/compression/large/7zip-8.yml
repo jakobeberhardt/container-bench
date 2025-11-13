@@ -1,6 +1,6 @@
 benchmark:
-  name: FFmpeg Probe Filter/Large
-  description: Probes an FFmpeg container applying complex filters to large video file
+  name: 7zip Probe Level 8/Large
+  description: Probes a 7zip container with compression level 8 and large file size
   max_t: 75
   log_level: info
   scheduler:
@@ -11,7 +11,7 @@ benchmark:
       implementation: default
       abortable: false
       isolated: true
-      default_t: 60
+      default_t: 30
       warmup_t: 10
       cooldown_t: 0
       default_probe_cores: 1
@@ -28,13 +28,11 @@ benchmark:
       username: ${DOCKER_REGISTRY_USERNAME}
       password: ${DOCKER_REGISTRY_PASSWORD}
 
-ffmpeg:
+7z:
   index: 0
-  image: registry.jakob-eberhardt.de/rdt4nn/ffmpeg/base:latest
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
   core: 0
-  command: "ffmpeg -i /videos/40M.mov -vf 'scale=1280:720,hue=s=0' -c:v libx264 -preset medium -crf 23 -c:a copy -y /tmp/output.mp4"
-  volumes:
-    - /users/eberhard/container-bench/videos:/videos:ro
+  command: "while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=8 -mmt=1  dummy.7z /data/*.bin; done"
   data:
     frequency: 100
     perf:

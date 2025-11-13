@@ -1,7 +1,7 @@
 benchmark:
   name: scheduler test (worst-case)
   description: Worst-case placement - all HIGH sensitivity workloads on Socket 0, all LOW sensitivity on Socket 1
-  max_t: 360
+  max_t: 60
   log_level: info
   scheduler:
     implementation: default
@@ -36,7 +36,7 @@ cache-l3-1:
   core: 1
   command: "stress-ng --cache 1 --cache-level 3 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -50,7 +50,7 @@ cache-l3-2:
   core: 2
   command: "stress-ng --cache 1 --cache-level 3 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -63,7 +63,7 @@ cache-l3-3:
   core: 3
   command: "stress-ng --cache 1 --cache-level 3 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -77,7 +77,7 @@ matrix-3d-0:
   core: 4
   command: "stress-ng --matrix-3d 1 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -90,7 +90,7 @@ matrix-3d-1:
   core: 5
   command: "stress-ng --matrix-3d 1 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -104,7 +104,7 @@ matrix-3d-2:
   core: 6
   command: "stress-ng --matrix-3d 1 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -117,7 +117,7 @@ matrix-3d-3:
   core: 7
   command: "stress-ng --matrix-3d 1 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -131,7 +131,7 @@ stream-0:
   core: 8
   command: "stress-ng --stream 1 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -144,7 +144,7 @@ stream-1:
   core: 9
   command: "stress-ng --stream 1 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -158,7 +158,7 @@ stream-2:
   core: 10
   command: "stress-ng --stream 1 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -171,7 +171,7 @@ stream-3:
   core: 11
   command: "stress-ng --stream 1 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -185,7 +185,7 @@ tsearch-0:
   core: 12
   command: "stress-ng --tsearch 1 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -198,7 +198,7 @@ tsearch-1:
   core: 13
   command: "stress-ng --tsearch 1 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -212,7 +212,7 @@ tsearch-2:
   core: 14
   command: "stress-ng --tsearch 1 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -225,7 +225,7 @@ tsearch-3:
   core: 15
   command: "stress-ng --tsearch 1 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -240,7 +240,7 @@ matrixprod-0:
   core: 16
   command: "stress-ng --cpu 1 --cpu-method matrixprod --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -253,7 +253,7 @@ matrixprod-1:
   core: 17
   command: "stress-ng --cpu 1 --cpu-method matrixprod --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -267,7 +267,7 @@ matrixprod-2:
   core: 18
   command: "stress-ng --cpu 1 --cpu-method matrixprod --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -280,7 +280,7 @@ matrixprod-3:
   core: 19
   command: "stress-ng --cpu 1 --cpu-method matrixprod --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -294,7 +294,7 @@ heapsort-0:
   core: 20
   command: "stress-ng --heapsort 1 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -307,7 +307,7 @@ heapsort-1:
   core: 21
   command: "stress-ng --heapsort 1 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -321,7 +321,7 @@ heapsort-2:
   core: 22
   command: "stress-ng --heapsort 1 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -334,7 +334,7 @@ heapsort-3:
   core: 23
   command: "stress-ng --heapsort 1 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -348,7 +348,7 @@ qsort-0:
   core: 24
   command: "stress-ng --qsort 1 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -361,7 +361,7 @@ qsort-1:
   core: 25
   command: "stress-ng --qsort 1 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -375,7 +375,7 @@ qsort-2:
   core: 26
   command: "stress-ng --qsort 1 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -388,7 +388,7 @@ qsort-3:
   core: 27
   command: "stress-ng --qsort 1 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -402,7 +402,7 @@ cache-l1-0:
   core: 28
   command: "stress-ng --cache 1 --cache-level 1 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -415,7 +415,7 @@ cache-l1-1:
   core: 29
   command: "stress-ng --cache 1 --cache-level 1 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -429,7 +429,7 @@ cache-l1-2:
   core: 30
   command: "stress-ng --cache 1 --cache-level 1 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true
@@ -442,7 +442,7 @@ cache-l1-3:
   core: 31
   command: "stress-ng --cache 1 --cache-level 1 --timeout 0"
   data:
-    frequency: 100
+    frequency: 3000
     perf:
       instructions: true
       cycles: true

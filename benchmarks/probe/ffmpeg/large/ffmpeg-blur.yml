@@ -32,7 +32,9 @@ ffmpeg:
   index: 0
   image: registry.jakob-eberhardt.de/rdt4nn/ffmpeg/base:latest
   core: 0
-  command: "/generate_video.sh 30 && while :; do ffmpeg -i /data/video.mov -vf 'boxblur=10:1' -c:v libx264 -preset fast -crf 23 -c:a copy -y /tmp/output.mp4; done"
+  command: "ffmpeg -i /videos/40M.mov -vf 'boxblur=10:1' -c:v libx264 -preset fast -crf 23 -c:a copy -y /tmp/output.mp4"
+  volumes:
+    - /users/eberhard/container-bench/videos:/videos:ro
   data:
     frequency: 100
     perf:
