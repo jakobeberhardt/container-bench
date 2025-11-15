@@ -1,0 +1,262 @@
+package mappings
+
+type FieldMapping struct {
+	Label      string
+	ShortLabel string
+	Min        interface{}
+	Max        interface{}
+	NullValue  float64
+}
+
+var FieldMappings = map[string]FieldMapping{
+	"relative_time": {
+		Label:      "Time (s)",
+		ShortLabel: "Time",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"step_number": {
+		Label:      "Step Number",
+		ShortLabel: "Step",
+		Min:        0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"docker_cpu_usage_kernel": {
+		Label:      "CPU Usage Kernel (ns)",
+		ShortLabel: "CPU Kernel",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"docker_cpu_usage_user": {
+		Label:      "CPU Usage User (ns)",
+		ShortLabel: "CPU User",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"docker_cpu_usage_total": {
+		Label:      "Total CPU Usage (ns)",
+		ShortLabel: "CPU Total",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"docker_cpu_usage_percent": {
+		Label:      "CPU Usage (\\%)",
+		ShortLabel: "CPU \\%",
+		Min:        0.0,
+		Max:        100.0,
+		NullValue:  0,
+	},
+	"docker_memory_usage": {
+		Label:      "Memory Usage (Bytes)",
+		ShortLabel: "Memory",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"docker_memory_limit": {
+		Label:      "Memory Limit (Bytes)",
+		ShortLabel: "Mem Limit",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"docker_memory_usage_percent": {
+		Label:      "Memory Usage (\\%)",
+		ShortLabel: "Memory \\%",
+		Min:        0.0,
+		Max:        100.0,
+		NullValue:  0,
+	},
+	"docker_network_rx_bytes": {
+		Label:      "Network RX (Bytes)",
+		ShortLabel: "Net RX",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"docker_network_tx_bytes": {
+		Label:      "Network TX (Bytes)",
+		ShortLabel: "Net TX",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"perf_cycles": {
+		Label:      "CPU Cycles",
+		ShortLabel: "Cycles",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"perf_instructions": {
+		Label:      "Instructions",
+		ShortLabel: "Instructions",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"perf_instructions_per_cycle": {
+		Label:      "Instructions per Cycle (IPC)",
+		ShortLabel: "IPC",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"perf_cache_references": {
+		Label:      "Cache References",
+		ShortLabel: "Cache Refs",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"perf_cache_misses": {
+		Label:      "Cache Misses",
+		ShortLabel: "Cache Miss",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"perf_cache_miss_rate": {
+		Label:      "Cache Miss Rate (\\%)",
+		ShortLabel: "Cache Miss \\%",
+		Min:        0.0,
+		Max:        100.0,
+		NullValue:  0,
+	},
+	"perf_branch_instructions": {
+		Label:      "Branch Instructions",
+		ShortLabel: "Branches",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"perf_branch_misses": {
+		Label:      "Branch Misses",
+		ShortLabel: "Branch Miss",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"perf_branch_miss_rate": {
+		Label:      "Branch Miss Rate (\\%)",
+		ShortLabel: "Branch Miss \\%",
+		Min:        0.0,
+		Max:        100.0,
+		NullValue:  0,
+	},
+	"perf_bus_cycles": {
+		Label:      "Bus Cycles",
+		ShortLabel: "Bus Cycles",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"perf_stalls_total": {
+		Label:      "Total Stalls",
+		ShortLabel: "Stalls",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"perf_stalls_l1d_miss": {
+		Label:      "L1D Miss Stalls",
+		ShortLabel: "L1D Stalls",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"perf_stalls_l2_miss": {
+		Label:      "L2 Miss Stalls",
+		ShortLabel: "L2 Stalls",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"perf_stalls_l3_miss": {
+		Label:      "L3 Miss Stalls",
+		ShortLabel: "L3 Stalls",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"perf_stalls_mem_any": {
+		Label:      "Memory Stalls",
+		ShortLabel: "Mem Stalls",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"perf_stalled_cycles_percent": {
+		Label:      "Stalled Cycles (\\%)",
+		ShortLabel: "Stalled \\%",
+		Min:        0.0,
+		Max:        100.0,
+		NullValue:  0,
+	},
+	"perf_resource_stalls_sb": {
+		Label:      "Resource Stalls (SB)",
+		ShortLabel: "Res Stalls SB",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"perf_resource_stalls_scoreboard": {
+		Label:      "Resource Stalls (Scoreboard)",
+		ShortLabel: "Res Stalls",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"rdt_l3_cache_occupancy": {
+		Label:      "LLC Cache Occupancy (Bytes)",
+		ShortLabel: "LLC Occ",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"rdt_l3_cache_allocation": {
+		Label:      "LLC Cache Allocation (Bytes)",
+		ShortLabel: "LLC Alloc",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"rdt_l3_cache_allocation_pct": {
+		Label:      "LLC Cache Allocation (\\%)",
+		ShortLabel: "LLC Alloc \\%",
+		Min:        0.0,
+		Max:        100.0,
+		NullValue:  0,
+	},
+	"rdt_cache_llc_utilization_percent": {
+		Label:      "LLC Utilization (\\%)",
+		ShortLabel: "LLC Util \\%",
+		Min:        0.0,
+		Max:        100.0,
+		NullValue:  0,
+	},
+	"rdt_memory_bandwidth_local": {
+		Label:      "Local Memory Bandwidth (Bytes/s)",
+		ShortLabel: "Local BW",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"rdt_memory_bandwidth_total": {
+		Label:      "Total Memory Bandwidth (Bytes/s)",
+		ShortLabel: "Total BW",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+}
+
+func GetFieldMapping(fieldName string) (FieldMapping, bool) {
+	mapping, exists := FieldMappings[fieldName]
+	return mapping, exists
+}

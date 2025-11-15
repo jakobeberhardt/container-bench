@@ -21,6 +21,7 @@ import (
 	"container-bench/internal/datahandeling"
 	"container-bench/internal/host"
 	"container-bench/internal/logging"
+	"container-bench/internal/plot"
 	"container-bench/internal/probe"
 	"container-bench/internal/probe/kernels"
 	"container-bench/internal/scheduler"
@@ -200,6 +201,12 @@ func main() {
 	loadEnvironment()
 
 	var configFile string
+	var benchmarkID int
+	var xField, yField string
+	var interval float64
+	var minVal, maxVal float64
+	var minSet, maxSet bool
+	var probeIndices []int
 
 	rootCmd := &cobra.Command{
 		Use:   "container-bench",
@@ -227,14 +234,73 @@ func main() {
 		},
 	}
 
+	plotCmd := &cobra.Command{
+		Use:   "plot",
+		Short: "Generate plots from benchmark data",
+		Long:  "Generate LaTeX/TikZ plots from benchmark data stored in InfluxDB",
+	}
+
+	timeseriesCmd := &cobra.Command{
+		Use:   "timeseries",
+		Short: "Generate a timeseries plot",
+		Long:  "Generate a timeseries plot for a specific benchmark and metric",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateEnvironment(); err != nil {
+				return err
+			}
+			var minPtr, maxPtr *float64
+			if minSet {
+				minPtr = &minVal
+			}
+			if maxSet {
+				maxPtr = &maxVal
+			}
+			return generateTimeseriesPlot(benchmarkID, xField, yField, interval, minPtr, maxPtr)
+		},
+	}
+
+	polarCmd := &cobra.Command{
+		Use:   "polar",
+		Short: "Generate a polar plot",
+		Long:  "Generate a polar sensitivity plot from probe data",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateEnvironment(); err != nil {
+				return err
+			}
+			return generatePolarPlot(probeIndices)
+		},
+	}
+
 	runCmd.Flags().StringVarP(&configFile, "config", "c", "", "Path to benchmark configuration file")
 	runCmd.MarkFlagRequired("config")
 
 	validateCmd.Flags().StringVarP(&configFile, "config", "c", "", "Path to benchmark configuration file")
 	validateCmd.MarkFlagRequired("config")
 
+	timeseriesCmd.Flags().IntVar(&benchmarkID, "benchmark-id", 0, "Benchmark ID to plot")
+	timeseriesCmd.Flags().StringVar(&xField, "x", "relative_time", "X-axis field")
+	timeseriesCmd.Flags().StringVar(&yField, "y", "", "Y-axis field")
+	timeseriesCmd.Flags().Float64Var(&interval, "interval", 0, "Aggregation interval in seconds (0 = no aggregation)")
+	timeseriesCmd.Flags().Float64Var(&minVal, "min", 0, "Minimum Y-axis value")
+	timeseriesCmd.Flags().Float64Var(&maxVal, "max", 0, "Maximum Y-axis value")
+	timeseriesCmd.MarkFlagRequired("benchmark-id")
+	timeseriesCmd.MarkFlagRequired("y")
+
+	timeseriesCmd.PreRunE = func(cmd *cobra.Command, args []string) error {
+		minSet = cmd.Flags().Changed("min")
+		maxSet = cmd.Flags().Changed("max")
+		return nil
+	}
+
+	polarCmd.Flags().IntSliceVar(&probeIndices, "probes", []int{}, "Comma-separated list of probe indices")
+	polarCmd.MarkFlagRequired("probes")
+
+	plotCmd.AddCommand(timeseriesCmd)
+	plotCmd.AddCommand(polarCmd)
+
 	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(validateCmd)
+	rootCmd.AddCommand(plotCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		logger.WithError(err).Fatal("Command execution failed")
@@ -1126,3 +1192,75 @@ func (cb *ContainerBench) writeDatabaseData() error {
 
 	return nil
 }
+
+func generateTimeseriesPlot(benchmarkID int, xField, yField string, interval float64, minPtr, maxPtr *float64) error {
+	logger := logging.GetLogger()
+	logger.WithFields(logrus.Fields{
+		"benchmark_id": benchmarkID,
+		"x_field":      xField,
+		"y_field":      yField,
+		"interval":     interval,
+	}).Info("Generating timeseries plot")
+
+	plotMgr, err := plot.NewPlotManager()
+	if err != nil {
+		logger.WithError(err).Error("Failed to create plot manager")
+		return fmt.Errorf("failed to create plot manager: %w", err)
+	}
+	defer plotMgr.Close()
+
+	plotTikz, wrapperTex, err := plotMgr.GenerateTimeseriesPlot(benchmarkID, xField, yField, interval, minPtr, maxPtr)
+	if err != nil {
+		logger.WithError(err).Error("Failed to generate plot")
+		return fmt.Errorf("failed to generate plot: %w", err)
+	}
+
+	fmt.Println("=" + strings.Repeat("=", 78) + "=")
+	fmt.Printf("PLOT FILE: benchmark-%d-%s.tikz\n", benchmarkID, yField)
+	fmt.Println("=" + strings.Repeat("=", 78) + "=")
+	fmt.Println(plotTikz)
+	fmt.Println()
+	fmt.Println("=" + strings.Repeat("=", 78) + "=")
+	fmt.Printf("WRAPPER FILE: benchmark-%d-%s-wrapper.tex\n", benchmarkID, yField)
+	fmt.Println("=" + strings.Repeat("=", 78) + "=")
+	fmt.Println(wrapperTex)
+
+	logger.Info("Timeseries plot generated successfully")
+	return nil
+}
+
+func generatePolarPlot(probeIndices []int) error {
+	logger := logging.GetLogger()
+	logger.WithField("probe_indices", probeIndices).Info("Generating polar plot")
+
+	if len(probeIndices) == 0 {
+		return fmt.Errorf("no probe indices specified")
+	}
+
+	plotMgr, err := plot.NewPlotManager()
+	if err != nil {
+		logger.WithError(err).Error("Failed to create plot manager")
+		return fmt.Errorf("failed to create plot manager: %w", err)
+	}
+	defer plotMgr.Close()
+
+	plotTikz, wrapperTex, err := plotMgr.GeneratePolarPlot(probeIndices)
+	if err != nil {
+		logger.WithError(err).Error("Failed to generate plot")
+		return fmt.Errorf("failed to generate plot: %w", err)
+	}
+
+	fmt.Println("=" + strings.Repeat("=", 78) + "=")
+	fmt.Println("PLOT FILE: probe-sensitivity.tikz")
+	fmt.Println("=" + strings.Repeat("=", 78) + "=")
+	fmt.Println(plotTikz)
+	fmt.Println()
+	fmt.Println("=" + strings.Repeat("=", 78) + "=")
+	fmt.Println("WRAPPER FILE: probe-sensitivity-wrapper.tex")
+	fmt.Println("=" + strings.Repeat("=", 78) + "=")
+	fmt.Println(wrapperTex)
+
+	logger.Info("Polar plot generated successfully")
+	return nil
+}
+
