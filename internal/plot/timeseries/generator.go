@@ -132,7 +132,7 @@ func (g *TimeseriesPlotGenerator) preparePlotData(
 			Coordinates:    []string{},
 		}
 
-		aggregated := g.aggregateData(dataPoints, opts)
+		aggregated := g.aggregateData(dataPoints, opts, yMapping)
 
 		for _, point := range aggregated {
 			xVal := g.getFieldValue(point, opts.XField)
@@ -229,6 +229,7 @@ func (g *TimeseriesPlotGenerator) preparePlotData(
 func (g *TimeseriesPlotGenerator) aggregateData(
 	dataPoints []database.MetricsDataPoint,
 	opts PlotOptions,
+	yMapping mappings.FieldMapping,
 ) []database.MetricsDataPoint {
 	if opts.Interval <= 0 {
 		return dataPoints
@@ -259,19 +260,31 @@ func (g *TimeseriesPlotGenerator) aggregateData(
 		return bucketKeys[i] < bucketKeys[j]
 	})
 	
-	// Process each bucket
-	for i, bucket := range bucketKeys {
+	if len(bucketKeys) == 0 {
+		return aggregated
+	}
+	
+	// Fill in missing buckets between first and last with NullValue
+	firstBucket := bucketKeys[0]
+	lastBucket := bucketKeys[len(bucketKeys)-1]
+	
+	for bucket := firstBucket; bucket <= lastBucket; bucket++ {
 		points := buckets[bucket]
-		if len(points) == 0 {
-			continue
-		}
-
-		avgPoint := points[0]
 		
-		// For the first iteration (first bucket chronologically), use the actual time of the first point WITH VALID DATA
-		// For all other buckets, use the bucket's representative time
-		if i == 0 {
-			// Sort points within the first bucket to get the earliest one
+		// Create a template point for this bucket
+		var avgPoint database.MetricsDataPoint
+		if len(points) > 0 {
+			avgPoint = points[0]
+		} else if len(dataPoints) > 0 {
+			// Use template from first datapoint if bucket is empty
+			avgPoint = dataPoints[0]
+			avgPoint.Fields = make(map[string]interface{})
+		}
+		
+		// Determine the time for this bucket
+		isFirstBucket := (bucket == firstBucket)
+		if isFirstBucket && len(points) > 0 {
+			// For the first bucket, use the actual time of the first point WITH VALID DATA
 			sort.Slice(points, func(a, b int) bool {
 				return points[a].RelativeTime < points[b].RelativeTime
 			})
@@ -289,23 +302,28 @@ func (g *TimeseriesPlotGenerator) aggregateData(
 			avgPoint.RelativeTime = bucket * intervalNs
 		}
 
-		// Calculate average Y value from all points in the bucket
+		// Calculate average Y value from all points in the bucket, or use NullValue if no data
 		sum := 0.0
 		count := 0
-		for _, p := range points {
-			if val := g.getFieldValue(p, opts.YField); val != nil {
-				sum += g.toFloat64(val)
-				count++
+		if len(points) > 0 {
+			for _, p := range points {
+				if val := g.getFieldValue(p, opts.YField); val != nil {
+					sum += g.toFloat64(val)
+					count++
+				}
 			}
 		}
+		
 		if count > 0 {
 			avgPoint.Fields[opts.YField] = sum / float64(count)
+		} else {
+			// No valid data in this bucket, use NullValue
+			avgPoint.Fields[opts.YField] = yMapping.NullValue
 		}
 
 		aggregated = append(aggregated, avgPoint)
 	}
 
-	// Already sorted by bucket order
 	return aggregated
 }
 
