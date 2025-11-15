@@ -4,10 +4,10 @@ const WrapperTemplate = `% Generated on {{.GeneratedDate}}
 % Probe Kernel: {{.ProbeKernel}}
 
 \begin{figure}[H]
-\centering
-\resizebox{1\linewidth}{!}{\input{./{{.PlotFileName}} }}
-\caption[{{.ShortCaption}}]{ {{.Caption}} }
-\label{fig:sensitivity-{{.LabelID}}}
+    \centering
+    \resizebox{1\linewidth}{!}{\input{./{{.PlotFileName}} }}
+    \caption[{{.ShortCaption}}]{ {{.Caption}} }
+    \label{fig:sensitivity-{{.LabelID}}}
 \end{figure}
 `
 

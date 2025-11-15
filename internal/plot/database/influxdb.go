@@ -363,22 +363,13 @@ func (c *PlotDBClient) QueryProbes(ctx context.Context, probeIndices []int) ([]P
 		return nil, fmt.Errorf("no probe indices provided")
 	}
 
-	filter := ""
-	for i, idx := range probeIndices {
-		if i > 0 {
-			filter += " or "
-		}
-		filter += fmt.Sprintf(`r["container_index"] == "%d"`, idx)
-	}
-
 	query := fmt.Sprintf(`
 		from(bucket: "%s")
 		|> range(start: 0)
 		|> filter(fn: (r) => r["_measurement"] == "benchmark_probes")
-		|> filter(fn: (r) => %s)
 		|> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
-		|> sort(columns: ["container_index"])
-	`, c.bucket, filter)
+		|> sort(columns: ["_time"])
+	`, c.bucket)
 
 	result, err := c.queryAPI.Query(ctx, query)
 	if err != nil {
@@ -468,10 +459,35 @@ func (c *PlotDBClient) QueryProbes(ctx context.Context, probeIndices []int) ([]P
 		return nil, fmt.Errorf("query parsing failed: %w", result.Err())
 	}
 
+	if len(probes) == 0 {
+		return nil, fmt.Errorf("no probe data found in database")
+	}
+
 	sort.Slice(probes, func(i, j int) bool {
-		return probes[i].ContainerIndex < probes[j].ContainerIndex
+		return probes[i].Started < probes[j].Started
 	})
 
-	c.logger.WithField("probe_count", len(probes)).Debug("Probe query completed")
-	return probes, nil
+	// Filter by requested indices
+	var selectedProbes []ProbeData
+	for _, idx := range probeIndices {
+		if idx < 1 || idx > len(probes) {
+			c.logger.WithFields(map[string]interface{}{
+				"requested_index": idx,
+				"total_probes":    len(probes),
+			}).Warn("Probe index out of range, skipping")
+			continue
+		}
+		// Convert from 1-based to 0-based indexing
+		selectedProbes = append(selectedProbes, probes[idx-1])
+	}
+
+	if len(selectedProbes) == 0 {
+		return nil, fmt.Errorf("no probe data found for specified indices")
+	}
+
+	c.logger.WithFields(map[string]interface{}{
+		"total_probes":    len(probes),
+		"selected_probes": len(selectedProbes),
+	}).Debug("Probe query completed")
+	return selectedProbes, nil
 }

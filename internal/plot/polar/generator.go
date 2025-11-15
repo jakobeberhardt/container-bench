@@ -129,15 +129,20 @@ func (g *PolarPlotGenerator) prepareWrapperData(probes []database.ProbeData, opt
 		probeKernel = probes[0].UsedProbeKernel
 	}
 
+	probeKernelName := probeKernel
+	if idx := strings.Index(probeKernel, " v"); idx != -1 {
+		probeKernelName = probeKernel[:idx]
+	}
+
 	labelID := g.generateLabelID(opts.ProbeIndices)
 
 	return &wrapperTemplate.WrapperData{
 		GeneratedDate: time.Now().Format("2006-01-02 15:04:05"),
 		ProbeKernel:   probeKernel,
-		PlotFileName:  fmt.Sprintf("probe-sensitivity-%s.tikz", labelID),
-		ShortCaption:  fmt.Sprintf("Sensitivity %s", probeKernel),
-		Caption:       fmt.Sprintf("Sensitivity using the \\texttt{%s} probe kernel", probeKernel),
-		LabelID:       labelID,
+		PlotFileName:  fmt.Sprintf("probe-sensitivity-%s-%s.tikz", probeKernelName, labelID),
+		ShortCaption:  fmt.Sprintf("Sensitivity %s", probeKernelName),
+		Caption:       fmt.Sprintf("Sensitivity using the \\texttt{%s} probe kernel", probeKernelName),
+		LabelID:       fmt.Sprintf("%s-%s", probeKernelName, labelID),
 	}
 }
 

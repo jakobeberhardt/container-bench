@@ -13,7 +13,7 @@ var FieldMappings = map[string]FieldMapping{
 		Label:      "Time (s)",
 		ShortLabel: "Time",
 		Min:        0.0,
-		Max:        "auto",
+		Max:        "data",
 		NullValue:  0,
 	},
 	"step_number": {

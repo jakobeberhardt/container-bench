@@ -323,6 +323,8 @@ func (g *TimeseriesPlotGenerator) determineAxisLimits(
 		maxStr = fmt.Sprintf("%.2f", *maxOverride)
 	} else if maxVal, ok := mapping.Max.(float64); ok {
 		maxStr = fmt.Sprintf("%.2f", maxVal)
+	} else if mapping.Max == "data" {
+		maxStr = fmt.Sprintf("%.2f", dataMax)
 	} else if mapping.Max == "auto" {
 		maxStr = fmt.Sprintf("%.2f", dataMax*1.05)
 	} else {
