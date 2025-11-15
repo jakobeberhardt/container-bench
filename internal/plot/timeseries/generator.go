@@ -234,7 +234,13 @@ func (g *TimeseriesPlotGenerator) aggregateData(
 		return dataPoints
 	}
 
+	if len(dataPoints) == 0 {
+		return dataPoints
+	}
+
 	intervalNs := int64(opts.Interval * 1e9)
+	
+	// Bucket the data
 	buckets := make(map[int64][]database.MetricsDataPoint)
 
 	for _, dp := range dataPoints {
@@ -243,36 +249,63 @@ func (g *TimeseriesPlotGenerator) aggregateData(
 	}
 
 	var aggregated []database.MetricsDataPoint
+	
+	// Get all bucket keys and sort them
+	var bucketKeys []int64
 	for bucket := range buckets {
+		bucketKeys = append(bucketKeys, bucket)
+	}
+	sort.Slice(bucketKeys, func(i, j int) bool {
+		return bucketKeys[i] < bucketKeys[j]
+	})
+	
+	// Process each bucket
+	for i, bucket := range bucketKeys {
 		points := buckets[bucket]
 		if len(points) == 0 {
 			continue
 		}
 
 		avgPoint := points[0]
-		avgPoint.RelativeTime = bucket * intervalNs
-
-		if yVal := g.getFieldValue(points[0], opts.YField); yVal != nil {
-			sum := 0.0
-			count := 0
+		
+		// For the first iteration (first bucket chronologically), use the actual time of the first point WITH VALID DATA
+		// For all other buckets, use the bucket's representative time
+		if i == 0 {
+			// Sort points within the first bucket to get the earliest one
+			sort.Slice(points, func(a, b int) bool {
+				return points[a].RelativeTime < points[b].RelativeTime
+			})
+			
+			// Find the first point with valid Y data
+			firstValidTime := points[0].RelativeTime
 			for _, p := range points {
-				if val := g.getFieldValue(p, opts.YField); val != nil {
-					sum += g.toFloat64(val)
-					count++
+				if g.getFieldValue(p, opts.YField) != nil {
+					firstValidTime = p.RelativeTime
+					break
 				}
 			}
-			if count > 0 {
-				avgPoint.Fields[opts.YField] = sum / float64(count)
+			avgPoint.RelativeTime = firstValidTime
+		} else {
+			avgPoint.RelativeTime = bucket * intervalNs
+		}
+
+		// Calculate average Y value from all points in the bucket
+		sum := 0.0
+		count := 0
+		for _, p := range points {
+			if val := g.getFieldValue(p, opts.YField); val != nil {
+				sum += g.toFloat64(val)
+				count++
 			}
+		}
+		if count > 0 {
+			avgPoint.Fields[opts.YField] = sum / float64(count)
 		}
 
 		aggregated = append(aggregated, avgPoint)
 	}
 
-	sort.Slice(aggregated, func(i, j int) bool {
-		return aggregated[i].RelativeTime < aggregated[j].RelativeTime
-	})
-
+	// Already sorted by bucket order
 	return aggregated
 }
 

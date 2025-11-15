@@ -9,41 +9,43 @@ type PlotStyle struct {
 }
 
 var ContainerStyles = []PlotStyle{
-	{Color: "red", LineStyle: "solid", LineWidth: "thick", Mark: "none", MarkOptions: ""},
-	{Color: "blue", LineStyle: "solid", LineWidth: "thick", Mark: "none", MarkOptions: ""},
-	{Color: "green!60!black", LineStyle: "solid", LineWidth: "thick", Mark: "none", MarkOptions: ""},
-	{Color: "orange", LineStyle: "solid", LineWidth: "thick", Mark: "none", MarkOptions: ""},
-	{Color: "purple", LineStyle: "solid", LineWidth: "thick", Mark: "none", MarkOptions: ""},
-	{Color: "cyan", LineStyle: "solid", LineWidth: "thick", Mark: "none", MarkOptions: ""},
-	{Color: "magenta", LineStyle: "solid", LineWidth: "thick", Mark: "none", MarkOptions: ""},
-	{Color: "brown", LineStyle: "solid", LineWidth: "thick", Mark: "none", MarkOptions: ""},
-	{Color: "teal", LineStyle: "solid", LineWidth: "thick", Mark: "none", MarkOptions: ""},
-	{Color: "olive", LineStyle: "solid", LineWidth: "thick", Mark: "none", MarkOptions: ""},
-	
-	{Color: "red", LineStyle: "dashed", LineWidth: "thick", Mark: "none", MarkOptions: ""},
-	{Color: "blue", LineStyle: "dashed", LineWidth: "thick", Mark: "none", MarkOptions: ""},
-	{Color: "green!60!black", LineStyle: "dashed", LineWidth: "thick", Mark: "none", MarkOptions: ""},
-	{Color: "orange", LineStyle: "dashed", LineWidth: "thick", Mark: "none", MarkOptions: ""},
-	{Color: "purple", LineStyle: "dashed", LineWidth: "thick", Mark: "none", MarkOptions: ""},
-	{Color: "cyan", LineStyle: "dashed", LineWidth: "thick", Mark: "none", MarkOptions: ""},
-	
-	{Color: "red", LineStyle: "dotted", LineWidth: "thick", Mark: "none", MarkOptions: ""},
-	{Color: "blue", LineStyle: "dotted", LineWidth: "thick", Mark: "none", MarkOptions: ""},
-	{Color: "green!60!black", LineStyle: "dotted", LineWidth: "thick", Mark: "none", MarkOptions: ""},
-	{Color: "orange", LineStyle: "dotted", LineWidth: "thick", Mark: "none", MarkOptions: ""},
-	{Color: "purple", LineStyle: "dotted", LineWidth: "thick", Mark: "none", MarkOptions: ""},
-	{Color: "cyan", LineStyle: "dotted", LineWidth: "thick", Mark: "none", MarkOptions: ""},
-	
+	// First 8: Distinct colors with varied line styles, thick, with markers
 	{Color: "red", LineStyle: "solid", LineWidth: "thick", Mark: "triangle*", MarkOptions: "scale=0.7,fill=red"},
 	{Color: "blue", LineStyle: "solid", LineWidth: "thick", Mark: "square*", MarkOptions: "scale=0.7,fill=blue"},
-	{Color: "green!60!black", LineStyle: "solid", LineWidth: "thick", Mark: "o", MarkOptions: "scale=0.7,fill=green!60!black"},
+	{Color: "green!70!black", LineStyle: "solid", LineWidth: "thick", Mark: "*", MarkOptions: "scale=0.7,fill=green!70!black"},
 	{Color: "orange", LineStyle: "solid", LineWidth: "thick", Mark: "diamond*", MarkOptions: "scale=0.7,fill=orange"},
 	{Color: "purple", LineStyle: "solid", LineWidth: "thick", Mark: "pentagon*", MarkOptions: "scale=0.7,fill=purple"},
-	{Color: "cyan", LineStyle: "solid", LineWidth: "thick", Mark: "star", MarkOptions: "scale=0.7,fill=cyan"},
-	{Color: "magenta", LineStyle: "solid", LineWidth: "thick", Mark: "triangle*", MarkOptions: "scale=0.7,fill=magenta"},
-	{Color: "brown", LineStyle: "solid", LineWidth: "thick", Mark: "square*", MarkOptions: "scale=0.7,fill=brown"},
-	{Color: "teal", LineStyle: "solid", LineWidth: "thick", Mark: "o", MarkOptions: "scale=0.7,fill=teal"},
-	{Color: "olive", LineStyle: "solid", LineWidth: "thick", Mark: "diamond*", MarkOptions: "scale=0.7,fill=olive"},
+	{Color: "brown", LineStyle: "solid", LineWidth: "thick", Mark: "x", MarkOptions: "scale=0.7"},
+	{Color: "cyan", LineStyle: "solid", LineWidth: "thick", Mark: "o", MarkOptions: "scale=0.7,fill=cyan"},
+	{Color: "magenta", LineStyle: "solid", LineWidth: "thick", Mark: "star", MarkOptions: "scale=0.7,fill=magenta"},
+	
+	// Next 8: Same colors with dashed lines and markers
+	{Color: "red", LineStyle: "dashed", LineWidth: "thick", Mark: "triangle*", MarkOptions: "scale=0.7,fill=red"},
+	{Color: "blue", LineStyle: "dashed", LineWidth: "thick", Mark: "square*", MarkOptions: "scale=0.7,fill=blue"},
+	{Color: "green!70!black", LineStyle: "dashed", LineWidth: "thick", Mark: "*", MarkOptions: "scale=0.7,fill=green!70!black"},
+	{Color: "orange", LineStyle: "dashed", LineWidth: "thick", Mark: "diamond*", MarkOptions: "scale=0.7,fill=orange"},
+	{Color: "purple", LineStyle: "dashed", LineWidth: "thick", Mark: "pentagon*", MarkOptions: "scale=0.7,fill=purple"},
+	{Color: "brown", LineStyle: "dashed", LineWidth: "thick", Mark: "x", MarkOptions: "scale=0.7"},
+	{Color: "cyan", LineStyle: "dashed", LineWidth: "thick", Mark: "o", MarkOptions: "scale=0.7,fill=cyan"},
+	{Color: "magenta", LineStyle: "dashed", LineWidth: "thick", Mark: "star", MarkOptions: "scale=0.7,fill=magenta"},
+	
+	// Next 8: Same colors with dotted lines and markers
+	{Color: "red", LineStyle: "dotted", LineWidth: "thick", Mark: "triangle*", MarkOptions: "scale=0.7,fill=red"},
+	{Color: "blue", LineStyle: "dotted", LineWidth: "thick", Mark: "square*", MarkOptions: "scale=0.7,fill=blue"},
+	{Color: "green!70!black", LineStyle: "dotted", LineWidth: "thick", Mark: "*", MarkOptions: "scale=0.7,fill=green!70!black"},
+	{Color: "orange", LineStyle: "dotted", LineWidth: "thick", Mark: "diamond*", MarkOptions: "scale=0.7,fill=orange"},
+	{Color: "purple", LineStyle: "dotted", LineWidth: "thick", Mark: "pentagon*", MarkOptions: "scale=0.7,fill=purple"},
+	{Color: "brown", LineStyle: "dotted", LineWidth: "thick", Mark: "x", MarkOptions: "scale=0.7"},
+	{Color: "cyan", LineStyle: "dotted", LineWidth: "thick", Mark: "o", MarkOptions: "scale=0.7,fill=cyan"},
+	{Color: "magenta", LineStyle: "dotted", LineWidth: "thick", Mark: "star", MarkOptions: "scale=0.7,fill=magenta"},
+	
+	// Next 8: Varied line styles for additional differentiation
+	{Color: "red", LineStyle: "dashdotted", LineWidth: "thick", Mark: "triangle*", MarkOptions: "scale=0.7,fill=red"},
+	{Color: "blue", LineStyle: "dashdotted", LineWidth: "thick", Mark: "square*", MarkOptions: "scale=0.7,fill=blue"},
+	{Color: "green!70!black", LineStyle: "dashdotted", LineWidth: "thick", Mark: "*", MarkOptions: "scale=0.7,fill=green!70!black"},
+	{Color: "orange", LineStyle: "dashdotted", LineWidth: "thick", Mark: "diamond*", MarkOptions: "scale=0.7,fill=orange"},
+	{Color: "purple", LineStyle: "densely dotted", LineWidth: "thick", Mark: "pentagon*", MarkOptions: "scale=0.7,fill=purple"},
+	{Color: "brown", LineStyle: "densely dashed", LineWidth: "thick", Mark: "x", MarkOptions: "scale=0.7"},
 }
 
 func GetContainerStyle(containerIndex int) PlotStyle {
@@ -54,8 +56,18 @@ func GetContainerStyle(containerIndex int) PlotStyle {
 }
 
 func (ps PlotStyle) ToTikzOptions() string {
-	if ps.Mark == "none" || ps.Mark == "" {
-		return ps.Color + "," + ps.LineStyle + "," + ps.LineWidth
+	options := ps.Color
+	if ps.LineStyle != "" {
+		options += "," + ps.LineStyle
 	}
-	return ps.Color + "," + ps.LineStyle + "," + ps.LineWidth + ",mark=" + ps.Mark + ",mark options={" + ps.MarkOptions + "}"
+	if ps.LineWidth != "" {
+		options += "," + ps.LineWidth
+	}
+	if ps.Mark != "none" && ps.Mark != "" {
+		options += ",mark=" + ps.Mark
+		if ps.MarkOptions != "" {
+			options += ",mark options={" + ps.MarkOptions + "}"
+		}
+	}
+	return options
 }
