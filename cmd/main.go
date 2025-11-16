@@ -149,7 +149,7 @@ func loadEnvironment() {
 		if err := godotenv.Load(envFile); err != nil {
 			logger.WithField("file", envFile).WithError(err).Warn("Error loading .env file")
 		} else {
-			logger.WithField("file", envFile).Info("Loaded environment variables")
+			logger.WithField("file", envFile).Debug("Loaded environment variables")
 		}
 	} else {
 		// Try to load from the application directory
@@ -160,7 +160,7 @@ func loadEnvironment() {
 				if err := godotenv.Load(envFile); err != nil {
 					logger.WithField("file", envFile).WithError(err).Warn("Error loading .env file")
 				} else {
-					logger.WithField("file", envFile).Info("Loaded environment variables")
+					logger.WithField("file", envFile).Debug("Loaded environment variables")
 				}
 			}
 		}
@@ -207,12 +207,24 @@ func main() {
 	var minVal, maxVal float64
 	var minSet, maxSet bool
 	var probeIndices []int
+	var onlyPlot, onlyWrapper bool
+	var logLevel string
 
 	rootCmd := &cobra.Command{
 		Use:   "container-bench",
 		Short: "Container performance benchmarking tool",
 		Long:  "A configurable tool for profiling Docker containers with perf, docker stats, and Intel RDT",
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if logLevel != "" {
+				if err := logging.SetLogLevel(logLevel); err != nil {
+					return fmt.Errorf("invalid log level: %w", err)
+				}
+			}
+			return nil
+		},
 	}
+
+	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "", "Set log level (trace, debug, info, warn, error)")
 
 	runCmd := &cobra.Command{
 		Use:   "run",
@@ -255,7 +267,7 @@ func main() {
 			if maxSet {
 				maxPtr = &maxVal
 			}
-			return generateTimeseriesPlot(benchmarkID, xField, yField, interval, minPtr, maxPtr)
+			return generateTimeseriesPlot(benchmarkID, xField, yField, interval, minPtr, maxPtr, onlyPlot, onlyWrapper)
 		},
 	}
 
@@ -267,7 +279,7 @@ func main() {
 			if err := validateEnvironment(); err != nil {
 				return err
 			}
-			return generatePolarPlot(probeIndices)
+			return generatePolarPlot(probeIndices, onlyPlot, onlyWrapper)
 		},
 	}
 
@@ -283,6 +295,8 @@ func main() {
 	timeseriesCmd.Flags().Float64Var(&interval, "interval", 0, "Aggregation interval in seconds (0 = no aggregation)")
 	timeseriesCmd.Flags().Float64Var(&minVal, "min", 0, "Minimum Y-axis value")
 	timeseriesCmd.Flags().Float64Var(&maxVal, "max", 0, "Maximum Y-axis value")
+	timeseriesCmd.Flags().BoolVar(&onlyPlot, "plot", false, "Print only the plot file (TikZ)")
+	timeseriesCmd.Flags().BoolVar(&onlyWrapper, "wrapper", false, "Print only the wrapper file (LaTeX)")
 	timeseriesCmd.MarkFlagRequired("benchmark-id")
 	timeseriesCmd.MarkFlagRequired("y")
 
@@ -293,6 +307,8 @@ func main() {
 	}
 
 	polarCmd.Flags().IntSliceVar(&probeIndices, "probes", []int{}, "Comma-separated list of probe indices")
+	polarCmd.Flags().BoolVar(&onlyPlot, "plot", false, "Print only the plot file (TikZ)")
+	polarCmd.Flags().BoolVar(&onlyWrapper, "wrapper", false, "Print only the wrapper file (LaTeX)")
 	polarCmd.MarkFlagRequired("probes")
 
 	plotCmd.AddCommand(timeseriesCmd)
@@ -1193,14 +1209,14 @@ func (cb *ContainerBench) writeDatabaseData() error {
 	return nil
 }
 
-func generateTimeseriesPlot(benchmarkID int, xField, yField string, interval float64, minPtr, maxPtr *float64) error {
+func generateTimeseriesPlot(benchmarkID int, xField, yField string, interval float64, minPtr, maxPtr *float64, onlyPlot, onlyWrapper bool) error {
 	logger := logging.GetLogger()
 	logger.WithFields(logrus.Fields{
 		"benchmark_id": benchmarkID,
 		"x_field":      xField,
 		"y_field":      yField,
 		"interval":     interval,
-	}).Info("Generating timeseries plot")
+	}).Debug("Generating timeseries plot")
 
 	plotMgr, err := plot.NewPlotManager()
 	if err != nil {
@@ -1215,23 +1231,28 @@ func generateTimeseriesPlot(benchmarkID int, xField, yField string, interval flo
 		return fmt.Errorf("failed to generate plot: %w", err)
 	}
 
-	fmt.Println("=" + strings.Repeat("=", 78) + "=")
-	fmt.Printf("PLOT FILE: benchmark-%d-%s.tikz\n", benchmarkID, yField)
-	fmt.Println("=" + strings.Repeat("=", 78) + "=")
-	fmt.Println(plotTikz)
-	fmt.Println()
-	fmt.Println("=" + strings.Repeat("=", 78) + "=")
-	fmt.Printf("WRAPPER FILE: benchmark-%d-%s-wrapper.tex\n", benchmarkID, yField)
-	fmt.Println("=" + strings.Repeat("=", 78) + "=")
-	fmt.Println(wrapperTex)
+	// Determine what to print
+	showPlot := !onlyWrapper
+	showWrapper := !onlyPlot
 
-	logger.Info("Timeseries plot generated successfully")
+	if showPlot {
+		fmt.Println(plotTikz)
+		if showWrapper {
+			fmt.Println()
+		}
+	}
+
+	if showWrapper {
+		fmt.Println(wrapperTex)
+	}
+
+	logger.Debug("Timeseries plot generated successfully")
 	return nil
 }
 
-func generatePolarPlot(probeIndices []int) error {
+func generatePolarPlot(probeIndices []int, onlyPlot, onlyWrapper bool) error {
 	logger := logging.GetLogger()
-	logger.WithField("probe_indices", probeIndices).Info("Generating polar plot")
+	logger.WithField("probe_indices", probeIndices).Debug("Generating polar plot")
 
 	if len(probeIndices) == 0 {
 		return fmt.Errorf("no probe indices specified")
@@ -1250,17 +1271,28 @@ func generatePolarPlot(probeIndices []int) error {
 		return fmt.Errorf("failed to generate plot: %w", err)
 	}
 
-	fmt.Println("=" + strings.Repeat("=", 78) + "=")
-	fmt.Println("PLOT FILE: probe-sensitivity.tikz")
-	fmt.Println("=" + strings.Repeat("=", 78) + "=")
-	fmt.Println(plotTikz)
-	fmt.Println()
-	fmt.Println("=" + strings.Repeat("=", 78) + "=")
-	fmt.Println("WRAPPER FILE: probe-sensitivity-wrapper.tex")
-	fmt.Println("=" + strings.Repeat("=", 78) + "=")
-	fmt.Println(wrapperTex)
+	// Determine what to print
+	showPlot := !onlyWrapper
+	showWrapper := !onlyPlot
 
-	logger.Info("Polar plot generated successfully")
+	if showPlot {
+		fmt.Println("=" + strings.Repeat("=", 78) + "=")
+		fmt.Println("PLOT FILE: probe-sensitivity.tikz")
+		fmt.Println("=" + strings.Repeat("=", 78) + "=")
+		fmt.Println(plotTikz)
+		if showWrapper {
+			fmt.Println()
+		}
+	}
+
+	if showWrapper {
+		fmt.Println("=" + strings.Repeat("=", 78) + "=")
+		fmt.Println("WRAPPER FILE: probe-sensitivity-wrapper.tex")
+		fmt.Println("=" + strings.Repeat("=", 78) + "=")
+		fmt.Println(wrapperTex)
+	}
+
+	logger.Debug("Polar plot generated successfully")
 	return nil
 }
 
