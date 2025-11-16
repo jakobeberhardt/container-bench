@@ -39,6 +39,7 @@ const PlotTemplate = `% Generated on {{.GeneratedDate}}
   (288, {{.Prefetch}}) % Prefetch
   (0,   {{.LLC}})      % Close the loop
 };
+% TODO: Add command
 \addlegendentry{ {{.LegendEntry}} };
 
 {{end}}
