@@ -8,7 +8,7 @@ type PolarPlotStyle struct {
 }
 
 var ProbeStyles = []PolarPlotStyle{
-	{Color: "red", LineStyle: "solid", LineWidth: "thick", Mark: "none"},
+	{Color: "red!80!black", LineStyle: "solid", LineWidth: "thick", Mark: "red!80!black"},
 	{Color: "blue!55!black", LineStyle: "solid", LineWidth: "thick", Mark: "none"},
 	{Color: "green!55!black", LineStyle: "solid", LineWidth: "thick", Mark: "none"},
 	{Color: "orange", LineStyle: "solid", LineWidth: "thick", Mark: "none"},

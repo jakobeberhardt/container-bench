@@ -1,0 +1,87 @@
+benchmark:
+  name: Introduction
+  description: A benchmark for showcasing the noisy neighbor problem
+  max_t: 300
+  log_level: info
+  scheduler:
+    implementation: default
+    rdt: false
+    log_level: warn
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+database:
+  index: 0
+  image: registry.jakob-eberhardt.de/rdt4nn/postgres:latest
+  port: 5432:5432
+  core: 0
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+low-compression:
+  index: 1
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+  core: 1
+  command: "sleep 30 && timeout 135 sh -c 'while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=2 -mmt=1  dummy.7z /data/*.bin; done'"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+high-compression:
+  index: 2
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+  core: 2
+  command: "sleep 51 && timeout 135 sh -c 'while :; do rm -f /data/dummy.7z && /populate.sh 100 && 7z a -mx=4 -mmt=1  dummy.7z /data/*.bin; done'"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+matrix-3d:
+  index: 3
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 3
+  command: "sleep 72 && timeout 135 stress-ng --matrix-3d 0 --timeout 0"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+compile:
+  index: 5
+  image: registry.jakob-eberhardt.de/rdt4nn/compile/linux:latest
+  core: 5
+  command: "sleep 93 && timeout 135 sh -c 'make defconfig && make -j4'"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+matrix-product:
+  index: 6
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 6
+  command: "sleep 114 && timeout 135 stress-ng --cpu 0 --cpu-method matrixprod --timeout 0"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true

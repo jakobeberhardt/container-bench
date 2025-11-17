@@ -9,7 +9,7 @@ type PlotStyle struct {
 }
 
 var ContainerStyles = []PlotStyle{
-	{Color: "red", LineStyle: "solid", LineWidth: "thick", Mark: "triangle*", MarkOptions: "scale=0.3,fill=red"},
+	{Color: "red!80!black", LineStyle: "solid", LineWidth: "thick", Mark: "triangle*", MarkOptions: "scale=0.3,fill=red!80!black"},
 	{Color: "blue!55!black", LineStyle: "solid", LineWidth: "thick", Mark: "square", MarkOptions: "scale=0.25"},
 	{Color: "green!55!black", LineStyle: "solid", LineWidth: "thick", Mark: "*", MarkOptions: "scale=0.3,fill=green!55!black"},
 	{Color: "orange", LineStyle: "solid", LineWidth: "thick", Mark: "diamond*", MarkOptions: "scale=0.3,fill=orange"},

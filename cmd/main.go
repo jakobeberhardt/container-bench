@@ -1276,9 +1276,6 @@ func generatePolarPlot(probeIndices []int, onlyPlot, onlyWrapper bool) error {
 	showWrapper := !onlyPlot
 
 	if showPlot {
-		fmt.Println("=" + strings.Repeat("=", 78) + "=")
-		fmt.Println("PLOT FILE: probe-sensitivity.tikz")
-		fmt.Println("=" + strings.Repeat("=", 78) + "=")
 		fmt.Println(plotTikz)
 		if showWrapper {
 			fmt.Println()
@@ -1286,9 +1283,6 @@ func generatePolarPlot(probeIndices []int, onlyPlot, onlyWrapper bool) error {
 	}
 
 	if showWrapper {
-		fmt.Println("=" + strings.Repeat("=", 78) + "=")
-		fmt.Println("WRAPPER FILE: probe-sensitivity-wrapper.tex")
-		fmt.Println("=" + strings.Repeat("=", 78) + "=")
 		fmt.Println(wrapperTex)
 	}
 

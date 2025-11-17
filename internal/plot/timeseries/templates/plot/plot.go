@@ -31,10 +31,9 @@ const PlotTemplate = `% Generated on {{.GeneratedDate}}
 % RDT: {{.RDTEnabled}} (supported: {{.RDTSupported}}, alloc: {{.RDTAllocationSupported}}, mon: {{.RDTMonitoringSupported}})
 % Prober: {{.ProberEnabled}} (impl: {{.ProberImplementation}}, isolated: {{.ProberIsolated}})
 %
-
 \begin{tikzpicture}
     \begin{axis}[
-        title={ {{.Title}} },
+        % title={ {{.Title}} },
         xlabel={ {{.XLabel}} },
         ylabel={ {{.YLabel}} },
         width=\textwidth,
@@ -46,6 +45,8 @@ const PlotTemplate = `% Generated on {{.GeneratedDate}}
         legend columns=2,
         legend pos=north west,
         legend style={font=\scriptsize, column sep=6pt},
+		% legend to name=legend-{{.BenchmarkID}}
+		% every axis legend/.code={\let\addlegendentry\relax},
     ]
 
 {{range .Plots}}

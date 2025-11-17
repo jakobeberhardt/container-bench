@@ -5,7 +5,6 @@ const PlotTemplate = `% Generated on {{.GeneratedDate}}
 % Probe Kernel: {{.ProbeKernel}}
 % Probe Indices: {{.ProbeIndices}}
 %
-
 \begin{tikzpicture}
 \begin{polaraxis}[
   width=9cm,
@@ -30,7 +29,6 @@ const PlotTemplate = `% Generated on {{.GeneratedDate}}
 % Container Image: {{.ContainerImage}}
 % Container Command: {{.ContainerCommand}}
 % Container Cores: {{.ContainerCores}}
-
 \addplot+[{{.Style}}] coordinates {
   (0,   {{.LLC}})      % LLC
   (72,  {{.MemRead}})  % Mem Read
