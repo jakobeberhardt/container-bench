@@ -74,8 +74,15 @@ func (g *PolarPlotGenerator) preparePlotData(probes []database.ProbeData, opts P
 
 	var probeSeries []plotTemplate.ProbeSeries
 	probeKernel := ""
+	probeVersion := ""
 	if len(probes) > 0 {
-		probeKernel = probes[0].UsedProbeKernel
+		fullKernel := probes[0].UsedProbeKernel
+		if idx := strings.Index(fullKernel, " v"); idx != -1 {
+			probeKernel = fullKernel[:idx]
+			probeVersion = fullKernel[idx+1:]
+		} else {
+			probeKernel = fullKernel
+		}
 	}
 
 	for i, probe := range probes {
@@ -115,23 +122,29 @@ func (g *PolarPlotGenerator) preparePlotData(probes []database.ProbeData, opts P
 		indicesStr = append(indicesStr, fmt.Sprintf("%d", idx))
 	}
 
+	labelID := g.generateLabelID(opts.ProbeIndices)
+
 	return &plotTemplate.PlotData{
 		GeneratedDate: time.Now().Format("2006-01-02 15:04:05"),
 		ProbeKernel:   probeKernel,
+		ProbeVersion:  probeVersion,
 		ProbeIndices:  strings.Join(indicesStr, ", "),
+		LabelID:       labelID,
 		Probes:        probeSeries,
 	}
 }
 
 func (g *PolarPlotGenerator) prepareWrapperData(probes []database.ProbeData, opts PlotOptions) *wrapperTemplate.WrapperData {
 	probeKernel := ""
+	probeVersion := ""
 	if len(probes) > 0 {
-		probeKernel = probes[0].UsedProbeKernel
-	}
-
-	probeKernelName := probeKernel
-	if idx := strings.Index(probeKernel, " v"); idx != -1 {
-		probeKernelName = probeKernel[:idx]
+		fullKernel := probes[0].UsedProbeKernel
+		if idx := strings.Index(fullKernel, " v"); idx != -1 {
+			probeKernel = fullKernel[:idx]
+			probeVersion = fullKernel[idx+1:]
+		} else {
+			probeKernel = fullKernel
+		}
 	}
 
 	labelID := g.generateLabelID(opts.ProbeIndices)
@@ -139,10 +152,11 @@ func (g *PolarPlotGenerator) prepareWrapperData(probes []database.ProbeData, opt
 	return &wrapperTemplate.WrapperData{
 		GeneratedDate: time.Now().Format("2006-01-02 15:04:05"),
 		ProbeKernel:   probeKernel,
-		PlotFileName:  fmt.Sprintf("probe-sensitivity-%s-%s.tikz", probeKernelName, labelID),
-		ShortCaption:  fmt.Sprintf("Sensitivity %s", probeKernelName),
-		Caption:       fmt.Sprintf("Sensitivity using the \\texttt{%s} probe kernel", probeKernelName),
-		LabelID:       fmt.Sprintf("%s-%s", probeKernelName, labelID),
+		ProbeVersion:  probeVersion,
+		PlotFilePath:  fmt.Sprintf("probe-sensitivity-%s-%s.tikz.tex", probeKernel, labelID),
+		ShortCaption:  fmt.Sprintf("Example of Probes"),
+		Caption:       fmt.Sprintf("Sensitivity using the \\texttt{%s} probe kernel of different applications.", probeKernel),
+		LabelID:       labelID,
 	}
 }
 

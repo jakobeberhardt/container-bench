@@ -1,10 +1,7 @@
 package templates
 
 const PlotTemplate = `% Generated on {{.GeneratedDate}}
-%
-% Probe Kernel: {{.ProbeKernel}}
-% Probe Indices: {{.ProbeIndices}}
-%
+% Probe Kernel: {{.ProbeKernel}} {{.ProbeVersion}}
 \begin{tikzpicture}
 \begin{polaraxis}[
   width=9cm,
@@ -18,6 +15,10 @@ const PlotTemplate = `% Generated on {{.GeneratedDate}}
     Syscall,
     Prefetch
   },
+  legend columns=2,
+  % legend style={font=\scriptsize, column sep=6pt},
+  legend to name=polar-legend-{{.LabelID}},
+  % every axis legend/.code={\let\addlegendentry\relax},
 ]
 
 {{range .Probes}}
@@ -48,7 +49,9 @@ const PlotTemplate = `% Generated on {{.GeneratedDate}}
 type PlotData struct {
 	GeneratedDate string
 	ProbeKernel   string
+	ProbeVersion  string
 	ProbeIndices  string
+	LabelID       string
 	Probes        []ProbeSeries
 }
 
