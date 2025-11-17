@@ -1,7 +1,7 @@
 benchmark:
   name: Mixed stress-ng
   description: Runs stress-ng workers with mixed workloads 
-  max_t: 60
+  max_t: 120
   log_level: info
   scheduler:
     implementation: default
