@@ -6,7 +6,9 @@ const WrapperTemplate = `% Generated on {{.GeneratedDate}}
 \begin{center}
     \begin{figure}[H]
     \centering
-    \resizebox{1\linewidth}{!}{\input{./{{.PlotFileName}} }}
+    \resizebox{1\linewidth}{!}{\input{ {{.PlotFileName}} }}
+    % \vspace{0.5em}
+    % \pgfplotslegendfromname{legend-{{.BenchmarkID}}-{{.YField}}}
     % TODO: Add short and long caption
     \caption[{{.ShortCaption}}]{ {{.Caption}} }
     \label{fig:benchmark-{{.BenchmarkID}}-{{.YField}}}

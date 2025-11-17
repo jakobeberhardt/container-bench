@@ -1,0 +1,245 @@
+% Generated on 2025-11-17 04:44:19
+% Probe Kernel: default v1.0.0
+\begin{tikzpicture}
+\begin{polaraxis}[
+  width=9cm,
+  grid=both,
+  ymin=0, ymax=1,
+  xtick={0,72,144,216,288},
+  xticklabels={
+    LLC,
+    Mem Read,
+    Mem Write,
+    Syscall,
+    Prefetch
+  },
+  legend columns=2,
+  % legend style={font=\scriptsize, column sep=6pt},
+  legend to name=polar-legend-de13dbddf27a,
+  % every axis legend/.code={\let\addlegendentry\relax},
+]
+
+
+
+% Probe Index: 0, Benchmark ID: 2
+% Probe Kernel: default v1.0.0, Duration: 60000000000ns
+% Probe Cores: 1, Isolated: true, Aborted: false
+%
+% Probed Container: compile (index 0)
+% Container Image: registry.jakob-eberhardt.de/rdt4nn/compile/linux:latest
+% Container Command: Compile -O
+% Container Cores: 0
+\addplot+[thick,mark=red!80!black,color=red!80!black,solid] coordinates {
+  (0,   0.3005645779277012)      % LLC
+  (72,  0.28460514720321317)  % Mem Read
+  (144, 0.26760262564375986) % Mem Write
+  (216, 0.2328793045210748)  % Syscall
+  (288, 0.2905807763085082) % Prefetch
+  (0,   0.3005645779277012)      % Close the loop
+};
+   
+\addlegendentry{ Compile -O0 };
+
+
+% Probe Index: 0, Benchmark ID: 3
+% Probe Kernel: default v1.0.0, Duration: 60000000000ns
+% Probe Cores: 1, Isolated: true, Aborted: false
+%
+% Probed Container: compile (index 0)
+% Container Image: registry.jakob-eberhardt.de/rdt4nn/compile/linux:latest
+% Container Command: Compile -O
+% Container Cores: 0
+\addplot+[thick,mark=none,color=blue!55!black,solid] coordinates {
+  (0,   0.2952384214579957)      % LLC
+  (72,  0.2781959271541972)  % Mem Read
+  (144, 0.25127413736666643) % Mem Write
+  (216, 0.2272176697234167)  % Syscall
+  (288, 0.29012707979290336) % Prefetch
+  (0,   0.2952384214579957)      % Close the loop
+};
+   
+\addlegendentry{ Compile -O1 };
+
+
+% Probe Index: 0, Benchmark ID: 4
+% Probe Kernel: default v1.0.0, Duration: 60000000000ns
+% Probe Cores: 1, Isolated: true, Aborted: false
+%
+% Probed Container: compile (index 0)
+% Container Image: registry.jakob-eberhardt.de/rdt4nn/compile/linux:latest
+% Container Command: Compile -O
+% Container Cores: 0
+\addplot+[thick,mark=none,color=green!55!black,solid] coordinates {
+  (0,   0.29495192591765984)      % LLC
+  (72,  0.27697050878529694)  % Mem Read
+  (144, 0.24990661768578556) % Mem Write
+  (216, 0.22639407277860055)  % Syscall
+  (288, 0.2868588867906673) % Prefetch
+  (0,   0.29495192591765984)      % Close the loop
+};
+   
+\addlegendentry{ Compile -O2 };
+
+
+% Probe Index: 0, Benchmark ID: 8
+% Probe Kernel: default v1.0.0, Duration: 30000000000ns
+% Probe Cores: 1, Isolated: true, Aborted: false
+%
+% Probed Container: 7z (index 0)
+% Container Image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+% Container Command: while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=1 -mmt=1  dummy.7z /data/*.bin; done
+% Container Cores: 0
+\addplot+[thick,mark=none,color=orange,solid] coordinates {
+  (0,   0.14201474751339468)      % LLC
+  (72,  0.04673595547585024)  % Mem Read
+  (144, 0.00607380615515911) % Mem Write
+  (216, 0.00036991889292205255)  % Syscall
+  (288, 0.28967341163507326) % Prefetch
+  (0,   0.14201474751339468)      % Close the loop
+};
+   
+\addlegendentry{  Compression L1 };
+
+
+% Probe Index: 0, Benchmark ID: 9
+% Probe Kernel: default v1.0.0, Duration: 30000000000ns
+% Probe Cores: 1, Isolated: true, Aborted: false
+%
+% Probed Container: 7z (index 0)
+% Container Image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+% Container Command: while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=2 -mmt=1  dummy.7z /data/*.bin; done
+% Container Cores: 0
+\addplot+[thick,mark=none,color=purple,solid] coordinates {
+  (0,   0.5708570230482827)      % LLC
+  (72,  0.47503298198273886)  % Mem Read
+  (144, 0.07674679620252817) % Mem Write
+  (216, 0.0005342625699689131)  % Syscall
+  (288, 0.5242062650594758) % Prefetch
+  (0,   0.5708570230482827)      % Close the loop
+};
+   
+\addlegendentry{  Compression L2 };
+
+
+% Probe Index: 0, Benchmark ID: 10
+% Probe Kernel: default v1.0.0, Duration: 30000000000ns
+% Probe Cores: 1, Isolated: true, Aborted: false
+%
+% Probed Container: 7z (index 0)
+% Container Image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+% Container Command: while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=3 -mmt=1  dummy.7z /data/*.bin; done
+% Container Cores: 0
+\addplot+[thick,mark=none,color=teal,solid] coordinates {
+  (0,   0.46151340478632724)      % LLC
+  (72,  0.46520298504827484)  % Mem Read
+  (144, 0.36139239611978063) % Mem Write
+  (216, 0.028808277776633046)  % Syscall
+  (288, 0.431876305047819) % Prefetch
+  (0,   0.46151340478632724)      % Close the loop
+};
+   
+\addlegendentry{  Compression L3 };
+
+
+% Probe Index: 0, Benchmark ID: 11
+% Probe Kernel: default v1.0.0, Duration: 30000000000ns
+% Probe Cores: 1, Isolated: true, Aborted: false
+%
+% Probed Container: 7z (index 0)
+% Container Image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+% Container Command: while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=4 -mmt=1  dummy.7z /data/*.bin; done
+% Container Cores: 0
+\addplot+[thick,mark=none,color=pink!80!red,solid] coordinates {
+  (0,   0.11414874979121557)      % LLC
+  (72,  0.1298181253431979)  % Mem Read
+  (144, 0.09062562246879415) % Mem Write
+  (216, 0.0031982416804771548)  % Syscall
+  (288, 0.08497179438374537) % Prefetch
+  (0,   0.11414874979121557)      % Close the loop
+};
+   
+\addlegendentry{  Compression L4 };
+
+
+% Probe Index: 0, Benchmark ID: 12
+% Probe Kernel: default v1.0.0, Duration: 30000000000ns
+% Probe Cores: 1, Isolated: true, Aborted: false
+%
+% Probed Container: 7z (index 0)
+% Container Image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+% Container Command: while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=5 -mmt=1  dummy.7z /data/*.bin; done
+% Container Cores: 0
+\addplot+[thick,mark=none,color=blue!20!violet,solid] coordinates {
+  (0,   0.14002028966242414)      % LLC
+  (72,  0.12207509526794552)  % Mem Read
+  (144, 0.06387576409695478) % Mem Write
+  (216, 0.01616737692630132)  % Syscall
+  (288, 0.14627925746268458) % Prefetch
+  (0,   0.14002028966242414)      % Close the loop
+};
+   
+\addlegendentry{  Compression L5 };
+
+
+% Probe Index: 0, Benchmark ID: 13
+% Probe Kernel: default v1.0.0, Duration: 30000000000ns
+% Probe Cores: 1, Isolated: true, Aborted: false
+%
+% Probed Container: 7z (index 0)
+% Container Image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+% Container Command: while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=6 -mmt=1  dummy.7z /data/*.bin; done
+% Container Cores: 0
+\addplot+[thick,mark=none,color=orange,densely dotted] coordinates {
+  (0,   0.25596427145269113)      % LLC
+  (72,  0.2881309166236016)  % Mem Read
+  (144, 0.25073489900593393) % Mem Write
+  (216, 0.2200839200461253)  % Syscall
+  (288, 0.3441629012800538) % Prefetch
+  (0,   0.25596427145269113)      % Close the loop
+};
+   
+\addlegendentry{  Compression L6 };
+
+
+% Probe Index: 0, Benchmark ID: 14
+% Probe Kernel: default v1.0.0, Duration: 30000000000ns
+% Probe Cores: 1, Isolated: true, Aborted: false
+%
+% Probed Container: 7z (index 0)
+% Container Image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+% Container Command: while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=7 -mmt=1  dummy.7z /data/*.bin; done
+% Container Cores: 0
+\addplot+[thick,mark=none,color=green!70!black,densely dotted] coordinates {
+  (0,   0.28008355590574724)      % LLC
+  (72,  0.30242902182705983)  % Mem Read
+  (144, 0.26253991533207266) % Mem Write
+  (216, 0.2681287651048316)  % Syscall
+  (288, 0.4361467031460765) % Prefetch
+  (0,   0.28008355590574724)      % Close the loop
+};
+   
+\addlegendentry{  Compression L7 };
+
+
+% Probe Index: 0, Benchmark ID: 15
+% Probe Kernel: default v1.0.0, Duration: 30000000000ns
+% Probe Cores: 1, Isolated: true, Aborted: false
+%
+% Probed Container: 7z (index 0)
+% Container Image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+% Container Command: while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=8 -mmt=1  dummy.7z /data/*.bin; done
+% Container Cores: 0
+\addplot+[thick,mark=none,color=blue!50!white,densely dotted] coordinates {
+  (0,   0.29917090277177755)      % LLC
+  (72,  0.3080829697271806)  % Mem Read
+  (144, 0.2494436499187956) % Mem Write
+  (216, 0.25027269898730414)  % Syscall
+  (288, 0.4316586604710222) % Prefetch
+  (0,   0.29917090277177755)      % Close the loop
+};
+   
+\addlegendentry{  Compression L8 };
+
+
+\end{polaraxis}
+\end{tikzpicture}

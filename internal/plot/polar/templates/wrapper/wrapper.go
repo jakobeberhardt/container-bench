@@ -4,7 +4,7 @@ const WrapperTemplate = `% Generated on {{.GeneratedDate}}
 % Probe Kernel: {{.ProbeKernel}} {{.ProbeVersion}}
 \begin{figure}[H]
     \centering
-    \resizebox{1\linewidth}{!}{ \input{ {{.PlotFilePath}} } }
+    \resizebox{1\linewidth}{!}{\input{ {{.PlotFilePath}} }}
     \vspace{0.5em}
     \pgfplotslegendfromname{polar-legend-{{.LabelID}}}
     \caption[{{.ShortCaption}}]{ {{.Caption}} }

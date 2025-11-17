@@ -32,22 +32,22 @@ const PlotTemplate = `% Generated on {{.GeneratedDate}}
 % Prober: {{.ProberEnabled}} (impl: {{.ProberImplementation}}, isolated: {{.ProberIsolated}})
 %
 \begin{tikzpicture}
-    \begin{axis}[
-        % title={ {{.Title}} },
-        xlabel={ {{.XLabel}} },
-        ylabel={ {{.YLabel}} },
-        width=\textwidth,
-        height=1\textwidth,
-        xmin={{.XMin}}, xmax={{.XMax}},
-        ymin={{.YMin}}, ymax={{.YMax}},
-        ymajorgrids,
-        grid style=dashed,
-        legend columns=2,
-        legend pos=north west,
-        legend style={font=\scriptsize, column sep=6pt},
-		% legend to name=legend-{{.BenchmarkID}}
+	\begin{axis}[
+		% title={ {{.Title}} },
+		xlabel={ {{.XLabel}} },
+		ylabel={ {{.YLabel}} },
+		width=\textwidth,
+		height=1\textwidth,
+		xmin={{.XMin}}, xmax={{.XMax}},
+		ymin={{.YMin}}, ymax={{.YMax}},
+		ymajorgrids,
+		grid style=dashed,
+		legend columns=2,
+		legend pos=north east,
+		% legend style={font=\scriptsize, column sep=6pt},
+		% legend to name=legend-{{.BenchmarkID}}-{{.Fieldname}}
 		% every axis legend/.code={\let\addlegendentry\relax},
-    ]
+	]
 
 {{range .Plots}}
 % Container: {{.ContainerName}} (index {{.ContainerIndex}}, image: {{.ContainerImage}}, core: {{.ContainerCore}})
@@ -58,7 +58,7 @@ const PlotTemplate = `% Generated on {{.GeneratedDate}}
 \addlegendentry{ {{.LegendEntry}} }
 
 {{end}}
-    \end{axis}
+	\end{axis}
 \end{tikzpicture}
 `
 
@@ -104,6 +104,7 @@ type PlotData struct {
 	Title                    string
 	XLabel                   string
 	YLabel                   string
+	Fieldname                string
 	XMin                     string
 	XMax                     string
 	YMin                     string

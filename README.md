@@ -40,6 +40,7 @@ More benchmarks are available in the respective [example section](#examples)
 - **Database Integration**: Export time-series data to InfluxDB 2.7
 - **Metadata Collection**: Automatic collection of benchmark metadata for reporting
 - **YAML Configuration**: Easily define and run benchmarks
+- **PGF/TikZ Plot Generation**: Generate PGF/TikZ plots from the data base instantly
 
 ## Installation
 ```bash
@@ -178,6 +179,25 @@ Data is exported to InfluxDB with the following structure:
 - **Measurement**: `benchmark_meta`
 - **Tags**: `benchmark_id`
 - **Fields**: Comprehensive metadata including system info, configuration, and statistics
+
+## Plotting
+Plots can be generated using the `plot` command. The application supports time series plots and polar plots for sensitivity probing results.
+
+### Timeseries
+A large example can be seen here:
+```sh
+container-bench plot timeseries --benchmark-id 7 --interval 0.5 --y perf_instructions_per_cycle > docs/tex/timeseries/example.tex
+```
+![Plot Example](./docs/tex/timeseries/ipc-full.png)
+![Group Example](./docs/tex/timeseries/overview.png)
+
+### Polar / Radar / Spider Web
+Polar plots can be generated from different sensitivity probing, e.g., here probes 1-11, which all come from different benchmarks. In this case, we compare different `gcc` and `7zip` configurations to showcase how the sensetiviz profile can depend on the respective configuration of an application. 
+
+```sh
+container-bench plot polar --probes 1,2,3,4,5,6,7,8,9,10,11 > docs/tex/polar/example.tex
+```
+![Polar](./docs/tex/polar/polar.png) 
 
 ## Examples
 ### High Concurrency

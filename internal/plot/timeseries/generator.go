@@ -216,6 +216,7 @@ func (g *TimeseriesPlotGenerator) preparePlotData(
 		Title:                    yMapping.Label,
 		XLabel:                   xMapping.Label,
 		YLabel:                   yMapping.Label,
+		Fieldname:                opts.YField,
 		XMin:                     xMinStr,
 		XMax:                     xMaxStr,
 		YMin:                     yMinStr,
