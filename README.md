@@ -188,16 +188,25 @@ A large example can be seen here:
 ```sh
 container-bench plot timeseries --benchmark-id 7 --interval 0.5 --y perf_instructions_per_cycle > docs/tex/timeseries/example.tex
 ```
-![Plot Example](./docs/tex/timeseries/ipc-full.png)
-![Group Example](./docs/tex/timeseries/overview.png)
+<p align="center">
+  <img src="./docs/tex/timeseries/ipc-full.png" width="70%" alt="Plot Example">
+</p>
+
+We can easily share the legend to build group plots. The scaffolding for this is auto-generated. 
+
+<p align="center">
+  <img src="./docs/tex/timeseries/overview.png" width="70%" alt="Group Example">
+</p>
 
 ### Polar / Radar / Spider Web
-Polar plots can be generated from different sensitivity probing, e.g., here probes 1-11, which all come from different benchmarks. In this case, we compare different `gcc` and `7zip` configurations to showcase how the sensetiviz profile can depend on the respective configuration of an application. 
+Polar plots can be generated from different sensitivity probing, e.g., here probes 1-11, which all come from different benchmarks. In this case, we compare different `gcc` and `7zip` configurations to showcase how the sensitivity profile can depend on the respective configuration of an application. 
 
 ```sh
 container-bench plot polar --probes 1,2,3,4,5,6,7,8,9,10,11 > docs/tex/polar/example.tex
 ```
-![Polar](./docs/tex/polar/polar.png) 
+<p align="center">
+  <img src="./docs/tex/polar/polar.png" width="60%" alt="Polar">
+</p> 
 
 ## Examples
 ### High Concurrency
