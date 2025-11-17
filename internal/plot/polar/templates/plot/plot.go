@@ -17,7 +17,7 @@ const PlotTemplate = `% Generated on {{.GeneratedDate}}
   },
   legend columns=2,
   % legend style={font=\scriptsize, column sep=6pt},
-  legend to name=polar-legend-{{.LabelID}},
+  % legend to name=polar-legend-{{.LabelID}},
   % every axis legend/.code={\let\addlegendentry\relax},
 ]
 
