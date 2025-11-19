@@ -1,0 +1,108 @@
+benchmark:
+  name: Introduction Probe DB
+  description: A benchmark for showcasing the noisy neighbor problem
+  max_t: 90
+  log_level: info
+  scheduler:
+    implementation: probe
+    rdt: false
+    log_level: error
+    prober:
+      implementation: default
+      abortable: false
+      isolated: true
+      default_t: 60
+      warmup_t: 15
+      cooldown_t: 0
+      default_probe_cores: 7
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+database:
+  index: 0
+  image: registry.jakob-eberhardt.de/rdt4nn/postgres:latest
+  port: 5432:5432
+  core: 0
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+low-compression:
+  index: 1
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+  core: 1
+  command: "while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=2 -mmt=1  dummy.7z /data/*.bin; done"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+high-compression:
+  index: 2
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+  core: 2
+  command: "while :; do rm -f /data/dummy.7z && /populate.sh 100 && 7z a -mx=4 -mmt=1  dummy.7z /data/*.bin; done"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+matrix-3d:
+  index: 3
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 3
+  command: "stress-ng --matrix-3d 0 --timeout 0"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+compile:
+  index: 5
+  image: registry.jakob-eberhardt.de/rdt4nn/compile/linux:latest
+  core: 5
+  command: "make defconfig && make -j4"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+matrix-product:
+  index: 6
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 6
+  command: "stress-ng --cpu 0 --cpu-method matrixprod --timeout 0"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+
+# load:
+#   index: 7
+#   image: registry.jakob-eberhardt.de/rdt4nn/postgres:latest
+#   core: 16-19
+#   command: "sleep 1 && pgbench -i -s 30 -h database -U benchmark benchmark && pgbench -c 16 -j 16 -T 3600 -h database -U benchmark benchmark"
+#   data:
+#     frequency: 100
+#     perf: false
+#     docker:
+#       cpu_usage_percent: true
+#     rdt: false
