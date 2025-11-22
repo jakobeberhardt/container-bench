@@ -13,11 +13,11 @@ var ContainerStyles = []PlotStyle{
 	{Color: "blue!55!black", LineStyle: "solid", LineWidth: "thick", Mark: "square", MarkOptions: "scale=0.25"},
 	{Color: "green!55!black", LineStyle: "solid", LineWidth: "thick", Mark: "*", MarkOptions: "scale=0.3,fill=green!55!black"},
 	{Color: "orange", LineStyle: "solid", LineWidth: "thick", Mark: "diamond*", MarkOptions: "scale=0.3,fill=orange"},
-	{Color: "purple", LineStyle: "solid", LineWidth: "thick", Mark: "pentagon*", MarkOptions: "scale=0.3,fill=purple"},
+	{Color: "orange!40!white", LineStyle: "solid", LineWidth: "thick", Mark: "pentagon*", MarkOptions: "scale=0.3,fill=orange!40!white"},
 	{Color: "teal", LineStyle: "solid", LineWidth: "thick", Mark: "x", MarkOptions: "scale=0.3"},
 	{Color: "cyan!50!black", LineStyle: "solid", LineWidth: "thick", Mark: "o", MarkOptions: "scale=0.3"},
 	{Color: "blue!20!violet", LineStyle: "solid", LineWidth: "thick", Mark: "pentagon", MarkOptions: "scale=0.3"},
-	
+
 	{Color: "orange", LineStyle: "densely dotted", LineWidth: "thick", Mark: "star", MarkOptions: "scale=0.4,fill=orange"},
 	{Color: "green!70!black", LineStyle: "densely dotted", LineWidth: "thick", Mark: "triangle*", MarkOptions: "scale=0.4,fill=red!70!black"},
 	{Color: "blue!50!white", LineStyle: "densely dotted", LineWidth: "thick", Mark: "square", MarkOptions: "scale=0.4"},
@@ -26,7 +26,7 @@ var ContainerStyles = []PlotStyle{
 	{Color: "olive!50!black", LineStyle: "densely dotted", LineWidth: "thick", Mark: "pentagon*", MarkOptions: "scale=0.4,fill=olive!50!black"},
 	{Color: "pink!80!red", LineStyle: "densely dotted", LineWidth: "thick", Mark: "triangle", MarkOptions: "scale=0.4,fill=pink!80!red"},
 	{Color: "purple", LineStyle: "densely dotted", LineWidth: "thick", Mark: "square", MarkOptions: "scale=0.4"},
-	
+
 	{Color: "red", LineStyle: "densely dashed", LineWidth: "thick", Mark: "triangle*", MarkOptions: "scale=0.4,fill=red"},
 	{Color: "blue", LineStyle: "densely dashed", LineWidth: "thick", Mark: "square", MarkOptions: "scale=0.4"},
 	{Color: "green!70!black", LineStyle: "densely dashed", LineWidth: "thick", Mark: "*", MarkOptions: "scale=0.4,fill=green!70!black"},
@@ -35,7 +35,7 @@ var ContainerStyles = []PlotStyle{
 	{Color: "brown", LineStyle: "densely dashed", LineWidth: "thick", Mark: "x", MarkOptions: "scale=0.4"},
 	{Color: "cyan", LineStyle: "densely dashed", LineWidth: "thick", Mark: "o", MarkOptions: "scale=0.4"},
 	{Color: "orange", LineStyle: "densely dashed", LineWidth: "thick", Mark: "star", MarkOptions: "scale=0.4,fill=orange"},
-	
+
 	{Color: "red", LineStyle: "dotted", LineWidth: "thick", Mark: "triangle*", MarkOptions: "scale=0.4,fill=red"},
 	{Color: "blue", LineStyle: "dotted", LineWidth: "thick", Mark: "square", MarkOptions: "scale=0.4"},
 	{Color: "green!70!black", LineStyle: "dotted", LineWidth: "thick", Mark: "*", MarkOptions: "scale=0.4,fill=green!70!black"},

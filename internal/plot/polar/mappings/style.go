@@ -12,11 +12,11 @@ var ProbeStyles = []PolarPlotStyle{
 	{Color: "blue!55!black", LineStyle: "solid", LineWidth: "thick", Mark: "none"},
 	{Color: "green!55!black", LineStyle: "solid", LineWidth: "thick", Mark: "none"},
 	{Color: "orange", LineStyle: "solid", LineWidth: "thick", Mark: "none"},
-	{Color: "purple", LineStyle: "solid", LineWidth: "thick", Mark: "none"},
+	{Color: "orange!40!white", LineStyle: "solid", LineWidth: "thick", Mark: "orange!40!white"},
 	{Color: "teal", LineStyle: "solid", LineWidth: "thick", Mark: "none"},
 	{Color: "pink!80!red", LineStyle: "solid", LineWidth: "thick", Mark: "none"},
 	{Color: "blue!20!violet", LineStyle: "solid", LineWidth: "thick", Mark: "none"},
-	
+
 	{Color: "orange", LineStyle: "densely dotted", LineWidth: "thick", Mark: "none"},
 	{Color: "green!70!black", LineStyle: "densely dotted", LineWidth: "thick", Mark: "none"},
 	{Color: "blue!50!white", LineStyle: "densely dotted", LineWidth: "thick", Mark: "none"},
