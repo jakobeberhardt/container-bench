@@ -38,6 +38,7 @@ database:
     perf:
       instructions: true
       cycles: true
+      stalls_total: true
     docker: true
     rdt: false
 

@@ -301,6 +301,14 @@ func (pc *PerfCollector) Collect() *dataframe.PerfMetrics {
 		metrics.StalledCyclesPercent = &stalledPercent
 	}
 
+	if metrics.Instructions != nil && metrics.Cycles != nil && metrics.StallsTotal != nil {
+		effectiveCycles := int64(*metrics.Cycles) - int64(*metrics.StallsTotal)
+		if effectiveCycles > 0 {
+			theoreticalIPC := float64(*metrics.Instructions) / float64(effectiveCycles)
+			metrics.TheoreticalIPC = &theoreticalIPC
+		}
+	}
+
 	return metrics
 }
 

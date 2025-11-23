@@ -198,6 +198,13 @@ var FieldMappings = map[string]FieldMapping{
 		Max:        100.0,
 		NullValue:  0,
 	},
+	"perf_theoretical_ipc": {
+		Label:      "Theoretical IPC",
+		ShortLabel: "Theor. IPC",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
 	"perf_resource_stalls_sb": {
 		Label:      "Resource Stalls (SB)",
 		ShortLabel: "Res Stalls SB",
