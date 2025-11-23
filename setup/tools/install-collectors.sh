@@ -5,7 +5,8 @@ sudo sysctl kernel.perf_event_paranoid=-1
 
 modprobe msr
 umount /sys/fs/resctrl 2>/dev/null
-mount -t resctrl resctrl -o mba_MBps /sys/fs/resctrl
+# mount -t resctrl resctrl -o mba_MBps /sys/fs/resctrl
+mount -t resctrl resctrl /sys/fs/resctrl
 
 export RDT_IFACE=OS
 
