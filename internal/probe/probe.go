@@ -188,7 +188,8 @@ func (p *Probe) startProbingContainer(ctx context.Context, cores string, socket 
 		"cores": cores,
 	}).Debug("Creating probing container")
 
-	containerName := fmt.Sprintf("probe-%d-%d", p.benchmarkID, time.Now().Unix())
+	// containerName := fmt.Sprintf("probe-%d-%d", p.benchmarkID, time.Now().Unix())
+	containerName := "probe"
 
 	config := &container.Config{
 		Image: p.probeImage,
