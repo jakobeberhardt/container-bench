@@ -847,6 +847,9 @@ func (idb *InfluxDBClient) createFieldsFromMetricStep(step *datahandeling.Metric
 	if step.PerfInstructionsPerCycle != nil {
 		fields["perf_instructions_per_cycle"] = *step.PerfInstructionsPerCycle
 	}
+	if step.PerfTheoreticalIPC != nil {
+		fields["perf_theoretical_ipc"] = *step.PerfTheoreticalIPC
+	}
 
 	// Add Docker metrics
 	if step.DockerCPUUsageTotal != nil {
