@@ -1,7 +1,7 @@
 benchmark:
   name: Matrix
   description: Runs stress-ng workers which perform operations on matrices
-  max_t: 255
+  max_t: 60
   log_level: info
   scheduler:
     implementation: default
