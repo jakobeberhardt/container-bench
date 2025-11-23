@@ -100,9 +100,6 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 		}).Info("LLC IPC sensitivity calculated")
 	}
 	if err == nil && baselineSCP > 0 {
-		// SCP sensitivity: normalized to 0-1 where 0 is no impact and 1 is full degradation
-		// Formula: (stressed_scp - baseline_scp) / (100 - baseline_scp)
-		// This represents how much of the remaining "headroom" was consumed
 		scpSensitivity := (llcSCP - baselineSCP) / (100.0 - baselineSCP)
 		scpVal := clampSensitivity(scpSensitivity)
 		scpResult.LLC = &scpVal
@@ -389,7 +386,7 @@ func (dpk *DefaultProbeKernel) calculateAverage(values []float64, metricName str
 			"trimmed_count":  len(trimmed),
 			"removed_bottom": sorted[0:3],
 			"removed_top":    sorted[len(sorted)-3:],
-		}).Debug("Removed outliers from average calculation")
+		}).Info("Removed outliers from average calculation")
 
 		values = trimmed
 	}
