@@ -32,7 +32,7 @@ type ProbeKernel interface {
 
 	// Runs the complete probing sequence inside the container
 	// It has full control over what commands to run, when, and for how long
-	// Returns computed sensitivities
+	// Returns map of computed sensitivities keyed by metric type (e.g., "ipc", "scp")
 	ExecuteProbe(
 		ctx context.Context,
 		dockerClient *client.Client,
@@ -42,5 +42,5 @@ type ProbeKernel interface {
 		dataframes *dataframe.DataFrames,
 		targetContainerIndex int,
 		targetContainerConfig *config.ContainerConfig,
-	) (*ProbeSensitivities, error)
+	) (map[string]*ProbeSensitivities, error)
 }

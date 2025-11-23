@@ -32,22 +32,31 @@ func NewPolarPlotGenerator(dbClient *database.PlotDBClient, logger *logrus.Logge
 
 type PlotOptions struct {
 	ProbeIndices []int
+	MetricType   string // e.g., "ipc", "scp"
 }
 
 func (g *PolarPlotGenerator) Generate(ctx context.Context, opts PlotOptions) (string, string, error) {
-	g.logger.WithField("probe_indices", opts.ProbeIndices).Info("Generating polar plot")
+	metricType := opts.MetricType
+	if metricType == "" {
+		metricType = "ipc" // default to IPC
+	}
+
+	g.logger.WithFields(logrus.Fields{
+		"probe_indices": opts.ProbeIndices,
+		"metric_type":   metricType,
+	}).Info("Generating polar plot")
 
 	if len(opts.ProbeIndices) == 0 {
 		return "", "", fmt.Errorf("no probe indices specified")
 	}
 
-	probes, err := g.dbClient.QueryProbes(ctx, opts.ProbeIndices)
+	probes, err := g.dbClient.QueryProbes(ctx, opts.ProbeIndices, metricType)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to query probes: %w", err)
 	}
 
 	if len(probes) == 0 {
-		return "", "", fmt.Errorf("no probe data found for specified indices")
+		return "", "", fmt.Errorf("no probe data found for specified indices with metric type '%s'", metricType)
 	}
 
 	plotData := g.preparePlotData(probes, opts)
@@ -71,6 +80,8 @@ func (g *PolarPlotGenerator) preparePlotData(probes []database.ProbeData, opts P
 	sort.Slice(probes, func(i, j int) bool {
 		return probes[i].ContainerIndex < probes[j].ContainerIndex
 	})
+
+	metricInfo := mappings.GetMetricInfo(opts.MetricType)
 
 	var probeSeries []plotTemplate.ProbeSeries
 	probeKernel := ""
@@ -125,16 +136,20 @@ func (g *PolarPlotGenerator) preparePlotData(probes []database.ProbeData, opts P
 	labelID := g.generateLabelID(opts.ProbeIndices)
 
 	return &plotTemplate.PlotData{
-		GeneratedDate: time.Now().Format("2006-01-02 15:04:05"),
-		ProbeKernel:   probeKernel,
-		ProbeVersion:  probeVersion,
-		ProbeIndices:  strings.Join(indicesStr, ", "),
-		LabelID:       labelID,
-		Probes:        probeSeries,
+		GeneratedDate:  time.Now().Format("2006-01-02 15:04:05"),
+		ProbeKernel:    probeKernel,
+		ProbeVersion:   probeVersion,
+		ProbeIndices:   strings.Join(indicesStr, ", "),
+		LabelID:        labelID,
+		MetricName:     metricInfo.Name,
+		MetricFullName: metricInfo.FullName,
+		Probes:         probeSeries,
 	}
 }
 
 func (g *PolarPlotGenerator) prepareWrapperData(probes []database.ProbeData, opts PlotOptions) *wrapperTemplate.WrapperData {
+	metricInfo := mappings.GetMetricInfo(opts.MetricType)
+
 	probeKernel := ""
 	probeVersion := ""
 	if len(probes) > 0 {
@@ -150,13 +165,15 @@ func (g *PolarPlotGenerator) prepareWrapperData(probes []database.ProbeData, opt
 	labelID := g.generateLabelID(opts.ProbeIndices)
 
 	return &wrapperTemplate.WrapperData{
-		GeneratedDate: time.Now().Format("2006-01-02 15:04:05"),
-		ProbeKernel:   probeKernel,
-		ProbeVersion:  probeVersion,
-		PlotFilePath:  fmt.Sprintf("probe-sensitivity-%s-%s.tikz.tex", probeKernel, labelID),
-		ShortCaption:  fmt.Sprintf("Example of Probes"),
-		Caption:       fmt.Sprintf("Sensitivity using the \\texttt{%s} probe kernel of different applications.", probeKernel),
-		LabelID:       labelID,
+		GeneratedDate:  time.Now().Format("2006-01-02 15:04:05"),
+		ProbeKernel:    probeKernel,
+		ProbeVersion:   probeVersion,
+		PlotFilePath:   fmt.Sprintf("probe-sensitivity-%s-%s.tikz.tex", probeKernel, labelID),
+		ShortCaption:   fmt.Sprintf("Probe Sensitivity (%s)", metricInfo.Name),
+		Caption:        fmt.Sprintf("%s using the \\texttt{%s} probe kernel.", metricInfo.Description, probeKernel),
+		LabelID:        labelID,
+		MetricName:     metricInfo.Name,
+		MetricFullName: metricInfo.FullName,
 	}
 }
 

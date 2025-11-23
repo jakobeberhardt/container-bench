@@ -32,73 +32,73 @@ type MetricsDataPoint struct {
 }
 
 type MetaData struct {
-	BenchmarkID              int
-	BenchmarkName            string
-	Description              string
-	BenchmarkStarted         string
-	BenchmarkFinished        string
-	DurationSeconds          int64
-	MaxDurationSeconds       int64
-	SamplingFrequencyMs      int64
-	TotalContainers          int64
-	TotalSamplingSteps       int64
-	TotalMeasurements        int64
-	TotalDataSizeBytes       int64
-	UsedScheduler            string
-	SchedulerVersion         string
-	DriverVersion            string
-	Hostname                 string
-	ExecutionHost            string
-	CPUVendor                string
-	CPUModel                 string
-	TotalCPUCores            int64
-	CPUSockets               int64
-	CPUThreads               int64
-	L1CacheSizeKB            float64
-	L2CacheSizeKB            float64
-	L3CacheSizeMB            float64
-	L3CacheSizeBytes         int64
-	L3CacheWays              int64
-	MaxMemoryBandwidthMbps   int64
-	KernelVersion            string
-	OSInfo                   string
-	ConfigFile               string
-	PerfEnabled              bool
-	DockerStatsEnabled       bool
-	RDTEnabled               bool
-	RDTSupported             bool
-	RDTAllocationSupported   bool
-	RDTMonitoringSupported   bool
-	ProberEnabled            bool
-	ProberImplementation     string
-	ProberIsolated           bool
-	ProberAbortable          bool
+	BenchmarkID            int
+	BenchmarkName          string
+	Description            string
+	BenchmarkStarted       string
+	BenchmarkFinished      string
+	DurationSeconds        int64
+	MaxDurationSeconds     int64
+	SamplingFrequencyMs    int64
+	TotalContainers        int64
+	TotalSamplingSteps     int64
+	TotalMeasurements      int64
+	TotalDataSizeBytes     int64
+	UsedScheduler          string
+	SchedulerVersion       string
+	DriverVersion          string
+	Hostname               string
+	ExecutionHost          string
+	CPUVendor              string
+	CPUModel               string
+	TotalCPUCores          int64
+	CPUSockets             int64
+	CPUThreads             int64
+	L1CacheSizeKB          float64
+	L2CacheSizeKB          float64
+	L3CacheSizeMB          float64
+	L3CacheSizeBytes       int64
+	L3CacheWays            int64
+	MaxMemoryBandwidthMbps int64
+	KernelVersion          string
+	OSInfo                 string
+	ConfigFile             string
+	PerfEnabled            bool
+	DockerStatsEnabled     bool
+	RDTEnabled             bool
+	RDTSupported           bool
+	RDTAllocationSupported bool
+	RDTMonitoringSupported bool
+	ProberEnabled          bool
+	ProberImplementation   string
+	ProberIsolated         bool
+	ProberAbortable        bool
 }
 
 type ProbeData struct {
-	BenchmarkID            int
-	ContainerIndex         int
-	ContainerID            string
-	ContainerName          string
-	ContainerImage         string
-	ContainerCores         string
-	ContainerCommand       string
-	ProbingContainerID     string
-	ProbingContainerName   string
-	ProbingContainerCores  string
-	UsedProbeKernel        string
-	LLC                    float64
-	MemRead                float64
-	MemWrite               float64
-	Prefetch               float64
-	Syscall                float64
-	ProbeTimeNs            int64
-	Started                string
-	Finished               string
-	Isolated               bool
-	Aborted                bool
-	FirstDataframeStep     int64
-	LastDataframeStep      int64
+	BenchmarkID           int
+	ContainerIndex        int
+	ContainerID           string
+	ContainerName         string
+	ContainerImage        string
+	ContainerCores        string
+	ContainerCommand      string
+	ProbingContainerID    string
+	ProbingContainerName  string
+	ProbingContainerCores string
+	UsedProbeKernel       string
+	LLC                   float64
+	MemRead               float64
+	MemWrite              float64
+	Prefetch              float64
+	Syscall               float64
+	ProbeTimeNs           int64
+	Started               string
+	Finished              string
+	Isolated              bool
+	Aborted               bool
+	FirstDataframeStep    int64
+	LastDataframeStep     int64
 }
 
 func NewPlotDBClient(logger *logrus.Logger) (*PlotDBClient, error) {
@@ -167,7 +167,7 @@ func (c *PlotDBClient) QueryMetrics(ctx context.Context, benchmarkID int, yField
 		} else if idx, ok := record.ValueByKey("container_index").(int64); ok {
 			dp.ContainerIndex = int(idx)
 		}
-		
+
 		if name, ok := record.ValueByKey("container_name").(string); ok {
 			dp.ContainerName = name
 		}
@@ -356,8 +356,11 @@ func (c *PlotDBClient) QueryMetaData(ctx context.Context, benchmarkID int) (*Met
 	return meta, nil
 }
 
-func (c *PlotDBClient) QueryProbes(ctx context.Context, probeIndices []int) ([]ProbeData, error) {
-	c.logger.WithField("probe_indices", probeIndices).Debug("Querying benchmark probes")
+func (c *PlotDBClient) QueryProbes(ctx context.Context, probeIndices []int, metricType string) ([]ProbeData, error) {
+	c.logger.WithFields(logrus.Fields{
+		"probe_indices": probeIndices,
+		"metric_type":   metricType,
+	}).Debug("Querying benchmark probes")
 
 	if len(probeIndices) == 0 {
 		return nil, fmt.Errorf("no probe indices provided")
@@ -415,21 +418,25 @@ func (c *PlotDBClient) QueryProbes(ctx context.Context, probeIndices []int) ([]P
 		if v, ok := record.ValueByKey("used_probe_kernel").(string); ok {
 			probe.UsedProbeKernel = v
 		}
-		if v, ok := record.ValueByKey("llc").(float64); ok {
+
+		// Query sensitivity metrics with the specified metric type prefix
+		prefix := metricType + "_"
+		if v, ok := record.ValueByKey(prefix + "llc").(float64); ok {
 			probe.LLC = v
 		}
-		if v, ok := record.ValueByKey("mem_read").(float64); ok {
+		if v, ok := record.ValueByKey(prefix + "mem_read").(float64); ok {
 			probe.MemRead = v
 		}
-		if v, ok := record.ValueByKey("mem_write").(float64); ok {
+		if v, ok := record.ValueByKey(prefix + "mem_write").(float64); ok {
 			probe.MemWrite = v
 		}
-		if v, ok := record.ValueByKey("prefetch").(float64); ok {
+		if v, ok := record.ValueByKey(prefix + "prefetch").(float64); ok {
 			probe.Prefetch = v
 		}
-		if v, ok := record.ValueByKey("syscall").(float64); ok {
+		if v, ok := record.ValueByKey(prefix + "syscall").(float64); ok {
 			probe.Syscall = v
 		}
+
 		if v, ok := record.ValueByKey("probe_time_ns").(int64); ok {
 			probe.ProbeTimeNs = v
 		}

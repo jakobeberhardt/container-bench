@@ -2,6 +2,7 @@ package templates
 
 const PlotTemplate = `% Generated on {{.GeneratedDate}}
 % Probe Kernel: {{.ProbeKernel}} {{.ProbeVersion}}
+% Metric Type: {{.MetricName}} ({{.MetricFullName}})
 \begin{tikzpicture}
 \begin{polaraxis}[
   width=9cm,
@@ -31,11 +32,11 @@ const PlotTemplate = `% Generated on {{.GeneratedDate}}
 % Container Command: {{.ContainerCommand}}
 % Container Cores: {{.ContainerCores}}
 \addplot+[{{.Style}}] coordinates {
-  (0,   {{.LLC}})      % LLC
-  (72,  {{.MemRead}})  % Mem Read
-  (144, {{.MemWrite}}) % Mem Write
-  (216, {{.Syscall}})  % Syscall
-  (288, {{.Prefetch}}) % Prefetch
+  (0,   {{.LLC}})      % LLC sensitivity
+  (72,  {{.MemRead}})  % Mem Read sensitivity
+  (144, {{.MemWrite}}) % Mem Write sensitivity
+  (216, {{.Syscall}})  % Syscall sensitivity
+  (288, {{.Prefetch}}) % Prefetch sensitivity
   (0,   {{.LLC}})      % Close the loop
 };
 % TODO: Add command
@@ -47,12 +48,14 @@ const PlotTemplate = `% Generated on {{.GeneratedDate}}
 `
 
 type PlotData struct {
-	GeneratedDate string
-	ProbeKernel   string
-	ProbeVersion  string
-	ProbeIndices  string
-	LabelID       string
-	Probes        []ProbeSeries
+	GeneratedDate  string
+	ProbeKernel    string
+	ProbeVersion   string
+	ProbeIndices   string
+	LabelID        string
+	MetricName     string
+	MetricFullName string
+	Probes         []ProbeSeries
 }
 
 type ProbeSeries struct {

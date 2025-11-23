@@ -2,6 +2,7 @@ package templates
 
 const WrapperTemplate = `% Generated on {{.GeneratedDate}}
 % Probe Kernel: {{.ProbeKernel}} {{.ProbeVersion}}
+% Metric Type: {{.MetricName}} ({{.MetricFullName}})
 \begin{figure}[H]
     \centering
     \resizebox{1\linewidth}{!}{\input{ {{.PlotFilePath}} }}
@@ -13,11 +14,13 @@ const WrapperTemplate = `% Generated on {{.GeneratedDate}}
 `
 
 type WrapperData struct {
-	GeneratedDate string
-	ProbeKernel   string
-	ProbeVersion  string
-	PlotFilePath  string
-	ShortCaption  string
-	Caption       string
-	LabelID       string
+	GeneratedDate  string
+	ProbeKernel    string
+	ProbeVersion   string
+	PlotFilePath   string
+	ShortCaption   string
+	Caption        string
+	LabelID        string
+	MetricName     string
+	MetricFullName string
 }

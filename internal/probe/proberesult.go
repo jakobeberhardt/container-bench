@@ -38,7 +38,11 @@ type ProbeResult struct {
 	FirstDataframeStep int `json:"first_dataframe_step"`
 	LastDataframeStep  int `json:"last_dataframe_step"`
 
-	// computed by the ProbeKernel implementation
+	Sensitivities map[string]*SensitivityMetrics `json:"sensitivities,omitempty"`
+}
+
+// SensitivityMetrics holds sensitivity measurements for a specific metric type
+type SensitivityMetrics struct {
 	LLC      *float64 `json:"llc,omitempty"`
 	MemRead  *float64 `json:"mem_read,omitempty"`
 	MemWrite *float64 `json:"mem_write,omitempty"`

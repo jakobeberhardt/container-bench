@@ -38,5 +38,6 @@ benchmark:
     perf:
       instructions: true
       cycles: true
+      stalls_total: true
     docker: false
     rdt: false

@@ -207,6 +207,7 @@ func main() {
 	var minVal, maxVal float64
 	var minSet, maxSet bool
 	var probeIndices []int
+	var probeMetric string
 	var onlyPlot, onlyWrapper bool
 	var logLevel string
 
@@ -279,7 +280,7 @@ func main() {
 			if err := validateEnvironment(); err != nil {
 				return err
 			}
-			return generatePolarPlot(probeIndices, onlyPlot, onlyWrapper)
+			return generatePolarPlot(probeIndices, probeMetric, onlyPlot, onlyWrapper)
 		},
 	}
 
@@ -307,6 +308,7 @@ func main() {
 	}
 
 	polarCmd.Flags().IntSliceVar(&probeIndices, "probes", []int{}, "Comma-separated list of probe indices")
+	polarCmd.Flags().StringVar(&probeMetric, "metric", "ipc", "Metric type to plot (ipc, scp)")
 	polarCmd.Flags().BoolVar(&onlyPlot, "plot", false, "Print only the plot file (TikZ)")
 	polarCmd.Flags().BoolVar(&onlyWrapper, "wrapper", false, "Print only the wrapper file (LaTeX)")
 	polarCmd.MarkFlagRequired("probes")
@@ -1250,9 +1252,12 @@ func generateTimeseriesPlot(benchmarkID int, xField, yField string, interval flo
 	return nil
 }
 
-func generatePolarPlot(probeIndices []int, onlyPlot, onlyWrapper bool) error {
+func generatePolarPlot(probeIndices []int, metricType string, onlyPlot, onlyWrapper bool) error {
 	logger := logging.GetLogger()
-	logger.WithField("probe_indices", probeIndices).Debug("Generating polar plot")
+	logger.WithFields(logrus.Fields{
+		"probe_indices": probeIndices,
+		"metric_type":   metricType,
+	}).Debug("Generating polar plot")
 
 	if len(probeIndices) == 0 {
 		return fmt.Errorf("no probe indices specified")
@@ -1265,7 +1270,7 @@ func generatePolarPlot(probeIndices []int, onlyPlot, onlyWrapper bool) error {
 	}
 	defer plotMgr.Close()
 
-	plotTikz, wrapperTex, err := plotMgr.GeneratePolarPlot(probeIndices)
+	plotTikz, wrapperTex, err := plotMgr.GeneratePolarPlot(probeIndices, metricType)
 	if err != nil {
 		logger.WithError(err).Error("Failed to generate plot")
 		return fmt.Errorf("failed to generate plot: %w", err)
@@ -1289,4 +1294,3 @@ func generatePolarPlot(probeIndices []int, onlyPlot, onlyWrapper bool) error {
 	logger.Debug("Polar plot generated successfully")
 	return nil
 }
-

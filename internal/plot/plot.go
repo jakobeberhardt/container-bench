@@ -71,11 +71,12 @@ func (pm *PlotManager) GenerateTimeseriesPlot(
 	return pm.timeseriesGenerator.Generate(ctx, opts)
 }
 
-func (pm *PlotManager) GeneratePolarPlot(probeIndices []int) (plotTikz, wrapperTex string, err error) {
+func (pm *PlotManager) GeneratePolarPlot(probeIndices []int, metricType string) (plotTikz, wrapperTex string, err error) {
 	ctx := context.Background()
 
 	opts := polar.PlotOptions{
 		ProbeIndices: probeIndices,
+		MetricType:   metricType,
 	}
 
 	return pm.polarGenerator.Generate(ctx, opts)

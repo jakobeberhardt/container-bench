@@ -128,7 +128,7 @@ func (p *Probe) executeProbe(ctx context.Context, req ProbeRequest) *ProbeResult
 
 	// Delegate to ProbeKernel to execute stress tests and analyze sensitivity
 	p.logger.WithField("container_index", req.ContainerConfig.Index).Debug("Kernel executing probe sequence")
-	sensitivities, err := p.probeKernel.ExecuteProbe(
+	sensitivityMap, err := p.probeKernel.ExecuteProbe(
 		ctx,
 		p.dockerClient,
 		probingContainerID,
@@ -152,31 +152,43 @@ func (p *Probe) executeProbe(ctx context.Context, req ProbeRequest) *ProbeResult
 		return result
 	}
 
-	// Populate result from kernel sensitivities
-	result.FirstDataframeStep = sensitivities.FirstDataframeStep
-	result.LastDataframeStep = sensitivities.LastDataframeStep
-	result.LLC = sensitivities.LLC
-	result.MemRead = sensitivities.MemRead
-	result.MemWrite = sensitivities.MemWrite
-	result.SysCall = sensitivities.SysCall
-	result.Prefetch = sensitivities.Prefetch
+	// Convert kernel sensitivities map to result format
+	result.Sensitivities = make(map[string]*SensitivityMetrics)
+
+	// Track dataframe range from first metric (they should all be the same)
+	for metricType, sens := range sensitivityMap {
+		result.FirstDataframeStep = sens.FirstDataframeStep
+		result.LastDataframeStep = sens.LastDataframeStep
+
+		result.Sensitivities[metricType] = &SensitivityMetrics{
+			LLC:      sens.LLC,
+			MemRead:  sens.MemRead,
+			MemWrite: sens.MemWrite,
+			SysCall:  sens.SysCall,
+			Prefetch: sens.Prefetch,
+		}
+	}
 
 	result.Finished = time.Now()
 
-	llcVal := "nil"
-	if sensitivities.LLC != nil {
-		llcVal = fmt.Sprintf("%.4f", *sensitivities.LLC)
-	}
-	memReadVal := "nil"
-	if sensitivities.MemRead != nil {
-		memReadVal = fmt.Sprintf("%.4f", *sensitivities.MemRead)
-	}
+	// Log all available metrics
+	for metricType, metrics := range result.Sensitivities {
+		llcVal := "nil"
+		if metrics.LLC != nil {
+			llcVal = fmt.Sprintf("%.4f", *metrics.LLC)
+		}
+		memReadVal := "nil"
+		if metrics.MemRead != nil {
+			memReadVal = fmt.Sprintf("%.4f", *metrics.MemRead)
+		}
 
-	p.logger.WithFields(logrus.Fields{
-		"container_index":     req.ContainerConfig.Index,
-		"llc_sensitivity":     llcVal,
-		"memread_sensitivity": memReadVal,
-	}).Info("Probe completed")
+		p.logger.WithFields(logrus.Fields{
+			"container_index": req.ContainerConfig.Index,
+			"metric_type":     metricType,
+			"llc_sensitivity": llcVal,
+			"mem_sensitivity": memReadVal,
+		}).Info("Probe metric completed")
+	}
 
 	return result
 }

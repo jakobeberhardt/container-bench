@@ -481,21 +481,27 @@ func (idb *InfluxDBClient) WriteProbeResults(probeResults []*probe.ProbeResult) 
 			fields["aborted_at"] = result.AbortedAt.Format(time.RFC3339)
 		}
 
-		// Add sensitivity metrics (only if not nil)
-		if result.LLC != nil {
-			fields["llc"] = *result.LLC
-		}
-		if result.MemRead != nil {
-			fields["mem_read"] = *result.MemRead
-		}
-		if result.MemWrite != nil {
-			fields["mem_write"] = *result.MemWrite
-		}
-		if result.SysCall != nil {
-			fields["syscall"] = *result.SysCall
-		}
-		if result.Prefetch != nil {
-			fields["prefetch"] = *result.Prefetch
+		// Add sensitivity metrics with prefixes based on metric type (e.g., ipc_llc, scp_llc)
+		if result.Sensitivities != nil {
+			for metricType, metrics := range result.Sensitivities {
+				prefix := metricType + "_"
+
+				if metrics.LLC != nil {
+					fields[prefix+"llc"] = *metrics.LLC
+				}
+				if metrics.MemRead != nil {
+					fields[prefix+"mem_read"] = *metrics.MemRead
+				}
+				if metrics.MemWrite != nil {
+					fields[prefix+"mem_write"] = *metrics.MemWrite
+				}
+				if metrics.SysCall != nil {
+					fields[prefix+"syscall"] = *metrics.SysCall
+				}
+				if metrics.Prefetch != nil {
+					fields[prefix+"prefetch"] = *metrics.Prefetch
+				}
+			}
 		}
 
 		point := influxdb2.NewPoint("benchmark_probes", tags, fields, result.Started)

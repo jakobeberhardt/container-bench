@@ -75,21 +75,41 @@ func (ps *ProbeScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) er
 		// Non-blocking check if probe completed
 		select {
 		case result := <-ps.activeProbe:
-			llcVal := "nil"
-			if result.LLC != nil {
-				llcVal = fmt.Sprintf("%.4f", *result.LLC)
-			}
-			memReadVal := "nil"
-			if result.MemRead != nil {
-				memReadVal = fmt.Sprintf("%.4f", *result.MemRead)
+			// Log all available metrics from the probe result
+			for metricType, metrics := range result.Sensitivities {
+				llcVal := "nil"
+				if metrics.LLC != nil {
+					llcVal = fmt.Sprintf("%.4f", *metrics.LLC)
+				}
+				memReadVal := "nil"
+				if metrics.MemRead != nil {
+					memReadVal = fmt.Sprintf("%.4f", *metrics.MemRead)
+				}
+				memWriteVal := "nil"
+				if metrics.MemWrite != nil {
+					memWriteVal = fmt.Sprintf("%.4f", *metrics.MemWrite)
+				}
+				syscallVal := "nil"
+				if metrics.SysCall != nil {
+					syscallVal = fmt.Sprintf("%.4f", *metrics.SysCall)
+				}
+				prefetchVal := "nil"
+				if metrics.Prefetch != nil {
+					prefetchVal = fmt.Sprintf("%.4f", *metrics.Prefetch)
+				}
+
+				ps.schedulerLogger.WithFields(logrus.Fields{
+					"container_index": result.ContainerIndex,
+					"container_name":  result.ContainerName,
+					"metric_type":     metricType,
+					"llc_sensitivity": llcVal,
+					"mem_read":        memReadVal,
+					"mem_write":       memWriteVal,
+					"syscall":         syscallVal,
+					"prefetch":        prefetchVal,
+				}).Info("Probe completed")
 			}
 
-			ps.schedulerLogger.WithFields(logrus.Fields{
-				"container_index": result.ContainerIndex,
-				"container_name":  result.ContainerName,
-				"llc_sensitivity": llcVal,
-				"mem_sensitivity": memReadVal,
-			}).Info("Probe completed and received")
 			ps.activeProbe = nil
 			ps.lastProbeFinishTime = time.Now()
 		default:
@@ -175,21 +195,30 @@ func (ps *ProbeScheduler) Shutdown() error {
 		ps.schedulerLogger.Info("Waiting for active probe to complete before shutdown")
 		result := <-ps.activeProbe
 
-		llcVal := "nil"
-		if result.LLC != nil {
-			llcVal = fmt.Sprintf("%.4f", *result.LLC)
-		}
-		memReadVal := "nil"
-		if result.MemRead != nil {
-			memReadVal = fmt.Sprintf("%.4f", *result.MemRead)
-		}
+		// Log all available metrics from the final probe result
+		for metricType, metrics := range result.Sensitivities {
+			llcVal := "nil"
+			if metrics.LLC != nil {
+				llcVal = fmt.Sprintf("%.4f", *metrics.LLC)
+			}
+			memReadVal := "nil"
+			if metrics.MemRead != nil {
+				memReadVal = fmt.Sprintf("%.4f", *metrics.MemRead)
+			}
+			memWriteVal := "nil"
+			if metrics.MemWrite != nil {
+				memWriteVal = fmt.Sprintf("%.4f", *metrics.MemWrite)
+			}
 
-		ps.schedulerLogger.WithFields(logrus.Fields{
-			"container_index": result.ContainerIndex,
-			"container_name":  result.ContainerName,
-			"llc_sensitivity": llcVal,
-			"mem_sensitivity": memReadVal,
-		}).Info("Final probe completed and received")
+			ps.schedulerLogger.WithFields(logrus.Fields{
+				"container_index": result.ContainerIndex,
+				"container_name":  result.ContainerName,
+				"metric_type":     metricType,
+				"llc_sensitivity": llcVal,
+				"mem_sensitivity": memReadVal,
+				"mem_write":       memWriteVal,
+			}).Info("Final probe completed")
+		}
 	}
 	return nil
 }
