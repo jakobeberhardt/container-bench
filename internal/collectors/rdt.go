@@ -281,8 +281,105 @@ func NewRDTCollector(pid int, cgroupPath string, rdtConfig *config.RDTConfig) (*
 	return collector, nil
 }
 
+// detectAndHandleClassMigration checks if the container has been moved to a different RDT class
+// and handles the migration by deleting the old monitoring group and creating a new one
+func (rc *RDTCollector) detectAndHandleClassMigration() error {
+	// Find the current RDT class for this PID
+	currentCtrlGroup, currentClassName, err := findRDTClassForPID(rc.pidStr)
+	if err != nil {
+		// PID might not be in any class (container terminated or not yet assigned)
+		rc.logger.WithError(err).WithField("pid", rc.pid).Trace("Could not find RDT class for PID during migration check")
+		return nil // Don't treat this as an error - container might be stopping
+	}
+
+	// Check if the class has changed
+	if currentClassName == rc.className {
+		// No migration detected
+		return nil
+	}
+
+	rc.logger.WithFields(logrus.Fields{
+		"pid":        rc.pid,
+		"old_class":  rc.className,
+		"new_class":  currentClassName,
+		"mon_group":  rc.monGroupName,
+	}).Info("RDT class migration detected - migrating monitoring group")
+
+	// Delete the old monitoring group from the old class
+	if rc.ctrlGroup != nil && rc.monGroupName != "" {
+		if err := rc.ctrlGroup.DeleteMonGroup(rc.monGroupName); err != nil {
+			rc.logger.WithError(err).WithFields(logrus.Fields{
+				"pid":       rc.pid,
+				"old_class": rc.className,
+				"mon_group": rc.monGroupName,
+			}).Warn("Failed to delete old monitoring group during migration")
+			// Continue anyway - we'll create the new one
+		} else {
+			rc.logger.WithFields(logrus.Fields{
+				"pid":       rc.pid,
+				"old_class": rc.className,
+				"mon_group": rc.monGroupName,
+			}).Debug("Deleted old monitoring group")
+		}
+	}
+
+	// Create new monitoring group in the new class
+	newMonGroup, err := currentCtrlGroup.CreateMonGroup(rc.monGroupName, map[string]string{
+		"container-bench": "true",
+		"pid":             rc.pidStr,
+	})
+	if err != nil {
+		rc.logger.WithError(err).WithFields(logrus.Fields{
+			"pid":       rc.pid,
+			"new_class": currentClassName,
+			"mon_group": rc.monGroupName,
+		}).Error("Failed to create new monitoring group after migration")
+		// Set monGroup to nil to prevent collection attempts
+		rc.monGroup = nil
+		return fmt.Errorf("failed to create monitoring group in new class %s: %v", currentClassName, err)
+	}
+
+	// Update the collector's state
+	rc.ctrlGroup = currentCtrlGroup
+	rc.className = currentClassName
+	rc.monGroup = newMonGroup
+
+	// Reset bandwidth tracking state since we're now in a new monitoring group
+	rc.lastBandwidthTotal = 0
+	rc.lastBandwidthLocal = 0
+	rc.firstCollection = true
+
+	// Sync PIDs from cgroup to the new monitoring group
+	if err := rc.syncCGroupPIDs(); err != nil {
+		rc.logger.WithError(err).WithFields(logrus.Fields{
+			"pid":       rc.pid,
+			"new_class": currentClassName,
+		}).Warn("Failed to sync cgroup PIDs to new monitoring group")
+	}
+
+	rc.logger.WithFields(logrus.Fields{
+		"pid":        rc.pid,
+		"new_class":  currentClassName,
+		"mon_group":  rc.monGroupName,
+	}).Info("RDT monitoring group successfully migrated to new class")
+
+	return nil
+}
+
 func (rc *RDTCollector) Collect() *dataframe.RDTMetrics {
 	if !rc.rdtEnabled || rc.monGroup == nil {
+		return nil
+	}
+
+	// Check if container has been moved to a different RDT class
+	if err := rc.detectAndHandleClassMigration(); err != nil {
+		rc.logger.WithError(err).WithField("pid", rc.pid).Warn("Failed to handle RDT class migration")
+		// Continue with collection using current monitoring group
+	}
+
+	// Verify monitoring group is still valid after potential migration
+	if rc.monGroup == nil {
+		rc.logger.WithField("pid", rc.pid).Warn("No valid monitoring group available after migration check")
 		return nil
 	}
 
