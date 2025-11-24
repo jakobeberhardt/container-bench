@@ -1047,12 +1047,19 @@ func (cb *ContainerBench) startCollectors(ctx context.Context) error {
 		dockerConfig := containerConfig.Data.GetDockerConfig()
 		rdtConfig := containerConfig.Data.GetRDTConfig()
 
+		// Get PID sync interval from benchmark config (default 100ms if not set)
+		pidSyncInterval := 100 * time.Millisecond
+		if cb.config.Benchmark.PIDSyncInterval > 0 {
+			pidSyncInterval = time.Duration(cb.config.Benchmark.PIDSyncInterval) * time.Millisecond
+		}
+
 		// Create collector
 		collectorConfig := collectors.CollectorConfig{
-			Frequency:    time.Duration(containerConfig.Data.Frequency) * time.Millisecond,
-			PerfConfig:   perfConfig,
-			DockerConfig: dockerConfig,
-			RDTConfig:    rdtConfig,
+			Frequency:       time.Duration(containerConfig.Data.Frequency) * time.Millisecond,
+			PIDSyncInterval: pidSyncInterval,
+			PerfConfig:      perfConfig,
+			DockerConfig:    dockerConfig,
+			RDTConfig:       rdtConfig,
 		}
 
 		collector := collectors.NewContainerCollector(containerConfig.Index, containerID, collectorConfig, containerDF)

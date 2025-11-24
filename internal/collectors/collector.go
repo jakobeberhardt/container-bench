@@ -34,10 +34,11 @@ type ContainerCollector struct {
 }
 
 type CollectorConfig struct {
-	Frequency    time.Duration
-	PerfConfig   *config.PerfConfig
-	DockerConfig *config.DockerMetricsConfig
-	RDTConfig    *config.RDTConfig
+	Frequency       time.Duration
+	PIDSyncInterval time.Duration
+	PerfConfig      *config.PerfConfig
+	DockerConfig    *config.DockerMetricsConfig
+	RDTConfig       *config.RDTConfig
 }
 
 func NewContainerCollector(containerIndex int, containerID string, config CollectorConfig, df *dataframe.ContainerDataFrame) *ContainerCollector {
@@ -79,7 +80,7 @@ func (cc *ContainerCollector) Start(ctx context.Context) error {
 	}
 
 	if cc.config.RDTConfig != nil && cc.config.RDTConfig.Enabled {
-		cc.rdtCollector, err = NewRDTCollector(cc.containerPID, cc.cgroupPath, cc.config.RDTConfig)
+		cc.rdtCollector, err = NewRDTCollector(cc.containerPID, cc.cgroupPath, cc.config.RDTConfig, cc.config.PIDSyncInterval)
 		if err != nil {
 			// Log warning but don't fail the entire collector
 			logger := logging.GetLogger()
@@ -87,6 +88,9 @@ func (cc *ContainerCollector) Start(ctx context.Context) error {
 				"container_index": cc.containerIndex,
 			}).WithError(err).Warn("Failed to enable RDT monitoring, continuing without RDT metrics")
 			cc.rdtCollector = nil
+		} else {
+			// Start the PID sync ticker
+			cc.rdtCollector.StartPIDSyncTicker()
 		}
 	}
 

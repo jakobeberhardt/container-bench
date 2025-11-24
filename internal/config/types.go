@@ -12,13 +12,14 @@ type BenchmarkConfig struct {
 }
 
 type BenchmarkInfo struct {
-	Name        string          `yaml:"name"`
-	Description string          `yaml:"description"`
-	MaxT        int             `yaml:"max_t"`
-	LogLevel    string          `yaml:"log_level"`
-	Scheduler   SchedulerConfig `yaml:"scheduler"`
-	Data        DataConfig      `yaml:"data"`
-	Docker      *DockerConfig   `yaml:"docker,omitempty"`
+	Name            string          `yaml:"name"`
+	Description     string          `yaml:"description"`
+	MaxT            int             `yaml:"max_t"`
+	PIDSyncInterval int             `yaml:"pid_sync_interval,omitempty"` // Interval in ms for syncing PIDs to RDT groups (default: 100ms)
+	LogLevel        string          `yaml:"log_level"`
+	Scheduler       SchedulerConfig `yaml:"scheduler"`
+	Data            DataConfig      `yaml:"data"`
+	Docker          *DockerConfig   `yaml:"docker,omitempty"`
 }
 
 type DockerConfig struct {
