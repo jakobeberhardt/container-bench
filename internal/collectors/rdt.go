@@ -36,6 +36,7 @@ type RDTCollector struct {
 	syncInterval time.Duration
 	syncTicker   *time.Ticker
 	syncStopChan chan struct{}
+	isClosing    bool // Flag to indicate shutdown in progress
 
 	// Mutex for thread-safe access to monGroup, ctrlGroup, className
 	mu sync.RWMutex
@@ -226,11 +227,18 @@ func countSetBits(mask uint64) uint64 {
 
 // syncCGroupPIDs reads all PIDs from the container's cgroup and adds them to the RDT monitoring group
 func (rc *RDTCollector) syncCGroupPIDs() error {
+	// Check if we're shutting down
+	rc.mu.RLock()
+	if rc.isClosing {
+		rc.mu.RUnlock()
+		return fmt.Errorf("collector is closing")
+	}
+	rc.mu.RUnlock()
+
 	if rc.cgroupPath == "" {
 		return fmt.Errorf("cgroup path not set")
 	}
 
-	// Thread-safe access to monGroup
 	rc.mu.RLock()
 	monGroup := rc.monGroup
 	rc.mu.RUnlock()
@@ -239,7 +247,6 @@ func (rc *RDTCollector) syncCGroupPIDs() error {
 		return fmt.Errorf("monitoring group not initialized")
 	}
 
-	// Get PIDs currently in the monitoring group (before sync)
 	pidsBefore, err := monGroup.GetPids()
 	if err != nil {
 		rc.logger.WithError(err).Trace("Could not get PIDs from monitoring group before sync")
@@ -253,7 +260,6 @@ func (rc *RDTCollector) syncCGroupPIDs() error {
 		return fmt.Errorf("failed to read cgroup.procs from %s: %v", cgroupProcsPath, err)
 	}
 
-	// Parse PIDs
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
 	if len(lines) == 0 {
 		rc.logger.WithField("cgroup_path", rc.cgroupPath).Trace("No PIDs found in cgroup")
@@ -273,6 +279,13 @@ func (rc *RDTCollector) syncCGroupPIDs() error {
 		return nil
 	}
 
+	rc.mu.RLock()
+	if rc.isClosing {
+		rc.mu.RUnlock()
+		return fmt.Errorf("collector is closing")
+	}
+	rc.mu.RUnlock()
+
 	if err := monGroup.AddPids(pids...); err != nil {
 		return fmt.Errorf("failed to add PIDs to RDT monitoring group: %v", err)
 	}
@@ -281,27 +294,24 @@ func (rc *RDTCollector) syncCGroupPIDs() error {
 	pidsAfter, err := monGroup.GetPids()
 	if err != nil {
 		rc.logger.WithError(err).Trace("Could not get PIDs from monitoring group after sync")
-		pidsAfter = []string{} // Continue anyway
+		pidsAfter = []string{}
 	}
 
 	rc.logger.WithFields(logrus.Fields{
-		"pid":          rc.pid,
-		"cgroup_path":  rc.cgroupPath,
-		"pids_before":  len(pidsBefore),
-		"pids_after":   len(pidsAfter),
+		"pid":            rc.pid,
+		"cgroup_path":    rc.cgroupPath,
+		"pids_before":    len(pidsBefore),
+		"pids_after":     len(pidsAfter),
 		"pids_in_cgroup": len(pids),
 	}).Debug("Synced cgroup PIDs to RDT monitoring group")
 
 	return nil
 }
 
-// SyncPIDs syncs all PIDs from the container's cgroup to the RDT monitoring group
-// This should be called after docker exec
 func (rc *RDTCollector) SyncPIDs() error {
 	return rc.syncCGroupPIDs()
 }
 
-// StartPIDSyncTicker starts a background goroutine that periodically syncs PIDs
 func (rc *RDTCollector) StartPIDSyncTicker() {
 	if rc.syncInterval == 0 {
 		rc.logger.WithField("pid", rc.pid).Debug("PID sync ticker disabled (interval is 0)")
@@ -317,11 +327,36 @@ func (rc *RDTCollector) StartPIDSyncTicker() {
 			"interval": rc.syncInterval,
 		}).Debug("RDT PID sync ticker started")
 
+		defer func() {
+			if r := recover(); r != nil {
+				rc.logger.WithFields(logrus.Fields{
+					"pid":   rc.pid,
+					"panic": r,
+				}).Error("RDT PID sync ticker panicked, recovering")
+			}
+		}()
+
 		for {
 			select {
 			case <-rc.syncTicker.C:
+				// Check if we're shutting down before syncing
+				rc.mu.RLock()
+				isClosing := rc.isClosing
+				rc.mu.RUnlock()
+
+				if isClosing {
+					rc.logger.WithField("pid", rc.pid).Trace("Skipping PID sync, collector is closing")
+					continue
+				}
+
 				if err := rc.syncCGroupPIDs(); err != nil {
-					rc.logger.WithError(err).WithField("pid", rc.pid).Trace("Failed to sync PIDs in ticker")
+					rc.mu.RLock()
+					isClosing := rc.isClosing
+					rc.mu.RUnlock()
+
+					if !isClosing {
+						rc.logger.WithError(err).WithField("pid", rc.pid).Trace("Failed to sync PIDs in ticker")
+					}
 				}
 			case <-rc.syncStopChan:
 				rc.logger.WithField("pid", rc.pid).Debug("RDT PID sync ticker stopped")
@@ -335,7 +370,13 @@ func (rc *RDTCollector) StartPIDSyncTicker() {
 func (rc *RDTCollector) StopPIDSyncTicker() {
 	if rc.syncTicker != nil {
 		rc.syncTicker.Stop()
-		close(rc.syncStopChan)
+
+		if rc.syncStopChan != nil {
+			close(rc.syncStopChan)
+		}
+
+		time.Sleep(10 * time.Millisecond)
+
 		rc.syncTicker = nil
 		rc.syncStopChan = nil
 	}
@@ -357,8 +398,7 @@ func NewRDTCollector(pid int, cgroupPath string, rdtConfig *config.RDTConfig, sy
 	return collector, nil
 }
 
-// detectAndHandleClassMigration checks if the container has been moved to a different RDT class
-// and handles the migration by deleting the old monitoring group and creating a new one
+// checks if the container has been moved to a different RDT class
 func (rc *RDTCollector) detectAndHandleClassMigration() error {
 	// Find the current RDT class for this PID
 	currentCtrlGroup, currentClassName, err := findRDTClassForPID(rc.pidStr)
@@ -368,7 +408,6 @@ func (rc *RDTCollector) detectAndHandleClassMigration() error {
 		return nil // Don't treat this as an error - container might be stopping
 	}
 
-	// Check if the class has changed (read-lock for comparison)
 	rc.mu.RLock()
 	oldClassName := rc.className
 	rc.mu.RUnlock()
@@ -379,11 +418,11 @@ func (rc *RDTCollector) detectAndHandleClassMigration() error {
 	}
 
 	rc.logger.WithFields(logrus.Fields{
-		"pid":        rc.pid,
-		"old_class":  oldClassName,
-		"new_class":  currentClassName,
-		"mon_group":  rc.monGroupName,
-	}).Info("RDT class migration detected - migrating monitoring group")
+		"pid":       rc.pid,
+		"old_class": oldClassName,
+		"new_class": currentClassName,
+		"mon_group": rc.monGroupName,
+	}).Info("Migrating monitoring group")
 
 	// Acquire write lock for migration
 	rc.mu.Lock()
@@ -423,7 +462,7 @@ func (rc *RDTCollector) detectAndHandleClassMigration() error {
 		return fmt.Errorf("failed to create monitoring group in new class %s: %v", currentClassName, err)
 	}
 
-	// Update the collector's state (already have write lock)
+	// Update the collector's state
 	rc.ctrlGroup = currentCtrlGroup
 	rc.className = currentClassName
 	rc.monGroup = newMonGroup
@@ -434,12 +473,12 @@ func (rc *RDTCollector) detectAndHandleClassMigration() error {
 	rc.firstCollection = true
 
 	rc.logger.WithFields(logrus.Fields{
-		"pid":        rc.pid,
-		"new_class":  currentClassName,
-		"mon_group":  rc.monGroupName,
+		"pid":       rc.pid,
+		"new_class": currentClassName,
+		"mon_group": rc.monGroupName,
 	}).Info("RDT monitoring group successfully migrated to new class")
 
-	// Sync PIDs to the new monitoring group (release lock first to avoid deadlock)
+	// Sync PIDs to the new monitoring group
 	rc.mu.Unlock()
 	if err := rc.syncCGroupPIDs(); err != nil {
 		rc.logger.WithError(err).WithFields(logrus.Fields{
@@ -447,7 +486,7 @@ func (rc *RDTCollector) detectAndHandleClassMigration() error {
 			"new_class": currentClassName,
 		}).Warn("Failed to sync cgroup PIDs to new monitoring group")
 	}
-	rc.mu.Lock() // Re-acquire for defer
+	rc.mu.Lock()
 
 	return nil
 }
@@ -624,7 +663,12 @@ func (rc *RDTCollector) GetPID() int {
 }
 
 func (rc *RDTCollector) Close() {
-	// Stop the PID sync ticker first
+	// Set closing flag first to stop any ongoing operations
+	rc.mu.Lock()
+	rc.isClosing = true
+	rc.mu.Unlock()
+
+	// Stop the PID sync ticker
 	rc.StopPIDSyncTicker()
 
 	if rc.rdtEnabled && rc.ctrlGroup != nil && rc.monGroupName != "" {
@@ -647,7 +691,7 @@ func (rc *RDTCollector) Close() {
 		}
 
 		rc.rdtEnabled = false
-		
+
 		rc.mu.Lock()
 		rc.monGroup = nil
 		rc.mu.Unlock()
