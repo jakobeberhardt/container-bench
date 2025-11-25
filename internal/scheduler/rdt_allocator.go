@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"container-bench/internal/logging"
+
 	"github.com/intel/goresctrl/pkg/rdt"
 	"github.com/sirupsen/logrus"
 )
@@ -15,32 +16,32 @@ import (
 type RDTAllocator interface {
 	// Initialize sets up the RDT allocator
 	Initialize() error
-	
+
 	// CreateRDTClass creates a new RDT control group with specified allocations
 	CreateRDTClass(className string, l3CachePercent float64, memBandwidthPercent float64) error
-	
+
 	// CreateAllRDTClasses creates multiple RDT classes at once in a single configuration update
-	CreateAllRDTClasses(classes map[string]struct{
-		L3CachePercent    float64
+	CreateAllRDTClasses(classes map[string]struct {
+		L3CachePercent      float64
 		MemBandwidthPercent float64
-		CacheBitMask       string
+		CacheBitMask        string
 	}) error
-	
+
 	// AssignContainerToClass assigns a container PID to an RDT class
 	AssignContainerToClass(pid int, className string) error
-	
+
 	// RemoveContainerFromClass removes a container PID from its current RDT class
 	RemoveContainerFromClass(pid int) error
-	
+
 	// GetContainerClass returns the current RDT class name for a container
 	GetContainerClass(pid int) (string, error)
-	
+
 	// ListAvailableClasses returns all available RDT classes
 	ListAvailableClasses() []string
-	
+
 	// DeleteRDTClass removes an RDT class (only if empty)
 	DeleteRDTClass(className string) error
-	
+
 	// Cleanup performs cleanup operations
 	Cleanup() error
 }
@@ -67,7 +68,7 @@ func (a *DefaultRDTAllocator) Initialize() error {
 	if !rdt.MonSupported() {
 		return fmt.Errorf("RDT not supported on this system")
 	}
-	
+
 	a.logger.Info("Initializing RDT allocator")
 	a.initialized = true
 	return nil
@@ -77,22 +78,22 @@ func (a *DefaultRDTAllocator) CreateRDTClass(className string, l3CachePercent fl
 	if !a.initialized {
 		return fmt.Errorf("RDT allocator not initialized")
 	}
-	
+
 	// Check if class already exists
 	if _, exists := rdt.GetClass(className); exists {
 		a.logger.WithField("class_name", className).Debug("RDT class already exists")
 		return nil // Return success if class already exists
 	}
-	
+
 	a.logger.WithField("class_name", className).WithField("l3_cache_percent", l3CachePercent).WithField("mem_bandwidth_percent", memBandwidthPercent).Info("RDT class created successfully")
 	return nil
 }
 
 // CreateAllRDTClasses creates all RDT classes at once in a single configuration update
-func (a *DefaultRDTAllocator) CreateAllRDTClasses(classes map[string]struct{
-	L3CachePercent    float64
+func (a *DefaultRDTAllocator) CreateAllRDTClasses(classes map[string]struct {
+	L3CachePercent      float64
 	MemBandwidthPercent float64
-	CacheBitMask       string
+	CacheBitMask        string
 }) error {
 	if !a.initialized {
 		return fmt.Errorf("RDT allocator not initialized")
@@ -162,7 +163,7 @@ func (a *DefaultRDTAllocator) CreateAllRDTClasses(classes map[string]struct{
 			},
 		},
 	}
-	
+
 	// Apply the configuration for all classes at once
 	if err := rdt.SetConfig(config, false); err != nil {
 		return fmt.Errorf("failed to create RDT classes: %v", err)
@@ -183,15 +184,15 @@ func (a *DefaultRDTAllocator) AssignContainerToClass(pid int, className string) 
 	if !a.initialized {
 		return fmt.Errorf("RDT allocator not initialized")
 	}
-	
+
 	// Get the target class
 	ctrlGroup, exists := rdt.GetClass(className)
 	if !exists {
 		return fmt.Errorf("RDT class %s not found", className)
 	}
-	
+
 	pidStr := strconv.Itoa(pid)
-	
+
 	// Remove from current class if assigned
 	if currentClass, exists := a.pidToClass[pid]; exists {
 		if currentClass == className {
@@ -203,20 +204,20 @@ func (a *DefaultRDTAllocator) AssignContainerToClass(pid int, className string) 
 			a.logger.WithError(err).Warn("Failed to remove container from current class")
 		}
 	}
-	
+
 	// Add to new class
 	if err := ctrlGroup.AddPids(pidStr); err != nil {
 		return fmt.Errorf("failed to assign PID %d to RDT class %s: %v", pid, className, err)
 	}
-	
+
 	// Track the assignment
 	a.pidToClass[pid] = className
-	
+
 	a.logger.WithFields(logrus.Fields{
 		"pid":        pid,
 		"class_name": className,
 	}).Info("Container assigned to RDT class")
-	
+
 	return nil
 }
 
@@ -254,9 +255,9 @@ func (a *DefaultRDTAllocator) RemoveContainerFromClass(pid int) error {
 	delete(a.pidToClass, pid)
 
 	a.logger.WithFields(logrus.Fields{
-		"pid":          pid,
-		"from_class":   currentClass,
-		"to_class":     defaultClass.Name(),
+		"pid":        pid,
+		"from_class": currentClass,
+		"to_class":   defaultClass.Name(),
 	}).Info("Container moved from RDT class to default")
 
 	return nil
@@ -266,11 +267,11 @@ func (a *DefaultRDTAllocator) GetContainerClass(pid int) (string, error) {
 	if !a.initialized {
 		return "", fmt.Errorf("RDT allocator not initialized")
 	}
-	
+
 	if className, exists := a.pidToClass[pid]; exists {
 		return className, nil
 	}
-	
+
 	return "", fmt.Errorf("container PID %d not tracked by allocator", pid)
 }
 
@@ -278,13 +279,13 @@ func (a *DefaultRDTAllocator) ListAvailableClasses() []string {
 	if !a.initialized {
 		return nil
 	}
-	
+
 	classes := rdt.GetClasses()
 	classNames := make([]string, len(classes))
 	for i, class := range classes {
 		classNames[i] = class.Name()
 	}
-	
+
 	return classNames
 }
 
@@ -292,7 +293,7 @@ func (a *DefaultRDTAllocator) DeleteRDTClass(className string) error {
 	if !a.initialized {
 		return fmt.Errorf("RDT allocator not initialized")
 	}
-	
+
 	// Note: goresctrl doesn't provide direct class deletion
 	// Classes are typically managed through configuration
 	return fmt.Errorf("dynamic RDT class deletion not implemented")
@@ -302,20 +303,20 @@ func (a *DefaultRDTAllocator) Cleanup() error {
 	if !a.initialized {
 		return nil
 	}
-	
+
 	a.logger.Info("Cleaning up RDT allocator")
-	
+
 	// Move all tracked PIDs back to default class
 	for pid := range a.pidToClass {
 		if err := a.RemoveContainerFromClass(pid); err != nil {
 			a.logger.WithError(err).WithField("pid", pid).Warn("Failed to cleanup PID from RDT class")
 		}
 	}
-	
+
 	// Clear tracking
 	a.pidToClass = make(map[int]string)
 	a.managedClasses = make(map[string]rdt.CtrlGroup)
 	a.initialized = false
-	
+
 	return nil
 }

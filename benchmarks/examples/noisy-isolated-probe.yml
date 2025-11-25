@@ -15,7 +15,9 @@ benchmark:
       default_t: 60
       warmup_t: 15
       cooldown_t: 0
-      default_probe_cores: 15
+      default_probe_cores:
+        socket0: 15
+        socket1: 31
       ways: 3
       mb_percent: 30
 
