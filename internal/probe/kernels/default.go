@@ -386,7 +386,7 @@ func (dpk *DefaultProbeKernel) calculateAverage(values []float64, metricName str
 			"trimmed_count":  len(trimmed),
 			"removed_bottom": sorted[0:3],
 			"removed_top":    sorted[len(sorted)-3:],
-		}).Info("Removed outliers from average calculation")
+		}).Debug("Removed outliers from average calculation")
 
 		values = trimmed
 	}
