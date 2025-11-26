@@ -17,6 +17,10 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Global mutex to protect goresctrl library calls from concurrent map access
+// See: https://github.com/intel/goresctrl/issues with concurrent DeleteMonGroup
+var rdtLibraryMutex sync.Mutex
+
 type RDTCollector struct {
 	pid          int
 	pidStr       string
@@ -88,10 +92,13 @@ func newRDTCollectorBase(pid int, cgroupPath string) (*RDTCollector, error) {
 	}
 
 	// Create monitoring group for this container
+	rdtLibraryMutex.Lock()
 	monGroup, err := ctrlGroup.CreateMonGroup(monGroupName, map[string]string{
 		"container-bench": "true",
 		"pid":             pidStr,
 	})
+	rdtLibraryMutex.Unlock()
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to create RDT monitoring group: %v", err)
 	}
@@ -430,12 +437,18 @@ func (rc *RDTCollector) detectAndHandleClassMigration() error {
 
 	// Delete the old monitoring group from the old class
 	if rc.ctrlGroup != nil && rc.monGroupName != "" {
-		if err := rc.ctrlGroup.DeleteMonGroup(rc.monGroupName); err != nil {
+		// Protect goresctrl library from concurrent map access
+		rdtLibraryMutex.Lock()
+		err := rc.ctrlGroup.DeleteMonGroup(rc.monGroupName)
+		rdtLibraryMutex.Unlock()
+
+		if err != nil {
+			// Expected when migrating from probe/others classes that were removed during teardown
 			rc.logger.WithError(err).WithFields(logrus.Fields{
 				"pid":       rc.pid,
 				"old_class": oldClassName,
 				"mon_group": rc.monGroupName,
-			}).Warn("Failed to delete old monitoring group during migration")
+			}).Debug("Old monitoring group already deleted (expected during isolation teardown)")
 			// Continue anyway - we'll create the new one
 		} else {
 			rc.logger.WithFields(logrus.Fields{
@@ -447,10 +460,13 @@ func (rc *RDTCollector) detectAndHandleClassMigration() error {
 	}
 
 	// Create new monitoring group in the new class
+	rdtLibraryMutex.Lock()
 	newMonGroup, err := currentCtrlGroup.CreateMonGroup(rc.monGroupName, map[string]string{
 		"container-bench": "true",
 		"pid":             rc.pidStr,
 	})
+	rdtLibraryMutex.Unlock()
+
 	if err != nil {
 		rc.logger.WithError(err).WithFields(logrus.Fields{
 			"pid":       rc.pid,
@@ -484,7 +500,7 @@ func (rc *RDTCollector) detectAndHandleClassMigration() error {
 		rc.logger.WithError(err).WithFields(logrus.Fields{
 			"pid":       rc.pid,
 			"new_class": currentClassName,
-		}).Warn("Failed to sync cgroup PIDs to new monitoring group")
+		}).Trace("Could not sync PIDs to monitoring group after migration")
 	}
 	rc.mu.Lock()
 

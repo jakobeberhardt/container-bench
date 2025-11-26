@@ -48,6 +48,8 @@ type ProberConfig struct {
 	CooldownT         int    `yaml:"cooldown_t,omitempty"`
 	DefaultProbeCores string `yaml:"default_probe_cores,omitempty"`
 	ProbeImage        string `yaml:"probe_image,omitempty"`
+	Ways              string `yaml:"ways,omitempty"`
+	MemBW             int    `yaml:"mem_bw,omitempty"`
 }
 
 type DataConfig struct {

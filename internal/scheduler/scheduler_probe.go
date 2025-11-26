@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/intel/goresctrl/pkg/rdt"
 	"github.com/sirupsen/logrus"
 )
 
@@ -23,21 +24,27 @@ type ProbeScheduler struct {
 	prober          *probe.Probe
 	config          *config.SchedulerConfig
 
+	// RDT probe isolation
+	isolationManager *ProbeIsolationManager
+
 	// Probing state
 	probingStarted      bool
 	nextProbeIndex      int
 	activeProbe         <-chan *probe.ProbeResult
 	lastProbeFinishTime time.Time
 	warmupCompleteTime  time.Time
+	currentTargetPID    int // PID of container being probed
 }
 
 func NewProbeScheduler() *ProbeScheduler {
+	logger := logging.GetSchedulerLogger()
 	return &ProbeScheduler{
-		name:            "probe",
-		version:         "1.0.0",
-		schedulerLogger: logging.GetSchedulerLogger(),
-		probingStarted:  false,
-		nextProbeIndex:  0,
+		name:             "probe",
+		version:          "1.0.0",
+		schedulerLogger:  logger,
+		probingStarted:   false,
+		nextProbeIndex:   0,
+		isolationManager: NewProbeIsolationManager(logger),
 	}
 }
 
@@ -110,6 +117,14 @@ func (ps *ProbeScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) er
 				}).Info("Probe completed")
 			}
 
+			// Teardown RDT isolation after probe completes
+			if ps.isolationManager.IsActive() {
+				ps.schedulerLogger.Info("Tearing down RDT probe isolation")
+				if err := ps.isolationManager.TeardownProbeIsolation(); err != nil {
+					ps.schedulerLogger.WithError(err).Error("Failed to teardown RDT isolation")
+				}
+			}
+
 			ps.activeProbe = nil
 			ps.lastProbeFinishTime = time.Now()
 		default:
@@ -149,6 +164,8 @@ func (ps *ProbeScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) er
 		isolated := true
 		probeDuration := 30 * time.Second
 		probeCores := "1"
+		probeWays := ""
+		probeMemBW := 0
 		if ps.config != nil && ps.config.Prober != nil {
 			abortable = ps.config.Prober.Abortable
 			isolated = ps.config.Prober.Isolated
@@ -158,6 +175,8 @@ func (ps *ProbeScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) er
 			if ps.config.Prober.DefaultProbeCores != "" {
 				probeCores = ps.config.Prober.DefaultProbeCores
 			}
+			probeWays = ps.config.Prober.Ways
+			probeMemBW = ps.config.Prober.MemBW
 		}
 
 		ps.schedulerLogger.WithFields(logrus.Fields{
@@ -167,9 +186,44 @@ func (ps *ProbeScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) er
 			"probe_cores":     probeCores,
 			"abortable":       abortable,
 			"isolated":        isolated,
+			"probe_ways":      probeWays,
+			"probe_mem_bw":    probeMemBW,
 		}).Info("Starting probe")
 
-		// Create probe request
+		// Store target container PID for RDT isolation
+		ps.currentTargetPID = containerInfo.PID
+
+		// Setup RDT isolation if configured
+		if isolated && probeWays != "" && probeMemBW > 0 {
+			// Collect PIDs and container IDs of all other containers (not the target being probed)
+			var otherPIDs []int
+			var otherContainerIDs []string
+			for _, c := range ps.containers {
+				if c.Index != containerInfo.Index && c.PID > 0 {
+					otherPIDs = append(otherPIDs, c.PID)
+					otherContainerIDs = append(otherContainerIDs, c.ContainerID)
+				}
+			}
+
+			// Probe container ID will be added via callback, so we initially just have target container
+			probeContainerIDs := []string{containerInfo.ContainerID}
+
+			ps.schedulerLogger.WithFields(logrus.Fields{
+				"target_pid":       containerInfo.PID,
+				"target_container": containerInfo.ContainerID[:12],
+				"other_pids":       len(otherPIDs),
+				"other_containers": len(otherContainerIDs),
+				"probe_ways":       probeWays,
+				"probe_mem_bw":     probeMemBW,
+			}).Info("Setting up RDT isolation for probe")
+
+			// Initially setup with target PID only, probe container PID will be added via callback
+			if err := ps.isolationManager.SetupProbeIsolation(probeWays, probeMemBW, []int{containerInfo.PID}, otherPIDs, probeContainerIDs, otherContainerIDs); err != nil {
+				ps.schedulerLogger.WithError(err).Error("Failed to setup RDT isolation, continuing without isolation")
+			}
+		}
+
+		// Create probe request with PID callback
 		req := probe.ProbeRequest{
 			ContainerConfig: containerInfo.Config,
 			ContainerID:     containerInfo.ContainerID,
@@ -179,6 +233,28 @@ func (ps *ProbeScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) er
 			ProbeSocket:     0,
 			Isolated:        isolated,
 			Abortable:       abortable,
+			ProbePIDCallback: func(probePID int, probeContainerID string) {
+				// When probe container starts, add its PID to the probe RDT class
+				// and add its cgroup path for PID syncing
+				if ps.isolationManager.IsActive() {
+					// Add cgroup path for ongoing PID sync
+					cgroupPath := fmt.Sprintf("/sys/fs/cgroup/system.slice/docker-%s.scope", probeContainerID)
+					ps.isolationManager.AddProbeCgroupPath(cgroupPath)
+
+					// Add initial PID to probe class
+					probeClass, ok := rdt.GetClass("probe")
+					if ok {
+						if err := probeClass.AddPids(fmt.Sprintf("%d", probePID)); err != nil {
+							ps.schedulerLogger.WithError(err).WithField("probe_pid", probePID).Error("Failed to add probe PID to RDT class")
+						} else {
+							ps.schedulerLogger.WithFields(logrus.Fields{
+								"probe_pid":          probePID,
+								"probe_container_id": probeContainerID[:12],
+							}).Info("Added probe container to probe RDT class")
+						}
+					}
+				}
+			},
 		}
 
 		// Launch probe asynchronously
@@ -220,6 +296,15 @@ func (ps *ProbeScheduler) Shutdown() error {
 			}).Info("Final probe completed")
 		}
 	}
+
+	// Ensure RDT isolation is torn down on shutdown
+	if ps.isolationManager.IsActive() {
+		ps.schedulerLogger.Info("Cleaning up RDT isolation on shutdown")
+		if err := ps.isolationManager.TeardownProbeIsolation(); err != nil {
+			ps.schedulerLogger.WithError(err).Error("Failed to teardown RDT isolation during shutdown")
+		}
+	}
+
 	return nil
 }
 

@@ -53,14 +53,15 @@ func NewProbe(
 }
 
 type ProbeRequest struct {
-	ContainerConfig *config.ContainerConfig
-	ContainerID     string
-	Dataframes      *dataframe.DataFrames
-	ProbeDuration   time.Duration
-	ProbeCores      string
-	ProbeSocket     int
-	Isolated        bool
-	Abortable       bool
+	ContainerConfig  *config.ContainerConfig
+	ContainerID      string
+	Dataframes       *dataframe.DataFrames
+	ProbeDuration    time.Duration
+	ProbeCores       string
+	ProbeSocket      int
+	Isolated         bool
+	Abortable        bool
+	ProbePIDCallback func(int, string)
 }
 
 // Returns a channel that will receive the ProbeResult asynchronously
@@ -125,6 +126,20 @@ func (p *Probe) executeProbe(ctx context.Context, req ProbeRequest) *ProbeResult
 	result.ProbingContainerName = fmt.Sprintf("probe-%d-container-%d", p.benchmarkID, req.ContainerConfig.Index)
 	result.ProbingContainerCores = req.ProbeCores
 	result.ProbingContainerSocket = req.ProbeSocket
+
+	// Get probe container PID and notify scheduler for RDT isolation
+	if req.ProbePIDCallback != nil {
+		inspect, err := p.dockerClient.ContainerInspect(ctx, probingContainerID)
+		if err == nil && inspect.State != nil && inspect.State.Pid > 0 {
+			req.ProbePIDCallback(inspect.State.Pid, probingContainerID)
+			p.logger.WithFields(logrus.Fields{
+				"probe_pid":          inspect.State.Pid,
+				"probe_container_id": probingContainerID[:12],
+			}).Debug("Notified scheduler of probe container PID and ID")
+		} else {
+			p.logger.WithError(err).Warn("Failed to get probe container PID for RDT isolation")
+		}
+	}
 
 	// Delegate to ProbeKernel to execute stress tests and analyze sensitivity
 	p.logger.WithField("container_index", req.ContainerConfig.Index).Debug("Kernel executing probe sequence")
@@ -202,6 +217,9 @@ func (p *Probe) startProbingContainer(ctx context.Context, cores string, socket 
 
 	// containerName := fmt.Sprintf("probe-%d-%d", p.benchmarkID, time.Now().Unix())
 	containerName := "probe"
+
+	// TODO: Handle this
+	p.dockerClient.ContainerRemove(ctx, containerName, types.ContainerRemoveOptions{Force: true})
 
 	config := &container.Config{
 		Image: p.probeImage,
