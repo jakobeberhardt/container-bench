@@ -1,0 +1,42 @@
+benchmark:
+  name: Compile Linux
+  description: Probes a container which builds the linux kernel
+  max_t: 75
+  log_level: info
+  scheduler:
+    implementation: probe
+    rdt: false
+    log_level: error
+    prober:
+      implementation: default
+      abortable: false
+      isolated: true
+      default_t: 60
+      warmup_t: 10
+      cooldown_t: 0
+      default_probe_cores: 1
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+compile:
+  index: 0
+  image: registry.jakob-eberhardt.de/rdt4nn/compile/linux:latest
+  core: 0
+  command: "make defconfig && make -j4"
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false

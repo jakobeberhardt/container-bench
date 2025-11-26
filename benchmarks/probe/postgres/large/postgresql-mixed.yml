@@ -1,6 +1,6 @@
 benchmark:
-  name: PostgreSQL Probe Mixed/Large
-  description: Probes a PostgreSQL container working on large data set with mixed operations
+  name: Postgres Probe
+  description: A benchmark for showcasing the noisy neighbor problem
   max_t: 80
   log_level: info
   scheduler:
@@ -9,12 +9,14 @@ benchmark:
     log_level: error
     prober:
       implementation: default
-      abortable: true
-      isolated: true
+      abortable: false
+      isolated: false
       default_t: 60
       warmup_t: 15
       cooldown_t: 0
-      default_probe_cores: 1
+      default_probe_cores: 15
+      ways: 0-2
+      mem_bw: 30 
   data:
     db:
       host: ${INFLUXDB_HOST}
@@ -28,7 +30,7 @@ benchmark:
       username: ${DOCKER_REGISTRY_USERNAME}
       password: ${DOCKER_REGISTRY_PASSWORD}
 
-postgres:
+database:
   index: 0
   image: registry.jakob-eberhardt.de/rdt4nn/postgres:latest
   port: 5432:5432
@@ -38,17 +40,188 @@ postgres:
     perf:
       instructions: true
       cycles: true
-    docker: false
-    rdt: false
+      stalls_total: true
+    docker: true
+    rdt: true
 
-# load:
-#   index: 1
-#   image: registry.jakob-eberhardt.de/rdt4nn/postgres:latest
-#   core: 16-19
-#   command: "sleep 1 && pgbench -i -s 30 -h postgres -U benchmark benchmark && pgbench -c 16 -j 16 -T 3600 -h postgres -U benchmark benchmark"
-#   data:
-#     frequency: 100
-#     perf: false
-#     docker:
-#       cpu_usage_percent: true
-#     rdt: false
+matrix3d-0:
+  index: 1
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "while true; do stress-ng --matrix-3d 1 -t $(shuf -i 1-5 -n 1)s; sleep $(shuf -i 1-5 -n 1); done"
+  core: 1
+  data:
+    frequency: 2000
+    perf: false
+    docker:
+      cpu_usage_percent: true
+      memory_usage: true
+    rdt: true
+
+matrix3d-1:
+  index: 2
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "while true; do stress-ng --matrix-3d 1 -t $(shuf -i 1-5 -n 1)s; sleep $(shuf -i 1-5 -n 1); done"
+  core: 2
+  data:
+    frequency: 2000
+    perf: false
+    docker:
+      cpu_usage_percent: true
+      memory_usage: true
+    rdt: true
+
+matrix3d-2:
+  index: 3
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "while true; do stress-ng --matrix-3d 1 -t $(shuf -i 1-5 -n 1)s; sleep $(shuf -i 1-5 -n 1); done"
+  core: 3
+  data:
+    frequency: 2000
+    perf: false
+    docker:
+      cpu_usage_percent: true
+      memory_usage: true
+    rdt: true
+
+tsearch-0:
+  index: 4
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "while true; do stress-ng --tsearch 1 -t $(shuf -i 1-5 -n 1)s; sleep $(shuf -i 1-5 -n 1); done"
+  core: 4
+  data:
+    frequency: 2000
+    perf: false
+    docker:
+      cpu_usage_percent: true
+      memory_usage: true
+    rdt: true
+
+tsearch-1:
+  index: 5
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "while true; do stress-ng --tsearch 1 -t $(shuf -i 1-5 -n 1)s; sleep $(shuf -i 1-5 -n 1); done"
+  core: 5
+  data:
+    frequency: 2000
+    perf: false
+    docker:
+      cpu_usage_percent: true
+      memory_usage: true
+    rdt: true
+
+tsearch-2:
+  index: 6
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "while true; do stress-ng --tsearch 1 -t $(shuf -i 1-5 -n 1)s; sleep $(shuf -i 1-5 -n 1); done"
+  core: 6
+  data:
+    frequency: 2000
+    perf: false
+    docker:
+      cpu_usage_percent: true
+      memory_usage: true
+    rdt: true
+
+tsearch-3:
+  index: 7
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "while true; do stress-ng --tsearch 1 -t $(shuf -i 1-5 -n 1)s; sleep $(shuf -i 1-5 -n 1); done"
+  core: 7
+  data:
+    frequency: 2000
+    perf: false
+    docker:
+      cpu_usage_percent: true
+      memory_usage: true
+    rdt: true
+
+vm-0:
+  index: 8
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "while true; do stress-ng --vm 1 -t $(shuf -i 1-5 -n 1)s; sleep $(shuf -i 1-5 -n 1); done"
+  core: 8
+  data:
+    frequency: 2000
+    perf: false
+    docker:
+      cpu_usage_percent: true
+      memory_usage: true
+    rdt: true
+
+vm-1:
+  index: 9
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "while true; do stress-ng --vm 1 -t $(shuf -i 1-5 -n 1)s; sleep $(shuf -i 1-5 -n 1); done"
+  core: 9
+  data:
+    frequency: 2000
+    perf: false
+    docker:
+      cpu_usage_percent: true
+      memory_usage: true
+    rdt: true
+
+vm-2:
+  index: 10
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "while true; do stress-ng --vm 1 -t $(shuf -i 1-5 -n 1)s; sleep $(shuf -i 1-5 -n 1); done"
+  core: 10
+  data:
+    frequency: 2000
+    perf: false
+    docker:
+      cpu_usage_percent: true
+      memory_usage: true
+    rdt: true
+
+stream-0:
+  index: 11
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "while true; do stress-ng --stream 1 -t $(shuf -i 1-5 -n 1)s; sleep $(shuf -i 1-5 -n 1); done"
+  core: 11
+  data:
+    frequency: 2000
+    perf: false
+    docker:
+      cpu_usage_percent: true
+      memory_usage: true
+    rdt: true
+
+stream-1:
+  index: 12
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "while true; do stress-ng --stream 1 -t $(shuf -i 1-5 -n 1)s; sleep $(shuf -i 1-5 -n 1); done"
+  core: 12
+  data:
+    frequency: 2000
+    perf: false
+    docker:
+      cpu_usage_percent: true
+      memory_usage: true
+    rdt: true
+
+stream-2:
+  index: 13
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "while true; do stress-ng --stream 1 -t $(shuf -i 1-5 -n 1)s; sleep $(shuf -i 1-5 -n 1); done"
+  core: 13
+  data:
+    frequency: 2000
+    perf: false
+    docker:
+      cpu_usage_percent: true
+      memory_usage: true
+    rdt: true
+
+stream-3:
+  index: 14
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "while true; do stress-ng --stream 1 -t $(shuf -i 1-5 -n 1)s; sleep $(shuf -i 1-5 -n 1); done"
+  core: 14
+  data:
+    frequency: 2000
+    perf: false
+    docker:
+      cpu_usage_percent: true
+      memory_usage: true
+    rdt: true

@@ -1,7 +1,7 @@
 benchmark:
-  name: Introduction Noisy Probe for DB
+  name: Random Introduction Noisy Probe for DB
   description: A benchmark for showcasing the noisy neighbor problem
-  max_t: 44
+  max_t: 80
   log_level: info
   scheduler:
     implementation: probe
@@ -10,11 +10,13 @@ benchmark:
     prober:
       implementation: default
       abortable: false
-      isolated: true
-      default_t: 24
+      isolated: false
+      default_t: 60
       warmup_t: 15
       cooldown_t: 0
       default_probe_cores: 15
+      ways: 0-2
+      mem_bw: 30 
   data:
     db:
       host: ${INFLUXDB_HOST}
