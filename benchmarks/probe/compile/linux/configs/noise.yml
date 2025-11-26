@@ -1,7 +1,7 @@
 benchmark:
-  name: Isolated Noise Compile Linux
+  name: Noisy Unisolated Compile Linux
   description: Probes a container which builds the linux kernel
-  max_t: 70
+  max_t: 95
   log_level: info
   scheduler:
     implementation: probe
@@ -10,9 +10,9 @@ benchmark:
     prober:
       implementation: default
       abortable: false
-      isolated: true
+      isolated: false
       default_t: 60
-      warmup_t: 5
+      warmup_t: 25
       cooldown_t: 0
       default_probe_cores: 15
       ways: 0-2
