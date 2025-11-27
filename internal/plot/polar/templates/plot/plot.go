@@ -7,10 +7,10 @@ const PlotTemplate = `% Generated on {{.GeneratedDate}}
 \begin{polaraxis}[
   width=9cm,
   grid=both,
-  ymin=0, ymax=1,
+  ymin=0, ymax=0.3,
   xtick={0,72,144,216,288},
   xticklabels={
-    LLC,
+    {\hspace{1ex}LLC},
     Mem Read,
     Mem Write,
     Syscall,
@@ -19,7 +19,7 @@ const PlotTemplate = `% Generated on {{.GeneratedDate}}
   legend columns=2,
   % legend style={font=\scriptsize, column sep=6pt},
   % legend to name=polar-legend-{{.LabelID}},
-  % every axis legend/.code={\let\addlegendentry\relax},
+  every axis legend/.code={\let\addlegendentry\relax},
 ]
 
 {{range .Probes}}
