@@ -147,7 +147,6 @@ func findRDTClassForPID(pidStr string) (rdt.CtrlGroup, string, error) {
 }
 
 // Reads allocation information directly from the resctrl filesystem
-// TODO: We should do this using gorestctl
 func (rc *RDTCollector) readAllocationFromResctrl() (uint64, float64, error) {
 	className := rc.ctrlGroup.Name()
 	// Construct path to schemata file for this class
@@ -206,7 +205,6 @@ func (rc *RDTCollector) parseL3Allocation(l3Line string) (uint64, float64, error
 	ways := countSetBits(maskValue)
 
 	// Calculate percentage based on total cache ways
-	// TODO: check the host info
 	var percentage float64
 	if rc.hostConfig != nil && rc.hostConfig.L3Cache.WaysPerCache > 0 {
 		percentage = float64(ways) / float64(rc.hostConfig.L3Cache.WaysPerCache) * 100.0
@@ -241,10 +239,15 @@ func (rc *RDTCollector) syncCGroupPIDs() error {
 
 	rc.mu.RLock()
 	monGroup := rc.monGroup
+	ctrlGroup := rc.ctrlGroup
 	rc.mu.RUnlock()
 
 	if monGroup == nil {
 		return fmt.Errorf("monitoring group not initialized")
+	}
+
+	if ctrlGroup == nil {
+		return fmt.Errorf("control group not initialized")
 	}
 
 	pidsBefore, err := monGroup.GetPids()
@@ -286,6 +289,20 @@ func (rc *RDTCollector) syncCGroupPIDs() error {
 	}
 	rc.mu.RUnlock()
 
+	// PIDs must be added to the control group BEFORE adding to monitoring group
+	// The monitoring group is a subdivision within the control group
+	// Step 1: Add all PIDs to the parent control group first
+	if err := ctrlGroup.AddPids(pids...); err != nil {
+		return fmt.Errorf("failed to add PIDs to RDT control group %s: %v", ctrlGroup.Name(), err)
+	}
+
+	rc.logger.WithFields(logrus.Fields{
+		"pid":        rc.pid,
+		"ctrl_group": ctrlGroup.Name(),
+		"pids_count": len(pids),
+	}).Trace("Added PIDs to RDT control group")
+
+	// Step 2: Now add PIDs to the monitoring group (which is within the control group)
 	if err := monGroup.AddPids(pids...); err != nil {
 		return fmt.Errorf("failed to add PIDs to RDT monitoring group: %v", err)
 	}
@@ -293,17 +310,19 @@ func (rc *RDTCollector) syncCGroupPIDs() error {
 	// Get PIDs after sync
 	pidsAfter, err := monGroup.GetPids()
 	if err != nil {
-		rc.logger.WithError(err).Trace("Could not get PIDs from monitoring group after sync")
+		rc.logger.WithError(err).Error("Could not get PIDs from monitoring group after sync")
 		pidsAfter = []string{}
 	}
 
 	rc.logger.WithFields(logrus.Fields{
 		"pid":            rc.pid,
 		"cgroup_path":    rc.cgroupPath,
+		"ctrl_group":     ctrlGroup.Name(),
+		"mon_group":      monGroup.Name(),
 		"pids_before":    len(pidsBefore),
 		"pids_after":     len(pidsAfter),
 		"pids_in_cgroup": len(pids),
-	}).Debug("Synced cgroup PIDs to RDT monitoring group")
+	}).Trace("Synced cgroup PIDs to RDT monitoring group")
 
 	return nil
 }
@@ -325,7 +344,7 @@ func (rc *RDTCollector) StartPIDSyncTicker() {
 		rc.logger.WithFields(logrus.Fields{
 			"pid":      rc.pid,
 			"interval": rc.syncInterval,
-		}).Debug("RDT PID sync ticker started")
+		}).Info("RDT PID sync ticker started")
 
 		defer func() {
 			if r := recover(); r != nil {
@@ -349,6 +368,20 @@ func (rc *RDTCollector) StartPIDSyncTicker() {
 					continue
 				}
 
+				// Detect and handle class migration before syncing PIDs
+				// This ensures child processes are added to the correct RDT class
+				// if a scheduler has moved the container to a different class
+				if err := rc.detectAndHandleClassMigration(); err != nil {
+					rc.mu.RLock()
+					isClosing := rc.isClosing
+					rc.mu.RUnlock()
+
+					if !isClosing {
+						rc.logger.WithError(err).WithField("pid", rc.pid).Trace("Failed to handle class migration in ticker")
+					}
+				}
+
+				// Now sync all PIDs to the (potentially new) monitoring group
 				if err := rc.syncCGroupPIDs(); err != nil {
 					rc.mu.RLock()
 					isClosing := rc.isClosing
@@ -405,7 +438,7 @@ func (rc *RDTCollector) detectAndHandleClassMigration() error {
 	if err != nil {
 		// PID might not be in any class (container terminated or not yet assigned)
 		rc.logger.WithError(err).WithField("pid", rc.pid).Trace("Could not find RDT class for PID during migration check")
-		return nil // Don't treat this as an error - container might be stopping
+		return nil
 	}
 
 	rc.mu.RLock()
