@@ -10,44 +10,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// RDTAllocator provides an interface for RDT resource allocation operations
-// This is used by schedulers to allocate cache and memory bandwidth resources
-// to containers while maintaining separation from monitoring operations
-type RDTAllocator interface {
-	// Initialize sets up the RDT allocator
-	Initialize() error
-
-	// CreateRDTClass creates a new RDT control group with specified allocations
-	CreateRDTClass(className string, l3CachePercent float64, memBandwidthPercent float64) error
-
-	// CreateAllRDTClasses creates multiple RDT classes at once in a single configuration update
-	CreateAllRDTClasses(classes map[string]struct {
-		L3CachePercent      float64
-		MemBandwidthPercent float64
-		CacheBitMask        string
-	}) error
-
-	// AssignContainerToClass assigns a container PID to an RDT class
-	AssignContainerToClass(pid int, className string) error
-
-	// RemoveContainerFromClass removes a container PID from its current RDT class
-	RemoveContainerFromClass(pid int) error
-
-	// GetContainerClass returns the current RDT class name for a container
-	GetContainerClass(pid int) (string, error)
-
-	// ListAvailableClasses returns all available RDT classes
-	ListAvailableClasses() []string
-
-	// DeleteRDTClass removes an RDT class (only if empty)
-	DeleteRDTClass(className string) error
-
-	// Cleanup performs cleanup operations
-	Cleanup() error
-}
-
 // DefaultRDTAllocator implements the RDTAllocator interface using goresctrl
-// Uses RDT system as single source of truth - no internal PID tracking
+// Uses RDT system, no internal PID tracking
 type DefaultRDTAllocator struct {
 	logger         *logrus.Logger
 	initialized    bool
@@ -73,7 +37,23 @@ func (a *DefaultRDTAllocator) Initialize() error {
 	return nil
 }
 
-func (a *DefaultRDTAllocator) CreateRDTClass(className string, l3CachePercent float64, memBandwidthPercent float64) error {
+// Helper: resolve SocketAllocation to CacheProportion (bitmask only)
+func (a *DefaultRDTAllocator) resolveL3Allocation(alloc *SocketAllocation) (rdt.CacheProportion, error) {
+	if alloc == nil || alloc.L3Bitmask == "" {
+		return "", nil
+	}
+	return rdt.CacheProportion(alloc.L3Bitmask), nil
+}
+
+// Helper: resolve memory bandwidth allocation
+func resolveMBAllocation(alloc *SocketAllocation) rdt.MbProportion {
+	if alloc == nil || alloc.MemBandwidth <= 0 {
+		return ""
+	}
+	return rdt.MbProportion(fmt.Sprintf("%.0f%%", alloc.MemBandwidth))
+}
+
+func (a *DefaultRDTAllocator) CreateRDTClass(className string, socket0, socket1 *SocketAllocation) error {
 	if !a.initialized {
 		return fmt.Errorf("RDT allocator not initialized")
 	}
@@ -84,41 +64,53 @@ func (a *DefaultRDTAllocator) CreateRDTClass(className string, l3CachePercent fl
 		return nil
 	}
 
-	// Convert from fraction (0.0-1.0) to percentage (0-100)
-	l3Percent := l3CachePercent * 100
-	mbPercent := memBandwidthPercent * 100
-
-	// Create a single class using CreateAllRDTClasses
+	// Create using CreateAllRDTClasses
 	classes := map[string]struct {
-		L3CachePercent      float64
-		MemBandwidthPercent float64
-		CacheBitMask        string
+		Socket0 *SocketAllocation
+		Socket1 *SocketAllocation
 	}{
 		className: {
-			L3CachePercent:      l3Percent,
-			MemBandwidthPercent: mbPercent,
-			CacheBitMask:        "",
+			Socket0: socket0,
+			Socket1: socket1,
 		},
 	}
 
-	// Use the existing CreateAllRDTClasses implementation
 	if err := a.CreateAllRDTClasses(classes); err != nil {
 		return fmt.Errorf("failed to create RDT class %s: %w", className, err)
 	}
 
-	a.logger.WithFields(logrus.Fields{
-		"class_name":            className,
-		"l3_cache_percent":      l3Percent,
-		"mem_bandwidth_percent": mbPercent,
-	}).Info("RDT class created successfully")
+	a.logger.WithField("class_name", className).Info("RDT class created successfully")
+	return nil
+}
+
+func (a *DefaultRDTAllocator) UpdateRDTClass(className string, socket0, socket1 *SocketAllocation) error {
+	if !a.initialized {
+		return fmt.Errorf("RDT allocator not initialized")
+	}
+
+	// Update using CreateAllRDTClasses (SetConfig handles updates)
+	classes := map[string]struct {
+		Socket0 *SocketAllocation
+		Socket1 *SocketAllocation
+	}{
+		className: {
+			Socket0: socket0,
+			Socket1: socket1,
+		},
+	}
+
+	if err := a.CreateAllRDTClasses(classes); err != nil {
+		return fmt.Errorf("failed to update RDT class %s: %w", className, err)
+	}
+
+	a.logger.WithField("class_name", className).Info("RDT class updated successfully")
 	return nil
 }
 
 // CreateAllRDTClasses creates all RDT classes at once in a single configuration update
 func (a *DefaultRDTAllocator) CreateAllRDTClasses(classes map[string]struct {
-	L3CachePercent      float64
-	MemBandwidthPercent float64
-	CacheBitMask        string
+	Socket0 *SocketAllocation
+	Socket1 *SocketAllocation
 }) error {
 	if !a.initialized {
 		return fmt.Errorf("RDT allocator not initialized")
@@ -135,30 +127,52 @@ func (a *DefaultRDTAllocator) CreateAllRDTClasses(classes map[string]struct {
 	})
 
 	for className, classConfig := range classes {
+		// Build L3 allocation for socket 0 and 1
+		l3Config := rdt.CatConfig{}
+
+		if classConfig.Socket0 != nil {
+			l3Alloc, err := a.resolveL3Allocation(classConfig.Socket0)
+			if err != nil {
+				return fmt.Errorf("failed to resolve L3 allocation for %s socket0: %w", className, err)
+			}
+			if l3Alloc != "" {
+				l3Config["0"] = rdt.CacheIdCatConfig{Unified: l3Alloc}
+			}
+		}
+
+		if classConfig.Socket1 != nil {
+			l3Alloc, err := a.resolveL3Allocation(classConfig.Socket1)
+			if err != nil {
+				return fmt.Errorf("failed to resolve L3 allocation for %s socket1: %w", className, err)
+			}
+			if l3Alloc != "" {
+				l3Config["1"] = rdt.CacheIdCatConfig{Unified: l3Alloc}
+			}
+		}
+
+		// Build MB allocation for socket 0 and 1
+		mbConfig := rdt.MbaConfig{}
+
+		if classConfig.Socket0 != nil {
+			if mbAlloc := resolveMBAllocation(classConfig.Socket0); mbAlloc != "" {
+				mbConfig["0"] = rdt.CacheIdMbaConfig{mbAlloc}
+			}
+		}
+
+		if classConfig.Socket1 != nil {
+			if mbAlloc := resolveMBAllocation(classConfig.Socket1); mbAlloc != "" {
+				mbConfig["1"] = rdt.CacheIdMbaConfig{mbAlloc}
+			}
+		}
+
 		configClasses[className] = struct {
 			L2Allocation rdt.CatConfig         `json:"l2Allocation"`
 			L3Allocation rdt.CatConfig         `json:"l3Allocation"`
 			MBAllocation rdt.MbaConfig         `json:"mbAllocation"`
 			Kubernetes   rdt.KubernetesOptions `json:"kubernetes"`
 		}{
-			L3Allocation: rdt.CatConfig{
-				"0": rdt.CacheIdCatConfig{
-					Unified: func() rdt.CacheProportion {
-						if classConfig.CacheBitMask != "" {
-							return rdt.CacheProportion(classConfig.CacheBitMask)
-						}
-						return rdt.CacheProportion(fmt.Sprintf("%.0f%%", classConfig.L3CachePercent))
-					}(),
-				},
-			},
-			MBAllocation: func() rdt.MbaConfig {
-				if classConfig.MemBandwidthPercent > 0 {
-					return rdt.MbaConfig{
-						"0": rdt.CacheIdMbaConfig{rdt.MbProportion(fmt.Sprintf("%.0f%%", classConfig.MemBandwidthPercent))},
-					}
-				}
-				return rdt.MbaConfig{}
-			}(),
+			L3Allocation: l3Config,
+			MBAllocation: mbConfig,
 		}
 	}
 

@@ -1,13 +1,12 @@
 package scheduler
 
 import (
-	"container-bench/internal/allocation"
+	"container-bench/internal/accounting"
 	"container-bench/internal/config"
 	"container-bench/internal/dataframe"
 	"container-bench/internal/host"
 	"container-bench/internal/logging"
 	"container-bench/internal/probe"
-	"slices"
 
 	"time"
 
@@ -20,11 +19,12 @@ type AllocationScheduler struct {
 	schedulerLogger    *logrus.Logger
 	hostConfig         *host.HostConfig
 	containers         []ContainerInfo
-	rdtAllocator       allocation.RDTAllocator
+	rdtAccountant      *accounting.RDTAccountant
 	prober             *probe.Probe
 	config             *config.SchedulerConfig
 	accounting         Accounts
 	warmupCompleteTime time.Time
+	classCreated       bool
 }
 
 type Accounts struct {
@@ -44,12 +44,14 @@ func NewAllocationScheduler() *AllocationScheduler {
 	}
 }
 
-func (as *AllocationScheduler) Initialize(allocator allocation.RDTAllocator, containers []ContainerInfo, schedulerConfig *config.SchedulerConfig) error {
-	as.rdtAllocator = allocator
+func (as *AllocationScheduler) Initialize(accountant *accounting.RDTAccountant, containers []ContainerInfo, schedulerConfig *config.SchedulerConfig) error {
+	// Store the accountant directly
+	as.rdtAccountant = accountant
 	as.containers = containers
 	as.config = schedulerConfig
 	as.accounting = Accounts{}
 	as.accounting.accounts = make([]Account, len(containers))
+	as.classCreated = false
 
 	for i, _ := range containers {
 		as.accounting.accounts[i] = Account{
@@ -78,6 +80,47 @@ func (as *AllocationScheduler) ProcessDataFrames(dataframes *dataframe.DataFrame
 		return nil
 	}
 
+	// Create victim class with 30% cache allocation after warmup (once)
+	if !as.classCreated {
+		className := "victim-test"
+		err := as.rdtAccountant.CreateClass(className,
+			&accounting.AllocationRequest{
+				L3Percent:    30.0, // 30% of L3 cache
+				MemBandwidth: 30.0, // 30% of memory bandwidth
+			},
+			&accounting.AllocationRequest{
+				L3Percent:    30.0,
+				MemBandwidth: 30.0,
+			},
+		)
+
+		if err != nil {
+			as.schedulerLogger.WithError(err).Error("Failed to create RDT class")
+		} else {
+			as.classCreated = true
+			as.schedulerLogger.WithField("class", className).Info("RDT class created with 30% cache allocation")
+
+			// Assign all containers to the class
+			for i, container := range as.containers {
+				if container.PID != 0 {
+					err := as.rdtAccountant.MoveContainer(container.PID, className)
+					if err != nil {
+						as.schedulerLogger.WithError(err).WithFields(logrus.Fields{
+							"container": i,
+							"pid":       container.PID,
+						}).Error("Failed to assign container to RDT class")
+					} else {
+						as.schedulerLogger.WithFields(logrus.Fields{
+							"container": i,
+							"pid":       container.PID,
+							"class":     className,
+						}).Info("Container assigned to RDT class")
+					}
+				}
+			}
+		}
+	}
+
 	containers := dataframes.GetAllContainers()
 
 	for containerIndex, containerDF := range containers {
@@ -86,59 +129,22 @@ func (as *AllocationScheduler) ProcessDataFrames(dataframes *dataframe.DataFrame
 			continue
 		}
 
-		// Simple and lightweight: just print current CPU and cache miss rate
+		// Log cache miss rate
 		if latest.Perf != nil && latest.Perf.CacheMissRate != nil {
 			as.schedulerLogger.WithFields(logrus.Fields{
 				"container":       containerIndex,
 				"cache_miss_rate": *latest.Perf.CacheMissRate,
-			}).Info("Cache miss rate")
+			}).Debug("Cache miss rate")
 		}
-
-		pid := as.containers[containerIndex].PID
-
-		as.schedulerLogger.WithFields(logrus.Fields{
-			"container": containerIndex,
-			"pid":       pid,
-		}).Debug("Found PID")
-
-		class, err := as.rdtAllocator.GetContainerClass(pid)
-		if err != nil {
-			as.schedulerLogger.WithError(err).Error("Could not find class!")
-		} else {
-			as.schedulerLogger.WithFields(logrus.Fields{
-				"pid":   pid,
-				"class": class,
-			}).Info("Found class for PID")
-		}
-
-		classes := as.rdtAllocator.ListAvailableClasses()
-		newClass := "victim-test"
-
-		exists := slices.Contains(classes, newClass)
-
-		if exists == false {
-			as.rdtAllocator.CreateRDTClass(newClass, 0.3, 0.3)
-		}
-
-		classes = as.rdtAllocator.ListAvailableClasses()
-		exists = slices.Contains(classes, newClass)
-
-		if pid != 0 && exists {
-			err = as.rdtAllocator.AssignContainerToClass(pid, newClass)
-			if err != nil {
-				as.schedulerLogger.WithError(err).Error("Could not assing PID to class!")
-			}
-		}
-
 	}
 
 	return nil
 }
 
 func (as *AllocationScheduler) Shutdown() error {
-	err := as.rdtAllocator.Cleanup()
+	err := as.rdtAccountant.Cleanup()
 	if err != nil {
-		as.schedulerLogger.WithError(err).Error("Cloud not clean up RDT classes")
+		as.schedulerLogger.WithError(err).Error("Could not clean up RDT classes")
 	}
 	return nil
 }

@@ -1,7 +1,7 @@
 package scheduler
 
 import (
-	"container-bench/internal/allocation"
+	"container-bench/internal/accounting"
 	"container-bench/internal/config"
 	"container-bench/internal/dataframe"
 	"container-bench/internal/host"
@@ -20,7 +20,7 @@ type ProbeScheduler struct {
 	schedulerLogger *logrus.Logger
 	hostConfig      *host.HostConfig
 	containers      []ContainerInfo
-	rdtAllocator    allocation.RDTAllocator
+	rdtAccountant   *accounting.RDTAccountant
 	prober          *probe.Probe
 	config          *config.SchedulerConfig
 
@@ -42,8 +42,8 @@ func NewProbeScheduler() *ProbeScheduler {
 	}
 }
 
-func (ps *ProbeScheduler) Initialize(allocator allocation.RDTAllocator, containers []ContainerInfo, schedulerConfig *config.SchedulerConfig) error {
-	ps.rdtAllocator = allocator
+func (ps *ProbeScheduler) Initialize(accountant *accounting.RDTAccountant, containers []ContainerInfo, schedulerConfig *config.SchedulerConfig) error {
+	ps.rdtAccountant = accountant
 	ps.containers = containers
 	ps.config = schedulerConfig
 

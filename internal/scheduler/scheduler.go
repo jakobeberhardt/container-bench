@@ -1,7 +1,7 @@
 package scheduler
 
 import (
-	"container-bench/internal/allocation"
+	"container-bench/internal/accounting"
 	"container-bench/internal/config"
 	"container-bench/internal/dataframe"
 	"container-bench/internal/host"
@@ -20,7 +20,7 @@ type ContainerInfo struct {
 }
 
 type Scheduler interface {
-	Initialize(allocator allocation.RDTAllocator, containers []ContainerInfo, schedulerConfig *config.SchedulerConfig) error
+	Initialize(accountant *accounting.RDTAccountant, containers []ContainerInfo, schedulerConfig *config.SchedulerConfig) error
 	ProcessDataFrames(dataframes *dataframe.DataFrames) error
 	Shutdown() error
 	GetVersion() string
@@ -39,7 +39,7 @@ type DefaultScheduler struct {
 	schedulerLogger *logrus.Logger
 	hostConfig      *host.HostConfig
 	containers      []ContainerInfo
-	rdtAllocator    allocation.RDTAllocator
+	rdtAccountant   *accounting.RDTAccountant
 	prober          *probe.Probe
 	config          *config.SchedulerConfig
 }
@@ -52,8 +52,8 @@ func NewDefaultScheduler() *DefaultScheduler {
 	}
 }
 
-func (ds *DefaultScheduler) Initialize(allocator allocation.RDTAllocator, containers []ContainerInfo, schedulerConfig *config.SchedulerConfig) error {
-	ds.rdtAllocator = allocator
+func (ds *DefaultScheduler) Initialize(accountant *accounting.RDTAccountant, containers []ContainerInfo, schedulerConfig *config.SchedulerConfig) error {
+	ds.rdtAccountant = accountant
 	ds.containers = containers
 	ds.config = schedulerConfig
 

@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"container-bench/internal/accounting"
 	"container-bench/internal/allocation"
 	"container-bench/internal/collectors"
 	"container-bench/internal/config"
@@ -1012,31 +1013,38 @@ func (cb *ContainerBench) initializeSchedulerWithPIDs() error {
 		})
 	}
 
-	// Create RDT allocator if supported
-	var rdtAllocator allocation.RDTAllocator
+	// Create RDT accountant if supported
+	var rdtAccountant *accounting.RDTAccountant
 	if cb.hostConfig.RDT.Supported && cb.config.Benchmark.Scheduler.RDT {
-		rdtAllocator = allocation.NewDefaultRDTAllocator()
-		logger.Info("RDT allocator created for scheduler")
+		rdtAllocator := allocation.NewDefaultRDTAllocator()
+		logger.Info("RDT allocator created")
 
 		// Initialize the RDT allocator
 		if err := rdtAllocator.Initialize(); err != nil {
-			logger.WithError(err).Warn("Failed to initialize RDT allocator, scheduler will have limited functionality")
-			rdtAllocator = nil
+			logger.WithError(err).Warn("Failed to initialize RDT allocator")
 		} else {
-			logger.Info("RDT allocator initialized successfully")
+			// Create accountant wrapper
+			var err error
+			rdtAccountant, err = accounting.NewRDTAccountant(rdtAllocator, cb.hostConfig)
+			if err != nil {
+				logger.WithError(err).Warn("Failed to create RDT accountant, scheduler will have limited functionality")
+				rdtAccountant = nil
+			} else {
+				logger.Info("RDT accountant created successfully")
+			}
 		}
 	} else {
-		logger.Debug("RDT allocator not created (RDT not supported or not enabled)")
+		logger.Debug("RDT accountant not created (RDT not supported or not enabled)")
 	}
 
-	// Initialize scheduler with allocator and container information
-	if err := cb.scheduler.Initialize(rdtAllocator, containerInfos, &cb.config.Benchmark.Scheduler); err != nil {
+	// Initialize scheduler with accountant and container information
+	if err := cb.scheduler.Initialize(rdtAccountant, containerInfos, &cb.config.Benchmark.Scheduler); err != nil {
 		return fmt.Errorf("failed to initialize scheduler: %w", err)
 	}
 
 	logger.WithFields(logrus.Fields{
 		"containers":  len(containerInfos),
-		"rdt_enabled": rdtAllocator != nil,
+		"rdt_enabled": rdtAccountant != nil,
 	}).Info("Scheduler initialized with container PIDs")
 
 	return nil
