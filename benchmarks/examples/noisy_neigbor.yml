@@ -2,6 +2,7 @@ benchmark:
   name: Noisy neighbor
   description: Test which starts more and more neigbors
   max_t: 120
+  pid_sync_interval: 100  
   log_level: info
   scheduler:
     implementation: default
@@ -22,44 +23,45 @@ benchmark:
 
 victim:
   index: 0
-  image: registry.jakob-eberhardt.de/neighbor:default
+  image: registry.jakob-eberhardt.de/rdt4nn/postgres:latest
+  port: 5432:5432
   core: 0
-  command: "/neighbor --duration 3600 --buffer-size 24MB --pattern random"
   data:
     frequency: 100
     perf: true
     docker: true
     rdt: true
 
-first:
-  index: 1
-  image: registry.jakob-eberhardt.de/neighbor:default  
-  core: 1
-  command: "/neighbor --duration 3600 --buffer-size 24MB --pattern random"
-  data:
-    frequency: 100
-    perf: true
-    docker: true
-    rdt: true
 
-second:
-  index: 2
-  image: registry.jakob-eberhardt.de/neighbor:default  
-  core: 2
-  command: "/neighbor --duration 3600 --buffer-size 24MB --pattern random"
-  data:
-    frequency: 100
-    perf: true
-    docker: true
-    rdt: true
+# first:
+#   index: 1
+#   image: registry.jakob-eberhardt.de/neighbor:default  
+#   core: 1
+#   command: "sleep 15 && /neighbor --duration 3600 --buffer-size 5MB --pattern random"
+#   data:
+#     frequency: 100
+#     perf: true
+#     docker: true
+#     rdt: true
 
-third:
-  index: 3
-  image: registry.jakob-eberhardt.de/neighbor:default  
-  core: 3
-  command: "/neighbor --duration 3600 --buffer-size 24MB --pattern random"
-  data:
-    frequency: 100
-    perf: true
-    docker: true
-    rdt: true
+# second:
+#   index: 2
+#   image: registry.jakob-eberhardt.de/neighbor:default  
+#   core: 2
+#   command: "sleep 30 && /neighbor --duration 3600 --buffer-size 5MB --pattern random"
+#   data:
+#     frequency: 100
+#     perf: true
+#     docker: true
+#     rdt: true
+
+# third:
+#   index: 3
+#   image: registry.jakob-eberhardt.de/neighbor:default  
+#   core: 3
+#   command: "sleep 45 && /neighbor --duration 3600 --buffer-size 5MB --pattern random"
+#   data:
+#     frequency: 100
+#     perf: true
+#     docker: true
+#     rdt: true
