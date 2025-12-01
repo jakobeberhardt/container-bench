@@ -79,12 +79,42 @@ func (a *DefaultRDTAllocator) CreateRDTClass(className string, l3CachePercent fl
 	}
 
 	// Check if class already exists
-	if _, exists := rdt.GetClass(className); exists {
+	if ctrlGroup, exists := rdt.GetClass(className); exists {
 		a.logger.WithField("class_name", className).Debug("RDT class already exists")
+		// Track it if not already tracked
+		if _, tracked := a.managedClasses[className]; !tracked {
+			a.managedClasses[className] = ctrlGroup
+		}
 		return nil // Return success if class already exists
 	}
 
-	a.logger.WithField("class_name", className).WithField("l3_cache_percent", l3CachePercent).WithField("mem_bandwidth_percent", memBandwidthPercent).Info("RDT class created successfully")
+	// Convert from fraction (0.0-1.0) to percentage (0-100)
+	l3Percent := l3CachePercent * 100
+	mbPercent := memBandwidthPercent * 100
+
+	// Create a single class using CreateAllRDTClasses
+	classes := map[string]struct {
+		L3CachePercent      float64
+		MemBandwidthPercent float64
+		CacheBitMask        string
+	}{
+		className: {
+			L3CachePercent:      l3Percent,
+			MemBandwidthPercent: mbPercent,
+			CacheBitMask:        "",
+		},
+	}
+
+	// Use the existing CreateAllRDTClasses implementation
+	if err := a.CreateAllRDTClasses(classes); err != nil {
+		return fmt.Errorf("failed to create RDT class %s: %w", className, err)
+	}
+
+	a.logger.WithFields(logrus.Fields{
+		"class_name":            className,
+		"l3_cache_percent":      l3Percent,
+		"mem_bandwidth_percent": mbPercent,
+	}).Info("RDT class created successfully")
 	return nil
 }
 

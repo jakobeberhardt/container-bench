@@ -100,11 +100,22 @@ func (as *AllocationScheduler) ProcessDataFrames(dataframes *dataframe.DataFrame
 		}
 
 		classes := as.rdtAllocator.ListAvailableClasses()
+		newClass := "victim-test"
 
-		exists := slices.Contains(classes, "victim-test")
+		exists := slices.Contains(classes, newClass)
 
 		if exists == false {
-			as.rdtAllocator.CreateRDTClass("victim-test", 0.3, 0.3)
+			as.rdtAllocator.CreateRDTClass(newClass, 0.3, 0.3)
+		}
+
+		classes = as.rdtAllocator.ListAvailableClasses()
+		exists = slices.Contains(classes, newClass)
+
+		if pid != 0 && exists {
+			err = as.rdtAllocator.AssignContainerToClass(pid, newClass)
+			if err != nil {
+				as.schedulerLogger.WithError(err).Error("Could not assing PID to class!")
+			}
 		}
 
 	}
