@@ -442,6 +442,9 @@ func runBenchmark(configFile string) error {
 	case "probe":
 		logger.Info("Using probe scheduler")
 		bench.scheduler = scheduler.NewProbeScheduler()
+	case "allocation":
+		logger.Info("Using allocation scheduler")
+		bench.scheduler = scheduler.NewAllocationScheduler()
 	default:
 		logger.WithField("implementation", schedulerImpl).Warn("Unknown scheduler implementation, using default")
 		bench.scheduler = scheduler.NewDefaultScheduler()
