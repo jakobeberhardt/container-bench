@@ -146,8 +146,17 @@ func findRDTClassForPID(pidStr string) (rdt.CtrlGroup, string, error) {
 	return nil, "", fmt.Errorf("PID %s not found in any RDT class", pidStr)
 }
 
+// allocationInfo holds parsed allocation data from resctrl schemata
+type allocationInfo struct {
+	l3BitmaskPerSocket  map[int]string
+	l3WaysPerSocket     map[int]uint64
+	mbaPercentPerSocket map[int]uint64
+	l3AllocationString  string
+	mbaAllocationString string
+}
+
 // Reads allocation information directly from the resctrl filesystem
-func (rc *RDTCollector) readAllocationFromResctrl() (uint64, float64, error) {
+func (rc *RDTCollector) readAllocationFromResctrl() (*allocationInfo, error) {
 	className := rc.ctrlGroup.Name()
 	// Construct path to schemata file for this class
 	var schemataPath string
@@ -160,57 +169,140 @@ func (rc *RDTCollector) readAllocationFromResctrl() (uint64, float64, error) {
 	// Read the schemata file
 	data, err := ioutil.ReadFile(schemataPath)
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to read schemata file %s: %v", schemataPath, err)
+		return nil, fmt.Errorf("failed to read schemata file %s: %v", schemataPath, err)
 	}
 
-	// Parse L3 cache allocation from schemata
+	info := &allocationInfo{
+		l3BitmaskPerSocket:  make(map[int]string),
+		l3WaysPerSocket:     make(map[int]uint64),
+		mbaPercentPerSocket: make(map[int]uint64),
+	}
+
+	// Parse allocation information from schemata
 	lines := strings.Split(string(data), "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "L3:") {
-			// Parse L3 line: "L3:0=fff;1=fff"
-			return rc.parseL3Allocation(line)
+			info.l3AllocationString = line
+			if err := rc.parseL3Allocation(line, info); err != nil {
+				rc.logger.WithError(err).Debug("Failed to parse L3 allocation")
+			}
+		} else if strings.HasPrefix(line, "MB:") {
+			info.mbaAllocationString = line
+			if err := rc.parseMBAAllocation(line, info); err != nil {
+				rc.logger.WithError(err).Debug("Failed to parse MBA allocation")
+			}
 		}
 	}
 
-	return 0, 0, fmt.Errorf("no L3 allocation found in schemata")
+	if len(info.l3BitmaskPerSocket) == 0 && len(info.mbaPercentPerSocket) == 0 {
+		return nil, fmt.Errorf("no L3 or MBA allocation found in schemata")
+	}
+
+	return info, nil
 }
 
-// parses the L3 allocation line and calculates ways and percentage
-func (rc *RDTCollector) parseL3Allocation(l3Line string) (uint64, float64, error) {
+// parses the L3 allocation line and populates per-socket allocation info
+// Format: "L3:0=fff;1=fff" where 0,1 are socket IDs and fff is hex bitmask
+func (rc *RDTCollector) parseL3Allocation(l3Line string, info *allocationInfo) error {
 	// Remove "L3:" prefix
 	allocStr := strings.TrimPrefix(l3Line, "L3:")
 
 	// Split by cache domains: "0=fff;1=fff"
 	domains := strings.Split(allocStr, ";")
 	if len(domains) == 0 {
-		return 0, 0, fmt.Errorf("no cache domains found")
+		return fmt.Errorf("no cache domains found")
 	}
 
-	// Take the first domain for calculation
-	firstDomain := strings.TrimSpace(domains[0])
-	parts := strings.Split(firstDomain, "=")
-	if len(parts) != 2 {
-		return 0, 0, fmt.Errorf("invalid domain format: %s", firstDomain)
+	for _, domain := range domains {
+		domain = strings.TrimSpace(domain)
+		if domain == "" {
+			continue
+		}
+
+		// Parse "0=fff" format
+		parts := strings.Split(domain, "=")
+		if len(parts) != 2 {
+			rc.logger.WithField("domain", domain).Debug("Skipping invalid domain format")
+			continue
+		}
+
+		// Parse socket ID
+		socketID, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+		if err != nil {
+			rc.logger.WithError(err).WithField("socket_id", parts[0]).Debug("Failed to parse socket ID")
+			continue
+		}
+
+		// Parse the bitmask
+		bitmaskStr := strings.TrimSpace(parts[1])
+		maskValue, err := strconv.ParseUint(bitmaskStr, 16, 64)
+		if err != nil {
+			rc.logger.WithError(err).WithField("bitmask", bitmaskStr).Debug("Failed to parse bitmask")
+			continue
+		}
+
+		// Store bitmask and calculate ways
+		info.l3BitmaskPerSocket[socketID] = bitmaskStr
+		info.l3WaysPerSocket[socketID] = countSetBits(maskValue)
 	}
 
-	// Parse the bitmask
-	bitmask := strings.TrimSpace(parts[1])
-	maskValue, err := strconv.ParseUint(bitmask, 16, 64)
-	if err != nil {
-		return 0, 0, fmt.Errorf("failed to parse bitmask %s: %v", bitmask, err)
+	if len(info.l3BitmaskPerSocket) == 0 {
+		return fmt.Errorf("no valid L3 allocations parsed")
 	}
 
-	// Count the number of set bits (cache ways)
-	ways := countSetBits(maskValue)
+	return nil
+}
 
-	// Calculate percentage based on total cache ways
-	var percentage float64
-	if rc.hostConfig != nil && rc.hostConfig.L3Cache.WaysPerCache > 0 {
-		percentage = float64(ways) / float64(rc.hostConfig.L3Cache.WaysPerCache) * 100.0
+// parses the MBA (Memory Bandwidth Allocation) line and populates per-socket MBA info
+// Format: "MB:0=100;1=100" where 0,1 are socket IDs and 100 is throttle percentage
+func (rc *RDTCollector) parseMBAAllocation(mbaLine string, info *allocationInfo) error {
+	// Remove "MB:" prefix
+	allocStr := strings.TrimPrefix(mbaLine, "MB:")
+
+	// Split by domains: "0=100;1=100"
+	domains := strings.Split(allocStr, ";")
+	if len(domains) == 0 {
+		return fmt.Errorf("no MBA domains found")
 	}
 
-	return ways, percentage, nil
+	for _, domain := range domains {
+		domain = strings.TrimSpace(domain)
+		if domain == "" {
+			continue
+		}
+
+		// Parse "0=100" format
+		parts := strings.Split(domain, "=")
+		if len(parts) != 2 {
+			rc.logger.WithField("domain", domain).Debug("Skipping invalid MBA domain format")
+			continue
+		}
+
+		// Parse socket ID
+		socketID, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+		if err != nil {
+			rc.logger.WithError(err).WithField("socket_id", parts[0]).Debug("Failed to parse MBA socket ID")
+			continue
+		}
+
+		// Parse the throttle percentage
+		throttleStr := strings.TrimSpace(parts[1])
+		throttle, err := strconv.ParseUint(throttleStr, 10, 64)
+		if err != nil {
+			rc.logger.WithError(err).WithField("throttle", throttleStr).Debug("Failed to parse MBA throttle")
+			continue
+		}
+
+		// Store MBA throttle percentage
+		info.mbaPercentPerSocket[socketID] = throttle
+	}
+
+	if len(info.mbaPercentPerSocket) == 0 {
+		return fmt.Errorf("no valid MBA allocations parsed")
+	}
+
+	return nil
 }
 
 // countSetBits counts the number of set bits in a uint64
@@ -581,56 +673,71 @@ func (rc *RDTCollector) Collect() *dataframe.RDTMetrics {
 }
 
 func (rc *RDTCollector) processL3MonitoringData(monData *rdt.MonData, metrics *dataframe.RDTMetrics) {
+	// Initialize per-socket maps
+	metrics.L3OccupancyPerSocket = make(map[int]uint64)
+	metrics.MemoryBandwidthTotalPerSocket = make(map[int]uint64)
+	metrics.MemoryBandwidthLocalPerSocket = make(map[int]uint64)
+
+	// Track totals for delta calculation
 	var totalBandwidthTotal uint64
 	var totalBandwidthLocal uint64
+	socketBandwidthTotal := make(map[int]uint64)
+	socketBandwidthLocal := make(map[int]uint64)
 
-	// Iterate through L3 data for all cache IDs
+	// Iterate through L3 data for all cache IDs (socket IDs)
 	for cacheID, leafData := range monData.L3 {
+		socketID := int(cacheID)
 		rc.logger.WithFields(logrus.Fields{
-			"pid":      rc.pid,
-			"cache_id": cacheID,
+			"pid":       rc.pid,
+			"socket_id": socketID,
 		}).Trace("Processing L3 monitoring data")
 
 		if occupancy, exists := leafData["llc_occupancy"]; exists {
-			if metrics.L3CacheOccupancy == nil {
-				metrics.L3CacheOccupancy = &occupancy
-			} else {
-				*metrics.L3CacheOccupancy += occupancy
-			}
+			metrics.L3OccupancyPerSocket[socketID] = occupancy
 
 			// Debug log when we see non-zero occupancy
 			if occupancy > 0 {
 				rc.logger.WithFields(logrus.Fields{
 					"pid":       rc.pid,
-					"cache_id":  cacheID,
+					"socket_id": socketID,
 					"occupancy": occupancy,
 				}).Trace("RDT: Non-zero LLC occupancy detected")
 			}
 		}
 
-		// Memory bandwidth monitoring (cumulative counters - aggregate first)
+		// Memory bandwidth monitoring (cumulative counters)
 		if mbmTotal, exists := leafData["mbm_total_bytes"]; exists {
 			totalBandwidthTotal += mbmTotal
+			socketBandwidthTotal[socketID] = mbmTotal
 		}
 
 		if mbmLocal, exists := leafData["mbm_local_bytes"]; exists {
 			totalBandwidthLocal += mbmLocal
+			socketBandwidthLocal[socketID] = mbmLocal
 		}
 	}
 
 	if !rc.firstCollection {
-		// Compute delta from last collection
+		// Compute delta from last collection - total bandwidth has already been aggregated
+		// We can't split it back to per-socket, so we only store if there's a single socket
+		// For per-socket bandwidth, we need to track per-socket cumulative values
 		if totalBandwidthTotal >= rc.lastBandwidthTotal {
-			deltaBandwidthTotal := totalBandwidthTotal - rc.lastBandwidthTotal
-			if deltaBandwidthTotal > 0 {
-				metrics.MemoryBandwidthTotal = &deltaBandwidthTotal
+			delta := totalBandwidthTotal - rc.lastBandwidthTotal
+			if delta > 0 && len(socketBandwidthTotal) == 1 {
+				// Single socket - attribute to that socket
+				for socketID := range socketBandwidthTotal {
+					metrics.MemoryBandwidthTotalPerSocket[socketID] = delta
+				}
 			}
 		}
 
 		if totalBandwidthLocal >= rc.lastBandwidthLocal {
-			deltaBandwidthLocal := totalBandwidthLocal - rc.lastBandwidthLocal
-			if deltaBandwidthLocal > 0 {
-				metrics.MemoryBandwidthLocal = &deltaBandwidthLocal
+			delta := totalBandwidthLocal - rc.lastBandwidthLocal
+			if delta > 0 && len(socketBandwidthLocal) == 1 {
+				// Single socket - attribute to that socket
+				for socketID := range socketBandwidthLocal {
+					metrics.MemoryBandwidthLocalPerSocket[socketID] = delta
+				}
 			}
 		}
 	}
@@ -642,12 +749,24 @@ func (rc *RDTCollector) processL3MonitoringData(monData *rdt.MonData, metrics *d
 }
 
 func (rc *RDTCollector) calculateDerivedMetrics(metrics *dataframe.RDTMetrics) {
-	// Calculate L3 cache utilization percentage
-	if metrics.L3CacheOccupancy != nil && rc.hostConfig != nil {
-		utilizationPercent := rc.hostConfig.GetL3CacheUtilizationPercent(*metrics.L3CacheOccupancy)
-		metrics.CacheLLCUtilizationPercent = &utilizationPercent
+	if rc.hostConfig == nil {
+		return
 	}
 
+	// Calculate per-socket L3 cache utilization percentage
+	if len(metrics.L3OccupancyPerSocket) > 0 {
+		metrics.L3UtilizationPctPerSocket = make(map[int]float64)
+		for socketID, occupancy := range metrics.L3OccupancyPerSocket {
+			if occupancy > 0 {
+				utilizationPercent := rc.hostConfig.GetL3CacheUtilizationPercent(occupancy)
+				metrics.L3UtilizationPctPerSocket[socketID] = utilizationPercent
+			}
+		}
+	}
+
+	// TODO: Calculate per-socket memory bandwidth in MB/s
+	// This requires knowing the sampling interval, which we don't have here
+	// For now, we'll leave this empty and can add it later if needed
 }
 
 // gets allocation information for the container
@@ -664,15 +783,46 @@ func (rc *RDTCollector) getAllocationInfo(metrics *dataframe.RDTMetrics) {
 	metrics.MonGroupName = &rc.monGroupName
 
 	// Try to get allocation information from the resctrl filesystem
-	if allocation, percentage, err := rc.readAllocationFromResctrl(); err == nil {
-		metrics.L3CacheAllocation = &allocation
-		metrics.L3CacheAllocationPct = &percentage
+	if allocInfo, err := rc.readAllocationFromResctrl(); err == nil {
+		// Store per-socket allocation details
+		if len(allocInfo.l3BitmaskPerSocket) > 0 {
+			metrics.L3BitmaskPerSocket = allocInfo.l3BitmaskPerSocket
+			metrics.L3WaysPerSocket = allocInfo.l3WaysPerSocket
+
+			// Calculate percentage for each socket
+			if rc.hostConfig != nil && rc.hostConfig.L3Cache.WaysPerCache > 0 {
+				metrics.L3AllocationPctPerSocket = make(map[int]float64)
+				for socketID, ways := range allocInfo.l3WaysPerSocket {
+					percentage := float64(ways) / float64(rc.hostConfig.L3Cache.WaysPerCache) * 100.0
+					metrics.L3AllocationPctPerSocket[socketID] = percentage
+				}
+			}
+		}
+
+		if len(allocInfo.mbaPercentPerSocket) > 0 {
+			metrics.MBAPercentPerSocket = allocInfo.mbaPercentPerSocket
+		}
+
+		// Store full allocation strings
+		if allocInfo.l3AllocationString != "" {
+			metrics.L3AllocationString = &allocInfo.l3AllocationString
+		}
+		if allocInfo.mbaAllocationString != "" {
+			metrics.MBAAllocationString = &allocInfo.mbaAllocationString
+		}
+
+		// Set MBA throttle from socket 0
+		if throttle, ok := allocInfo.mbaPercentPerSocket[0]; ok {
+			metrics.MBAThrottle = &throttle
+		}
 
 		rc.logger.WithFields(logrus.Fields{
-			"pid":                   rc.pid,
-			"rdt_class":             className,
-			"l3_allocation_ways":    allocation,
-			"l3_allocation_percent": percentage,
+			"pid":            rc.pid,
+			"rdt_class":      className,
+			"l3_sockets":     len(allocInfo.l3WaysPerSocket),
+			"mba_sockets":    len(allocInfo.mbaPercentPerSocket),
+			"l3_allocation":  allocInfo.l3AllocationString,
+			"mba_allocation": allocInfo.mbaAllocationString,
 		}).Trace("Retrieved RDT allocation information")
 	} else {
 		rc.logger.WithFields(logrus.Fields{

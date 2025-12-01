@@ -255,8 +255,8 @@ func (as *AllocationScheduler) updateAllocation(className string, l3Ways int, me
 			MemBandwidth: memBW,
 		},
 		&accounting.AllocationRequest{
-			L3Ways:       waysRange,
-			MemBandwidth: memBW,
+			L3Percent:    0.1,
+			MemBandwidth: 0.1,
 		},
 	)
 

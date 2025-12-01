@@ -750,35 +750,100 @@ func (idb *InfluxDBClient) createFields(step *dataframe.SamplingStep, stepNumber
 
 	// Add RDT metrics
 	if step.RDT != nil {
-		if step.RDT.L3CacheOccupancy != nil {
-			fields["rdt_l3_cache_occupancy"] = *step.RDT.L3CacheOccupancy
-		}
-		if step.RDT.MemoryBandwidthTotal != nil {
-			fields["rdt_memory_bandwidth_total"] = *step.RDT.MemoryBandwidthTotal
-		}
-		if step.RDT.MemoryBandwidthLocal != nil {
-			fields["rdt_memory_bandwidth_local"] = *step.RDT.MemoryBandwidthLocal
-		}
 		if step.RDT.RDTClassName != nil {
 			fields["rdt_class_name"] = *step.RDT.RDTClassName
 		}
 		if step.RDT.MonGroupName != nil {
 			fields["rdt_mon_group_name"] = *step.RDT.MonGroupName
 		}
-		if step.RDT.L3CacheAllocation != nil {
-			fields["rdt_l3_cache_allocation"] = *step.RDT.L3CacheAllocation
-		}
-		if step.RDT.L3CacheAllocationPct != nil {
-			fields["rdt_l3_cache_allocation_pct"] = *step.RDT.L3CacheAllocationPct
-		}
 		if step.RDT.MBAThrottle != nil {
 			fields["rdt_mba_throttle"] = *step.RDT.MBAThrottle
 		}
-		if step.RDT.CacheLLCUtilizationPercent != nil {
-			fields["rdt_cache_llc_utilization_percent"] = *step.RDT.CacheLLCUtilizationPercent
+
+		// Add per-socket monitoring metrics
+		if step.RDT.L3OccupancyPerSocket != nil {
+			if occ, ok := step.RDT.L3OccupancyPerSocket[0]; ok {
+				fields["rdt_l3_occupancy_socket0"] = occ
+			}
+			if occ, ok := step.RDT.L3OccupancyPerSocket[1]; ok {
+				fields["rdt_l3_occupancy_socket1"] = occ
+			}
 		}
-		if step.RDT.BandwidthUtilizationPercent != nil {
-			fields["rdt_bandwidth_utilization_percent"] = *step.RDT.BandwidthUtilizationPercent
+		if step.RDT.MemoryBandwidthTotalPerSocket != nil {
+			if bw, ok := step.RDT.MemoryBandwidthTotalPerSocket[0]; ok {
+				fields["rdt_memory_bandwidth_total_socket0"] = bw
+			}
+			if bw, ok := step.RDT.MemoryBandwidthTotalPerSocket[1]; ok {
+				fields["rdt_memory_bandwidth_total_socket1"] = bw
+			}
+		}
+		if step.RDT.MemoryBandwidthLocalPerSocket != nil {
+			if bw, ok := step.RDT.MemoryBandwidthLocalPerSocket[0]; ok {
+				fields["rdt_memory_bandwidth_local_socket0"] = bw
+			}
+			if bw, ok := step.RDT.MemoryBandwidthLocalPerSocket[1]; ok {
+				fields["rdt_memory_bandwidth_local_socket1"] = bw
+			}
+		}
+		if step.RDT.L3UtilizationPctPerSocket != nil {
+			if pct, ok := step.RDT.L3UtilizationPctPerSocket[0]; ok {
+				fields["rdt_l3_utilization_pct_socket0"] = pct
+			}
+			if pct, ok := step.RDT.L3UtilizationPctPerSocket[1]; ok {
+				fields["rdt_l3_utilization_pct_socket1"] = pct
+			}
+		}
+		if step.RDT.MemBandwidthMbpsPerSocket != nil {
+			if mbps, ok := step.RDT.MemBandwidthMbpsPerSocket[0]; ok {
+				fields["rdt_mem_bandwidth_mbps_socket0"] = mbps
+			}
+			if mbps, ok := step.RDT.MemBandwidthMbpsPerSocket[1]; ok {
+				fields["rdt_mem_bandwidth_mbps_socket1"] = mbps
+			}
+		}
+
+		// Add per-socket L3 allocation details
+		if step.RDT.L3BitmaskPerSocket != nil {
+			if bitmask, ok := step.RDT.L3BitmaskPerSocket[0]; ok {
+				fields["rdt_l3_bitmask_socket0"] = bitmask
+			}
+			if bitmask, ok := step.RDT.L3BitmaskPerSocket[1]; ok {
+				fields["rdt_l3_bitmask_socket1"] = bitmask
+			}
+		}
+		if step.RDT.L3WaysPerSocket != nil {
+			if ways, ok := step.RDT.L3WaysPerSocket[0]; ok {
+				fields["rdt_l3_ways_socket0"] = ways
+			}
+			if ways, ok := step.RDT.L3WaysPerSocket[1]; ok {
+				fields["rdt_l3_ways_socket1"] = ways
+			}
+		}
+		if step.RDT.L3AllocationPctPerSocket != nil {
+			if pct, ok := step.RDT.L3AllocationPctPerSocket[0]; ok {
+				fields["rdt_l3_allocation_pct_socket0"] = pct
+			}
+			if pct, ok := step.RDT.L3AllocationPctPerSocket[1]; ok {
+				fields["rdt_l3_allocation_pct_socket1"] = pct
+			}
+		}
+
+		// Add per-socket MBA allocation details
+		if step.RDT.MBAPercentPerSocket != nil {
+			if mba, ok := step.RDT.MBAPercentPerSocket[0]; ok {
+				fields["rdt_mba_percent_socket0"] = mba
+			}
+			if mba, ok := step.RDT.MBAPercentPerSocket[1]; ok {
+				fields["rdt_mba_percent_socket1"] = mba
+			}
+		}
+
+		// Add full allocation strings
+		if step.RDT.L3AllocationString != nil {
+			fields["rdt_l3_allocation_string"] = *step.RDT.L3AllocationString
+		}
+		if step.RDT.MBAAllocationString != nil {
+			fields["rdt_mba_allocation_string"] = *step.RDT.MBAAllocationString
 		}
 	}
 
@@ -911,29 +976,94 @@ func (idb *InfluxDBClient) createFieldsFromMetricStep(step *datahandeling.Metric
 	if step.RDTMonGroupName != nil {
 		fields["rdt_mon_group_name"] = *step.RDTMonGroupName
 	}
-	if step.RDTL3CacheOccupancy != nil {
-		fields["rdt_l3_cache_occupancy"] = *step.RDTL3CacheOccupancy
-	}
-	if step.RDTMemoryBandwidthTotal != nil {
-		fields["rdt_memory_bandwidth_total"] = *step.RDTMemoryBandwidthTotal
-	}
-	if step.RDTMemoryBandwidthLocal != nil {
-		fields["rdt_memory_bandwidth_local"] = *step.RDTMemoryBandwidthLocal
-	}
-	if step.RDTL3CacheAllocation != nil {
-		fields["rdt_l3_cache_allocation"] = *step.RDTL3CacheAllocation
-	}
-	if step.RDTL3CacheAllocationPct != nil {
-		fields["rdt_l3_cache_allocation_pct"] = *step.RDTL3CacheAllocationPct
-	}
 	if step.RDTMBAThrottle != nil {
 		fields["rdt_mba_throttle"] = *step.RDTMBAThrottle
 	}
-	if step.RDTCacheLLCUtilizationPercent != nil {
-		fields["rdt_cache_llc_utilization_percent"] = *step.RDTCacheLLCUtilizationPercent
+
+	// Add per-socket monitoring metrics
+	if step.RDTL3OccupancyPerSocket != nil {
+		if occ, ok := step.RDTL3OccupancyPerSocket[0]; ok {
+			fields["rdt_l3_occupancy_socket0"] = occ
+		}
+		if occ, ok := step.RDTL3OccupancyPerSocket[1]; ok {
+			fields["rdt_l3_occupancy_socket1"] = occ
+		}
 	}
-	if step.RDTBandwidthUtilizationPercent != nil {
-		fields["rdt_bandwidth_utilization_percent"] = *step.RDTBandwidthUtilizationPercent
+	if step.RDTMemoryBandwidthTotalPerSocket != nil {
+		if bw, ok := step.RDTMemoryBandwidthTotalPerSocket[0]; ok {
+			fields["rdt_memory_bandwidth_total_socket0"] = bw
+		}
+		if bw, ok := step.RDTMemoryBandwidthTotalPerSocket[1]; ok {
+			fields["rdt_memory_bandwidth_total_socket1"] = bw
+		}
+	}
+	if step.RDTMemoryBandwidthLocalPerSocket != nil {
+		if bw, ok := step.RDTMemoryBandwidthLocalPerSocket[0]; ok {
+			fields["rdt_memory_bandwidth_local_socket0"] = bw
+		}
+		if bw, ok := step.RDTMemoryBandwidthLocalPerSocket[1]; ok {
+			fields["rdt_memory_bandwidth_local_socket1"] = bw
+		}
+	}
+	if step.RDTL3UtilizationPctPerSocket != nil {
+		if pct, ok := step.RDTL3UtilizationPctPerSocket[0]; ok {
+			fields["rdt_l3_utilization_pct_socket0"] = pct
+		}
+		if pct, ok := step.RDTL3UtilizationPctPerSocket[1]; ok {
+			fields["rdt_l3_utilization_pct_socket1"] = pct
+		}
+	}
+	if step.RDTMemBandwidthMbpsPerSocket != nil {
+		if mbps, ok := step.RDTMemBandwidthMbpsPerSocket[0]; ok {
+			fields["rdt_mem_bandwidth_mbps_socket0"] = mbps
+		}
+		if mbps, ok := step.RDTMemBandwidthMbpsPerSocket[1]; ok {
+			fields["rdt_mem_bandwidth_mbps_socket1"] = mbps
+		}
+	}
+
+	// Add per-socket L3 allocation details
+	if step.RDTL3BitmaskPerSocket != nil {
+		if bitmask, ok := step.RDTL3BitmaskPerSocket[0]; ok {
+			fields["rdt_l3_bitmask_socket0"] = bitmask
+		}
+		if bitmask, ok := step.RDTL3BitmaskPerSocket[1]; ok {
+			fields["rdt_l3_bitmask_socket1"] = bitmask
+		}
+	}
+	if step.RDTL3WaysPerSocket != nil {
+		if ways, ok := step.RDTL3WaysPerSocket[0]; ok {
+			fields["rdt_l3_ways_socket0"] = ways
+		}
+		if ways, ok := step.RDTL3WaysPerSocket[1]; ok {
+			fields["rdt_l3_ways_socket1"] = ways
+		}
+	}
+	if step.RDTL3AllocationPctPerSocket != nil {
+		if pct, ok := step.RDTL3AllocationPctPerSocket[0]; ok {
+			fields["rdt_l3_allocation_pct_socket0"] = pct
+		}
+		if pct, ok := step.RDTL3AllocationPctPerSocket[1]; ok {
+			fields["rdt_l3_allocation_pct_socket1"] = pct
+		}
+	}
+
+	// Add per-socket MBA allocation details
+	if step.RDTMBAPercentPerSocket != nil {
+		if mba, ok := step.RDTMBAPercentPerSocket[0]; ok {
+			fields["rdt_mba_percent_socket0"] = mba
+		}
+		if mba, ok := step.RDTMBAPercentPerSocket[1]; ok {
+			fields["rdt_mba_percent_socket1"] = mba
+		}
+	}
+
+	// Add full allocation strings
+	if step.RDTL3AllocationString != nil {
+		fields["rdt_l3_allocation_string"] = *step.RDTL3AllocationString
+	}
+	if step.RDTMBAAllocationString != nil {
+		fields["rdt_mba_allocation_string"] = *step.RDTMBAAllocationString
 	}
 
 	return fields

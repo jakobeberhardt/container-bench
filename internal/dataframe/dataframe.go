@@ -74,17 +74,26 @@ type DockerMetrics struct {
 }
 
 type RDTMetrics struct {
-	L3CacheOccupancy     *uint64  `json:"l3_cache_occupancy,omitempty"`
-	MemoryBandwidthTotal *uint64  `json:"memory_bandwidth_total,omitempty"`
-	MemoryBandwidthLocal *uint64  `json:"memory_bandwidth_local,omitempty"`
-	RDTClassName         *string  `json:"rdt_class_name,omitempty"`
-	MonGroupName         *string  `json:"mon_group_name,omitempty"`
-	L3CacheAllocation    *uint64  `json:"l3_cache_allocation,omitempty"`
-	L3CacheAllocationPct *float64 `json:"l3_cache_allocation_pct,omitempty"`
-	MBAThrottle          *uint64  `json:"mba_throttle,omitempty"`
+	RDTClassName *string `json:"rdt_class_name,omitempty"`
+	MonGroupName *string `json:"mon_group_name,omitempty"`
+	MBAThrottle  *uint64 `json:"mba_throttle,omitempty"`
 
-	CacheLLCUtilizationPercent  *float64 `json:"cache_llc_utilization_percent,omitempty"`
-	BandwidthUtilizationPercent *float64 `json:"bandwidth_utilization_percent,omitempty"`
+	// Per-socket monitoring metrics
+	L3OccupancyPerSocket          map[int]uint64  `json:"l3_occupancy_per_socket,omitempty"`
+	MemoryBandwidthTotalPerSocket map[int]uint64  `json:"memory_bandwidth_total_per_socket,omitempty"`
+	MemoryBandwidthLocalPerSocket map[int]uint64  `json:"memory_bandwidth_local_per_socket,omitempty"`
+	L3UtilizationPctPerSocket     map[int]float64 `json:"l3_utilization_pct_per_socket,omitempty"`
+	MemBandwidthMbpsPerSocket     map[int]float64 `json:"mem_bandwidth_mbps_per_socket,omitempty"`
+
+	// Per-socket allocation details
+	L3BitmaskPerSocket       map[int]string  `json:"l3_bitmask_per_socket,omitempty"`
+	L3WaysPerSocket          map[int]uint64  `json:"l3_ways_per_socket,omitempty"`
+	L3AllocationPctPerSocket map[int]float64 `json:"l3_allocation_pct_per_socket,omitempty"`
+	MBAPercentPerSocket      map[int]uint64  `json:"mba_percent_per_socket,omitempty"`
+
+	// Full allocation strings from resctrl schemata
+	L3AllocationString  *string `json:"l3_allocation_string,omitempty"`
+	MBAAllocationString *string `json:"mba_allocation_string,omitempty"`
 }
 
 func NewDataFrames() *DataFrames {

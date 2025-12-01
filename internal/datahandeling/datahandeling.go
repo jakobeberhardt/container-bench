@@ -68,16 +68,26 @@ type MetricStep struct {
 	DockerDiskReadBytes      *uint64  `json:"docker_disk_read_bytes,omitempty"`
 	DockerDiskWriteBytes     *uint64  `json:"docker_disk_write_bytes,omitempty"`
 
-	RDTClassName                   *string  `json:"rdt_class_name,omitempty"`
-	RDTMonGroupName                *string  `json:"rdt_mon_group_name,omitempty"`
-	RDTL3CacheOccupancy            *uint64  `json:"rdt_l3_cache_occupancy,omitempty"`
-	RDTMemoryBandwidthTotal        *uint64  `json:"rdt_memory_bandwidth_total,omitempty"`
-	RDTMemoryBandwidthLocal        *uint64  `json:"rdt_memory_bandwidth_local,omitempty"`
-	RDTL3CacheAllocation           *uint64  `json:"rdt_l3_cache_allocation,omitempty"`
-	RDTL3CacheAllocationPct        *float64 `json:"rdt_l3_cache_allocation_pct,omitempty"`
-	RDTMBAThrottle                 *uint64  `json:"rdt_mba_throttle,omitempty"`
-	RDTCacheLLCUtilizationPercent  *float64 `json:"rdt_cache_llc_utilization_percent,omitempty"`
-	RDTBandwidthUtilizationPercent *float64 `json:"rdt_bandwidth_utilization_percent,omitempty"`
+	RDTClassName    *string `json:"rdt_class_name,omitempty"`
+	RDTMonGroupName *string `json:"rdt_mon_group_name,omitempty"`
+	RDTMBAThrottle  *uint64 `json:"rdt_mba_throttle,omitempty"`
+
+	// Per-socket monitoring metrics
+	RDTL3OccupancyPerSocket          map[int]uint64  `json:"rdt_l3_occupancy_per_socket,omitempty"`
+	RDTMemoryBandwidthTotalPerSocket map[int]uint64  `json:"rdt_memory_bandwidth_total_per_socket,omitempty"`
+	RDTMemoryBandwidthLocalPerSocket map[int]uint64  `json:"rdt_memory_bandwidth_local_per_socket,omitempty"`
+	RDTL3UtilizationPctPerSocket     map[int]float64 `json:"rdt_l3_utilization_pct_per_socket,omitempty"`
+	RDTMemBandwidthMbpsPerSocket     map[int]float64 `json:"rdt_mem_bandwidth_mbps_per_socket,omitempty"`
+
+	// Per-socket allocation details
+	RDTL3BitmaskPerSocket       map[int]string  `json:"rdt_l3_bitmask_per_socket,omitempty"`
+	RDTL3WaysPerSocket          map[int]uint64  `json:"rdt_l3_ways_per_socket,omitempty"`
+	RDTL3AllocationPctPerSocket map[int]float64 `json:"rdt_l3_allocation_pct_per_socket,omitempty"`
+	RDTMBAPercentPerSocket      map[int]uint64  `json:"rdt_mba_percent_per_socket,omitempty"`
+
+	// Full allocation strings
+	RDTL3AllocationString  *string `json:"rdt_l3_allocation_string,omitempty"`
+	RDTMBAAllocationString *string `json:"rdt_mba_allocation_string,omitempty"`
 }
 
 // process raw dataframes into structured benchmark metrics
@@ -228,16 +238,24 @@ func (h *DefaultDataHandler) processDockerMetrics(docker *dataframe.DockerMetric
 func (h *DefaultDataHandler) processRDTMetrics(rdt *dataframe.RDTMetrics, step *MetricStep) {
 	step.RDTClassName = rdt.RDTClassName
 	step.RDTMonGroupName = rdt.MonGroupName
-	step.RDTL3CacheOccupancy = rdt.L3CacheOccupancy
-	step.RDTMemoryBandwidthTotal = rdt.MemoryBandwidthTotal
-	step.RDTMemoryBandwidthLocal = rdt.MemoryBandwidthLocal
-	step.RDTL3CacheAllocation = rdt.L3CacheAllocation
-	step.RDTL3CacheAllocationPct = rdt.L3CacheAllocationPct
 	step.RDTMBAThrottle = rdt.MBAThrottle
 
-	// Copy derived metrics from dataframe (calculated by collectors)
-	step.RDTCacheLLCUtilizationPercent = rdt.CacheLLCUtilizationPercent
-	step.RDTBandwidthUtilizationPercent = rdt.BandwidthUtilizationPercent
+	// Copy per-socket monitoring metrics
+	step.RDTL3OccupancyPerSocket = rdt.L3OccupancyPerSocket
+	step.RDTMemoryBandwidthTotalPerSocket = rdt.MemoryBandwidthTotalPerSocket
+	step.RDTMemoryBandwidthLocalPerSocket = rdt.MemoryBandwidthLocalPerSocket
+	step.RDTL3UtilizationPctPerSocket = rdt.L3UtilizationPctPerSocket
+	step.RDTMemBandwidthMbpsPerSocket = rdt.MemBandwidthMbpsPerSocket
+
+	// Copy per-socket allocation details
+	step.RDTL3BitmaskPerSocket = rdt.L3BitmaskPerSocket
+	step.RDTL3WaysPerSocket = rdt.L3WaysPerSocket
+	step.RDTL3AllocationPctPerSocket = rdt.L3AllocationPctPerSocket
+	step.RDTMBAPercentPerSocket = rdt.MBAPercentPerSocket
+
+	// Copy full allocation strings
+	step.RDTL3AllocationString = rdt.L3AllocationString
+	step.RDTMBAAllocationString = rdt.MBAAllocationString
 }
 
 // returns the container configuration for a given index
