@@ -6,6 +6,9 @@ import (
 	"container-bench/internal/host"
 	"container-bench/internal/logging"
 	"container-bench/internal/probe"
+	"slices"
+
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
@@ -19,6 +22,8 @@ type AllocationScheduler struct {
 	rdtAllocator    RDTAllocator
 	prober          *probe.Probe
 	config          *config.SchedulerConfig
+
+	warmupCompleteTime time.Time
 }
 
 func NewAllocationScheduler() *AllocationScheduler {
@@ -29,16 +34,31 @@ func NewAllocationScheduler() *AllocationScheduler {
 	}
 }
 
-func (ds *AllocationScheduler) Initialize(allocator RDTAllocator, containers []ContainerInfo, schedulerConfig *config.SchedulerConfig) error {
-	ds.rdtAllocator = allocator
-	ds.containers = containers
-	ds.config = schedulerConfig
+func (as *AllocationScheduler) Initialize(allocator RDTAllocator, containers []ContainerInfo, schedulerConfig *config.SchedulerConfig) error {
+	as.rdtAllocator = allocator
+	as.containers = containers
+	as.config = schedulerConfig
 
-	ds.schedulerLogger.WithField("containers", len(containers)).Info("Allocation scheduler initialized")
+	warmupSeconds := 0
+	if as.config != nil && as.config.Allocator != nil && as.config.Allocator.WarmupT > 0 {
+		warmupSeconds = as.config.Allocator.WarmupT
+		as.schedulerLogger.WithField("seconds", as.config.Allocator.WarmupT).Info("Warming up benchmark")
+	}
+
+	as.warmupCompleteTime = time.Now().Add(time.Duration(warmupSeconds) * time.Second)
+
+	as.schedulerLogger.WithFields(logrus.Fields{
+		"containers":     len(containers),
+		"warmup_seconds": warmupSeconds,
+	}).Info("Allocation scheduler initialized")
 	return nil
 }
 
-func (ds *AllocationScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) error {
+func (as *AllocationScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) error {
+	if time.Now().Before(as.warmupCompleteTime) {
+		return nil
+	}
+
 	containers := dataframes.GetAllContainers()
 
 	for containerIndex, containerDF := range containers {
@@ -49,46 +69,72 @@ func (ds *AllocationScheduler) ProcessDataFrames(dataframes *dataframe.DataFrame
 
 		// Simple and lightweight: just print current CPU and cache miss rate
 		if latest.Perf != nil && latest.Perf.CacheMissRate != nil {
-			ds.schedulerLogger.WithFields(logrus.Fields{
+			as.schedulerLogger.WithFields(logrus.Fields{
 				"container":       containerIndex,
 				"cache_miss_rate": *latest.Perf.CacheMissRate,
 			}).Info("Cache miss rate")
 		}
 
 		if latest.Docker != nil && latest.Docker.CPUUsagePercent != nil {
-			ds.schedulerLogger.WithFields(logrus.Fields{
+			as.schedulerLogger.WithFields(logrus.Fields{
 				"container":   containerIndex,
 				"cpu_percent": *latest.Docker.CPUUsagePercent,
 			}).Info("CPU usage")
 		}
+
+		pid := as.containers[containerIndex].PID
+
+		as.schedulerLogger.WithFields(logrus.Fields{
+			"container": containerIndex,
+			"pid":       pid,
+		}).Info("Found PID")
+
+		class, err := as.rdtAllocator.GetContainerClass(pid)
+		if err != nil {
+			as.schedulerLogger.WithError(err).Error("Could not find class!")
+		} else {
+			as.schedulerLogger.WithFields(logrus.Fields{
+				"pid":   pid,
+				"class": class,
+			}).Info("Found class for PID")
+		}
+
+		classes := as.rdtAllocator.ListAvailableClasses()
+
+		exists := slices.Contains(classes, "victim-test")
+
+		if exists == false {
+			as.rdtAllocator.CreateRDTClass("victim-test", 0.3, 0.3)
+		}
+
 	}
 
 	return nil
 }
 
-func (ds *AllocationScheduler) Shutdown() error {
+func (as *AllocationScheduler) Shutdown() error {
 	// TODO: Implement Cleanup
 	return nil
 }
 
-func (ds *AllocationScheduler) GetVersion() string {
-	return ds.version
+func (as *AllocationScheduler) GetVersion() string {
+	return as.version
 }
 
-func (ds *AllocationScheduler) SetLogLevel(level string) error {
+func (as *AllocationScheduler) SetLogLevel(level string) error {
 	logLevel, err := logrus.ParseLevel(level)
 	if err != nil {
 		return err
 	}
-	ds.schedulerLogger.SetLevel(logLevel)
+	as.schedulerLogger.SetLevel(logLevel)
 	return nil
 }
 
-func (ds *AllocationScheduler) SetHostConfig(hostConfig *host.HostConfig) {
-	ds.hostConfig = hostConfig
+func (as *AllocationScheduler) SetHostConfig(hostConfig *host.HostConfig) {
+	as.hostConfig = hostConfig
 }
 
-func (ds *AllocationScheduler) SetProbe(prober *probe.Probe) {
-	ds.prober = prober
-	ds.schedulerLogger.Debug("Probe injected into scheduler")
+func (as *AllocationScheduler) SetProbe(prober *probe.Probe) {
+	as.prober = prober
+	as.schedulerLogger.Debug("Probe injected into scheduler")
 }

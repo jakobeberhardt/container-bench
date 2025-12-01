@@ -1015,7 +1015,15 @@ func (cb *ContainerBench) initializeSchedulerWithPIDs() error {
 	var rdtAllocator scheduler.RDTAllocator
 	if cb.hostConfig.RDT.Supported && cb.config.Benchmark.Scheduler.RDT {
 		rdtAllocator = scheduler.NewDefaultRDTAllocator()
-		logger.Debug("RDT allocator created for scheduler")
+		logger.Info("RDT allocator created for scheduler")
+
+		// Initialize the RDT allocator
+		if err := rdtAllocator.Initialize(); err != nil {
+			logger.WithError(err).Warn("Failed to initialize RDT allocator, scheduler will have limited functionality")
+			rdtAllocator = nil
+		} else {
+			logger.Info("RDT allocator initialized successfully")
+		}
 	} else {
 		logger.Debug("RDT allocator not created (RDT not supported or not enabled)")
 	}

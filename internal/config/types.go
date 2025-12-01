@@ -33,10 +33,20 @@ type RegistryConfig struct {
 }
 
 type SchedulerConfig struct {
-	Implementation string        `yaml:"implementation"`
-	RDT            bool          `yaml:"rdt"`
-	LogLevel       string        `yaml:"log_level,omitempty"`
-	Prober         *ProberConfig `yaml:"prober,omitempty"`
+	Implementation string           `yaml:"implementation"`
+	RDT            bool             `yaml:"rdt"`
+	LogLevel       string           `yaml:"log_level,omitempty"`
+	Prober         *ProberConfig    `yaml:"prober,omitempty"`
+	Allocator      *AllocatorConfig `yaml:"allocator,omitempty"`
+}
+
+type AllocatorConfig struct {
+	Implementation string  `yaml:"implementation"`
+	WarmupT        int     `yaml:"warmup_t,omitempty"`
+	Duration       int     `yaml:"duration,omitempty"`
+	Target         float64 `yaml:"target,omitempty"`
+	StepSizeL3     int     `yaml:"step_size_l3,omitempty"`
+	StepSizeMB     int     `yaml:"step_size_mb,omitempty"`
 }
 
 type ProberConfig struct {

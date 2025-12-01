@@ -1,13 +1,21 @@
 benchmark:
   name: PostgreSQL
   description: Adds and removes allocations
-  max_t: 120
+  max_t: 20
   pid_sync_interval: 100  
   log_level: info
   scheduler:
     implementation: allocation
     rdt: true
-    log_level: warn
+    log_level: info
+    allocator:
+      implementation: default
+      warmup_t: 5
+      duration: 60
+      target: 1.0
+      step_size_l3: 1
+      step_size_mb: 10
+
   data:
     db:
       host: ${INFLUXDB_HOST}
