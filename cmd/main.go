@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"container-bench/internal/allocation"
 	"container-bench/internal/collectors"
 	"container-bench/internal/config"
 	"container-bench/internal/database"
@@ -1012,9 +1013,9 @@ func (cb *ContainerBench) initializeSchedulerWithPIDs() error {
 	}
 
 	// Create RDT allocator if supported
-	var rdtAllocator scheduler.RDTAllocator
+	var rdtAllocator allocation.RDTAllocator
 	if cb.hostConfig.RDT.Supported && cb.config.Benchmark.Scheduler.RDT {
-		rdtAllocator = scheduler.NewDefaultRDTAllocator()
+		rdtAllocator = allocation.NewDefaultRDTAllocator()
 		logger.Info("RDT allocator created for scheduler")
 
 		// Initialize the RDT allocator

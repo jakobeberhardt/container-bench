@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"container-bench/internal/allocation"
 	"container-bench/internal/config"
 	"container-bench/internal/dataframe"
 	"container-bench/internal/host"
@@ -14,16 +15,25 @@ import (
 )
 
 type AllocationScheduler struct {
-	name            string
-	version         string
-	schedulerLogger *logrus.Logger
-	hostConfig      *host.HostConfig
-	containers      []ContainerInfo
-	rdtAllocator    RDTAllocator
-	prober          *probe.Probe
-	config          *config.SchedulerConfig
-
+	name               string
+	version            string
+	schedulerLogger    *logrus.Logger
+	hostConfig         *host.HostConfig
+	containers         []ContainerInfo
+	rdtAllocator       allocation.RDTAllocator
+	prober             *probe.Probe
+	config             *config.SchedulerConfig
+	accounting         Accounts
 	warmupCompleteTime time.Time
+}
+
+type Accounts struct {
+	accounts []Account
+}
+
+type Account struct {
+	L3Allocation              float64
+	MemoryBandwidthAllocation float64
 }
 
 func NewAllocationScheduler() *AllocationScheduler {
@@ -34,10 +44,19 @@ func NewAllocationScheduler() *AllocationScheduler {
 	}
 }
 
-func (as *AllocationScheduler) Initialize(allocator RDTAllocator, containers []ContainerInfo, schedulerConfig *config.SchedulerConfig) error {
+func (as *AllocationScheduler) Initialize(allocator allocation.RDTAllocator, containers []ContainerInfo, schedulerConfig *config.SchedulerConfig) error {
 	as.rdtAllocator = allocator
 	as.containers = containers
 	as.config = schedulerConfig
+	as.accounting = Accounts{}
+	as.accounting.accounts = make([]Account, len(containers))
+
+	for i, _ := range containers {
+		as.accounting.accounts[i] = Account{
+			L3Allocation:              0.0,
+			MemoryBandwidthAllocation: 0.0,
+		}
+	}
 
 	warmupSeconds := 0
 	if as.config != nil && as.config.Allocator != nil && as.config.Allocator.WarmupT > 0 {
@@ -74,13 +93,6 @@ func (as *AllocationScheduler) ProcessDataFrames(dataframes *dataframe.DataFrame
 				"cache_miss_rate": *latest.Perf.CacheMissRate,
 			}).Info("Cache miss rate")
 		}
-
-		// if latest.Docker != nil && latest.Docker.CPUUsagePercent != nil {
-		// 	as.schedulerLogger.WithFields(logrus.Fields{
-		// 		"container":   containerIndex,
-		// 		"cpu_percent": *latest.Docker.CPUUsagePercent,
-		// 	}).Info("CPU usage")
-		// }
 
 		pid := as.containers[containerIndex].PID
 

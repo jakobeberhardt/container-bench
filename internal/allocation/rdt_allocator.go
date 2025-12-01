@@ -1,4 +1,4 @@
-package scheduler
+package allocation
 
 import (
 	"fmt"
@@ -78,14 +78,10 @@ func (a *DefaultRDTAllocator) CreateRDTClass(className string, l3CachePercent fl
 		return fmt.Errorf("RDT allocator not initialized")
 	}
 
-	// Check if class already exists
-	if ctrlGroup, exists := rdt.GetClass(className); exists {
+	// Check if we're already managing this class
+	if _, tracked := a.managedClasses[className]; tracked {
 		a.logger.WithField("class_name", className).Debug("RDT class already exists")
-		// Track it if not already tracked
-		if _, tracked := a.managedClasses[className]; !tracked {
-			a.managedClasses[className] = ctrlGroup
-		}
-		return nil // Return success if class already exists
+		return nil
 	}
 
 	// Convert from fraction (0.0-1.0) to percentage (0-100)
@@ -283,7 +279,7 @@ func (a *DefaultRDTAllocator) RemoveContainerFromClass(pid int) error {
 		"pid":        pid,
 		"from_class": currentClass,
 		"to_class":   defaultClass.Name(),
-	}).Info("Container moved from RDT class to default")
+	}).Debug("Container moved from RDT class to default")
 
 	return nil
 }
