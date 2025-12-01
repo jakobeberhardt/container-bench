@@ -7,7 +7,7 @@ import (
 	"container-bench/internal/host"
 	"container-bench/internal/logging"
 	"container-bench/internal/probe"
-
+	"fmt"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -25,6 +25,13 @@ type AllocationScheduler struct {
 	accounting         Accounts
 	warmupCompleteTime time.Time
 	classCreated       bool
+
+	// Sweep configuration
+	currentL3Ways     int
+	currentMemBW      float64
+	allocationStarted time.Time
+	sweepStarted      bool
+	maxL3Ways         int
 }
 
 type Accounts struct {
@@ -52,6 +59,11 @@ func (as *AllocationScheduler) Initialize(accountant *accounting.RDTAccountant, 
 	as.accounting = Accounts{}
 	as.accounting.accounts = make([]Account, len(containers))
 	as.classCreated = false
+	as.sweepStarted = false
+
+	// Initialize sweep parameters
+	as.currentL3Ways = 1  // Start with 1 way
+	as.currentMemBW = 1.0 // Start with 1% memory bandwidth
 
 	for i, _ := range containers {
 		as.accounting.accounts[i] = Account{
@@ -80,63 +92,183 @@ func (as *AllocationScheduler) ProcessDataFrames(dataframes *dataframe.DataFrame
 		return nil
 	}
 
-	// Create victim class with 30% cache allocation after warmup (once)
-	if !as.classCreated {
-		className := "victim-test"
-		err := as.rdtAccountant.CreateClass(className,
-			&accounting.AllocationRequest{
-				L3Percent:    30.0, // 30% of L3 cache
-				MemBandwidth: 30.0, // 30% of memory bandwidth
-			},
-			&accounting.AllocationRequest{
-				L3Percent:    30.0,
-				MemBandwidth: 30.0,
-			},
-		)
+	// Get allocator config
+	if as.config == nil || as.config.Allocator == nil {
+		return nil
+	}
 
+	allocCfg := as.config.Allocator
+	duration := allocCfg.Duration
+	stepSizeL3 := allocCfg.StepSizeL3
+	stepSizeMB := allocCfg.StepSizeMB
+
+	// Default values if not configured
+	if duration <= 0 {
+		duration = 10 // 10 seconds default
+	}
+	if stepSizeL3 <= 0 {
+		stepSizeL3 = 1 // 1 way step default
+	}
+	if stepSizeMB <= 0 {
+		stepSizeMB = 5 // 5% step default
+	}
+
+	// Get max ways from host config
+	if as.hostConfig != nil && as.maxL3Ways == 0 {
+		as.maxL3Ways = as.hostConfig.L3Cache.WaysPerCache
+	}
+	if as.maxL3Ways == 0 {
+		as.maxL3Ways = 12 // Fallback default
+	}
+
+	className := "sweep-allocation"
+
+	// Start sweep or advance to next allocation
+	if !as.sweepStarted {
+		// Create initial allocation with 1 way and 1% bandwidth
+		as.sweepStarted = true
+		as.allocationStarted = time.Now()
+		as.classCreated = false
+
+		err := as.createAllocation(className, as.currentL3Ways, as.currentMemBW)
 		if err != nil {
-			as.schedulerLogger.WithError(err).Error("Failed to create RDT class")
-		} else {
-			as.classCreated = true
-			as.schedulerLogger.WithField("class", className).Info("RDT class created with 30% cache allocation")
+			as.schedulerLogger.WithError(err).Error("Failed to create initial allocation")
+			return err
+		}
 
-			// Assign all containers to the class
-			for i, container := range as.containers {
-				if container.PID != 0 {
-					err := as.rdtAccountant.MoveContainer(container.PID, className)
-					if err != nil {
-						as.schedulerLogger.WithError(err).WithFields(logrus.Fields{
-							"container": i,
-							"pid":       container.PID,
-						}).Error("Failed to assign container to RDT class")
-					} else {
-						as.schedulerLogger.WithFields(logrus.Fields{
-							"container": i,
-							"pid":       container.PID,
-							"class":     className,
-						}).Info("Container assigned to RDT class")
-					}
-				}
+		as.schedulerLogger.WithFields(logrus.Fields{
+			"l3_ways":      as.currentL3Ways,
+			"mem_bw":       as.currentMemBW,
+			"duration_sec": duration,
+		}).Info("Started allocation sweep")
+
+		return nil
+	}
+
+	// Check if current allocation duration is complete
+	elapsed := time.Since(as.allocationStarted).Seconds()
+	if elapsed < float64(duration) {
+		// Still running current allocation
+		return nil
+	}
+
+	// Duration complete - advance to next allocation
+	as.schedulerLogger.WithFields(logrus.Fields{
+		"completed_l3_ways": as.currentL3Ways,
+		"completed_mem_bw":  as.currentMemBW,
+		"duration_sec":      int(elapsed),
+	}).Info("Allocation period complete, advancing")
+
+	// Advance L3 ways
+	as.currentL3Ways += stepSizeL3
+
+	// If we've exceeded max ways, reset ways and increment memory bandwidth
+	if as.currentL3Ways > as.maxL3Ways {
+		as.currentL3Ways = 1
+		as.currentMemBW += float64(stepSizeMB)
+
+		// Check if we've exceeded 100% bandwidth
+		if as.currentMemBW > 100.0 {
+			as.schedulerLogger.Info("Allocation sweep complete")
+			return nil
+		}
+
+		as.schedulerLogger.WithFields(logrus.Fields{
+			"new_mem_bw":  as.currentMemBW,
+			"reset_l3_to": as.currentL3Ways,
+		}).Info("Completed L3 sweep, incrementing memory bandwidth")
+	}
+
+	// Update allocation
+	err := as.updateAllocation(className, as.currentL3Ways, as.currentMemBW)
+	if err != nil {
+		as.schedulerLogger.WithError(err).Error("Failed to update allocation")
+		return err
+	}
+
+	as.allocationStarted = time.Now()
+
+	as.schedulerLogger.WithFields(logrus.Fields{
+		"l3_ways": as.currentL3Ways,
+		"mem_bw":  as.currentMemBW,
+	}).Info("Advanced to next allocation")
+
+	return nil
+}
+
+// createAllocation creates a new RDT class and assigns all containers to it
+func (as *AllocationScheduler) createAllocation(className string, l3Ways int, memBW float64) error {
+	// Create class with ways allocation
+	waysRange := fmt.Sprintf("0-%d", l3Ways-1)
+
+	err := as.rdtAccountant.CreateClass(className,
+		&accounting.AllocationRequest{
+			L3Ways:       waysRange,
+			MemBandwidth: memBW,
+		},
+		&accounting.AllocationRequest{
+			L3Ways:       waysRange,
+			MemBandwidth: memBW,
+		},
+	)
+
+	if err != nil {
+		return err
+	}
+
+	as.classCreated = true
+	as.schedulerLogger.WithFields(logrus.Fields{
+		"class":   className,
+		"l3_ways": l3Ways,
+		"mem_bw":  memBW,
+	}).Info("Created RDT allocation class")
+
+	// Assign all containers to the class
+	for i, container := range as.containers {
+		if container.PID != 0 {
+			err := as.rdtAccountant.MoveContainer(container.PID, className)
+			if err != nil {
+				as.schedulerLogger.WithError(err).WithFields(logrus.Fields{
+					"container": i,
+					"pid":       container.PID,
+				}).Error("Failed to assign container to RDT class")
+			} else {
+				as.schedulerLogger.WithFields(logrus.Fields{
+					"container": i,
+					"pid":       container.PID,
+					"class":     className,
+				}).Debug("Container assigned to RDT class")
 			}
 		}
 	}
 
-	containers := dataframes.GetAllContainers()
+	return nil
+}
 
-	for containerIndex, containerDF := range containers {
-		latest := containerDF.GetLatestStep()
-		if latest == nil {
-			continue
-		}
+// updateAllocation updates an existing RDT class allocation
+func (as *AllocationScheduler) updateAllocation(className string, l3Ways int, memBW float64) error {
+	waysRange := fmt.Sprintf("0-%d", l3Ways-1)
 
-		// Log cache miss rate
-		if latest.Perf != nil && latest.Perf.CacheMissRate != nil {
-			as.schedulerLogger.WithFields(logrus.Fields{
-				"container":       containerIndex,
-				"cache_miss_rate": *latest.Perf.CacheMissRate,
-			}).Debug("Cache miss rate")
-		}
+	err := as.rdtAccountant.UpdateClass(className,
+		&accounting.AllocationRequest{
+			L3Ways:       waysRange,
+			MemBandwidth: memBW,
+		},
+		&accounting.AllocationRequest{
+			L3Ways:       waysRange,
+			MemBandwidth: memBW,
+		},
+	)
+
+	if err != nil {
+		return err
 	}
+
+	as.schedulerLogger.WithFields(logrus.Fields{
+		"class":   className,
+		"l3_ways": l3Ways,
+		"mem_bw":  memBW,
+	}).Info("Updated RDT allocation class")
 
 	return nil
 }
