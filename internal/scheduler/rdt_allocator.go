@@ -333,26 +333,21 @@ func (a *DefaultRDTAllocator) DeleteRDTClass(className string) error {
 		return fmt.Errorf("RDT allocator not initialized")
 	}
 
-	// Note: goresctrl doesn't provide direct class deletion
-	// Classes are typically managed through configuration
-	// TODO: Implement reset
-	return fmt.Errorf("dynamic RDT class deletion not implemented")
-}
-
-func (a *DefaultRDTAllocator) Cleanup() error {
-	if !a.initialized {
+	// First, move all PIDs from this class to the default class
+	ctrlGroup, exists := rdt.GetClass(className)
+	if !exists {
+		a.logger.WithField("class", className).Debug("RDT class not found, nothing to delete")
 		return nil
 	}
 
-	a.logger.Info("Cleaning up RDT allocator")
-
-	// Move all PIDs from managed classes back to default class
-	for className, ctrlGroup := range a.managedClasses {
-		pids, err := ctrlGroup.GetPids()
-		if err != nil {
-			a.logger.WithError(err).WithField("class", className).Warn("Failed to get PIDs from class during cleanup")
-			continue
-		}
+	pids, err := ctrlGroup.GetPids()
+	if err != nil {
+		a.logger.WithError(err).WithField("class", className).Warn("Failed to get PIDs from class")
+	} else {
+		a.logger.WithFields(logrus.Fields{
+			"class": className,
+			"pids":  len(pids),
+		}).Debug("Moving PIDs out of class before deletion")
 
 		for _, pidStr := range pids {
 			pid, err := strconv.Atoi(pidStr)
@@ -360,14 +355,123 @@ func (a *DefaultRDTAllocator) Cleanup() error {
 				continue
 			}
 			if err := a.RemoveContainerFromClass(pid); err != nil {
-				a.logger.WithError(err).WithField("pid", pid).Warn("Failed to cleanup PID from RDT class")
+				a.logger.WithError(err).WithFields(logrus.Fields{
+					"pid":   pid,
+					"class": className,
+				}).Warn("Failed to move PID from class")
 			}
 		}
+	}
+
+	// Reset RDT configuration to remove the class
+	// This requires rebuilding the config without the target class
+	defaultConfig := &rdt.Config{
+		Partitions: map[string]struct {
+			L2Allocation rdt.CatConfig `json:"l2Allocation"`
+			L3Allocation rdt.CatConfig `json:"l3Allocation"`
+			MBAllocation rdt.MbaConfig `json:"mbAllocation"`
+			Classes      map[string]struct {
+				L2Allocation rdt.CatConfig         `json:"l2Allocation"`
+				L3Allocation rdt.CatConfig         `json:"l3Allocation"`
+				MBAllocation rdt.MbaConfig         `json:"mbAllocation"`
+				Kubernetes   rdt.KubernetesOptions `json:"kubernetes"`
+			} `json:"classes"`
+		}{
+			"": {
+				L3Allocation: rdt.CatConfig{
+					"0": rdt.CacheIdCatConfig{
+						Unified: rdt.CacheProportion("100%"),
+					},
+				},
+				MBAllocation: rdt.MbaConfig{
+					"0": rdt.CacheIdMbaConfig{rdt.MbProportion("100%")},
+				},
+				Classes: make(map[string]struct {
+					L2Allocation rdt.CatConfig         `json:"l2Allocation"`
+					L3Allocation rdt.CatConfig         `json:"l3Allocation"`
+					MBAllocation rdt.MbaConfig         `json:"mbAllocation"`
+					Kubernetes   rdt.KubernetesOptions `json:"kubernetes"`
+				}),
+			},
+		},
+	}
+
+	// Apply the default configuration which removes all custom classes
+	if err := rdt.SetConfig(defaultConfig, true); err != nil {
+		return fmt.Errorf("failed to delete RDT class %s: %w", className, err)
+	}
+
+	// Remove from managed classes
+	delete(a.managedClasses, className)
+
+	a.logger.WithField("class", className).Info("RDT class deleted successfully")
+	return nil
+}
+
+func (a *DefaultRDTAllocator) Cleanup() error {
+	if !a.initialized {
+		return nil
+	}
+
+	a.logger.Info("Cleaning up RDT allocator - removing all managed classes")
+
+	// Get list of class names before deleting (to avoid modifying map during iteration)
+	classNames := make([]string, 0, len(a.managedClasses))
+	for className := range a.managedClasses {
+		classNames = append(classNames, className)
+	}
+
+	// Move all PIDs from managed classes to default and delete classes
+	for _, className := range classNames {
+		a.logger.WithField("class", className).Debug("Deleting RDT class")
+		if err := a.DeleteRDTClass(className); err != nil {
+			a.logger.WithError(err).WithField("class", className).Warn("Failed to delete RDT class during cleanup")
+		}
+	}
+
+	// Reset RDT configuration to default (all resources available, no custom classes)
+	a.logger.Info("Resetting RDT configuration to default")
+
+	defaultConfig := &rdt.Config{
+		Partitions: map[string]struct {
+			L2Allocation rdt.CatConfig `json:"l2Allocation"`
+			L3Allocation rdt.CatConfig `json:"l3Allocation"`
+			MBAllocation rdt.MbaConfig `json:"mbAllocation"`
+			Classes      map[string]struct {
+				L2Allocation rdt.CatConfig         `json:"l2Allocation"`
+				L3Allocation rdt.CatConfig         `json:"l3Allocation"`
+				MBAllocation rdt.MbaConfig         `json:"mbAllocation"`
+				Kubernetes   rdt.KubernetesOptions `json:"kubernetes"`
+			} `json:"classes"`
+		}{
+			"": {
+				L3Allocation: rdt.CatConfig{
+					"0": rdt.CacheIdCatConfig{
+						Unified: rdt.CacheProportion("100%"),
+					},
+				},
+				MBAllocation: rdt.MbaConfig{
+					"0": rdt.CacheIdMbaConfig{rdt.MbProportion("100%")},
+				},
+				Classes: make(map[string]struct {
+					L2Allocation rdt.CatConfig         `json:"l2Allocation"`
+					L3Allocation rdt.CatConfig         `json:"l3Allocation"`
+					MBAllocation rdt.MbaConfig         `json:"mbAllocation"`
+					Kubernetes   rdt.KubernetesOptions `json:"kubernetes"`
+				}),
+			},
+		},
+	}
+
+	if err := rdt.SetConfig(defaultConfig, true); err != nil {
+		a.logger.WithError(err).Warn("Failed to reset RDT configuration to default")
+		return fmt.Errorf("failed to reset RDT config: %w", err)
 	}
 
 	// Clear managed classes
 	a.managedClasses = make(map[string]rdt.CtrlGroup)
 	a.initialized = false
 
+	a.logger.Info("RDT allocator cleanup completed successfully")
 	return nil
 }

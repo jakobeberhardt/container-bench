@@ -75,19 +75,19 @@ func (as *AllocationScheduler) ProcessDataFrames(dataframes *dataframe.DataFrame
 			}).Info("Cache miss rate")
 		}
 
-		if latest.Docker != nil && latest.Docker.CPUUsagePercent != nil {
-			as.schedulerLogger.WithFields(logrus.Fields{
-				"container":   containerIndex,
-				"cpu_percent": *latest.Docker.CPUUsagePercent,
-			}).Info("CPU usage")
-		}
+		// if latest.Docker != nil && latest.Docker.CPUUsagePercent != nil {
+		// 	as.schedulerLogger.WithFields(logrus.Fields{
+		// 		"container":   containerIndex,
+		// 		"cpu_percent": *latest.Docker.CPUUsagePercent,
+		// 	}).Info("CPU usage")
+		// }
 
 		pid := as.containers[containerIndex].PID
 
 		as.schedulerLogger.WithFields(logrus.Fields{
 			"container": containerIndex,
 			"pid":       pid,
-		}).Info("Found PID")
+		}).Debug("Found PID")
 
 		class, err := as.rdtAllocator.GetContainerClass(pid)
 		if err != nil {
@@ -124,7 +124,10 @@ func (as *AllocationScheduler) ProcessDataFrames(dataframes *dataframe.DataFrame
 }
 
 func (as *AllocationScheduler) Shutdown() error {
-	// TODO: Implement Cleanup
+	err := as.rdtAllocator.Cleanup()
+	if err != nil {
+		as.schedulerLogger.WithError(err).Error("Cloud not clean up RDT classes")
+	}
 	return nil
 }
 
