@@ -16,11 +16,11 @@ benchmark:
       step_size_mb: 10       # Increment memory bandwidth by 10% at a time
       min_l3_ways: 1         # Start with 2 ways
       max_l3_ways: 12        # Up to 12 ways (or host max)
-      min_mem_bandwidth: 10  # Start with 20% bandwidth
+      min_mem_bandwidth: 5  # Start with 20% bandwidth
       max_mem_bandwidth: 30 # Up to 100% bandwidth
       order: asc             # Start with smallest allocation
       isolate_others: true   # Move other containers to separate allocation
-      force_reallocation: false  # Don't remove existing allocations
+      force_reallocation: true  # Don't remove existing allocations
 
   data:
     db:
@@ -35,21 +35,21 @@ benchmark:
       username: ${DOCKER_REGISTRY_USERNAME}
       password: ${DOCKER_REGISTRY_PASSWORD}
 
-# victim:
-#   index: 0
-#   image: registry.jakob-eberhardt.de/rdt4nn/postgres:latest
-#   port: 5432:5432
-#   core: 0
-#   data:
-#     frequency: 100
-#     perf: true
-#     docker: true
-#     rdt: true
+victim:
+  index: 0
+  image: registry.jakob-eberhardt.de/rdt4nn/postgres:latest
+  port: 5432:5432
+  core: 0
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
 
 c0:
-  index: 0
+  index: 1
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-  core: 0
+  core: 1
   command: "stress-ng --cache 1 --cache-level 2 --timeout 0"
   data:
     frequency: 100

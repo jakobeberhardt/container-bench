@@ -239,6 +239,7 @@ func ProbeAllocation(
 	result.TotalProbeTime = result.Finished.Sub(result.Started)
 
 	// Cleanup probe classes if they were created
+	// DeleteClass automatically moves containers back to the default group
 	if probeClassCreated {
 		logger.WithField("class", probeClassName).Debug("Cleaning up probe class")
 		if err := rdtAccountant.DeleteClass(probeClassName); err != nil {
@@ -252,31 +253,31 @@ func ProbeAllocation(
 		}
 	}
 
-	// Cleanup: restore original allocations
-	// If force=true, restore all containers that were moved
-	// If force=false, only restore containers that were in system/default
-	logger.Info("Restoring original container allocations")
+	// Restore containers that were in existing RDT classes (not system/default)
+	// Containers originally in system/default are already restored by DeleteClass
+	logger.Debug("Restoring containers to their original RDT classes")
 	for pid, className := range originalClasses {
-		// Skip containers in probe classes (they're already being deleted)
+		// Skip if container was in probe/isolation classes (already moved to default by DeleteClass)
 		if className == probeClassName || className == isolationClassName {
 			continue
 		}
 
-		// If not in default class and force=false, we didn't move them, so skip
-		if !allocRange.ForceReallocation && className != "system/default" && className != "" {
+		// Skip if container was in system/default (already in default after DeleteClass)
+		if className == "system/default" || className == "" {
 			continue
 		}
 
+		// Restore to original RDT class
 		if err := rdtAccountant.MoveContainer(pid, className); err != nil {
 			logger.WithError(err).WithFields(logrus.Fields{
 				"pid":   pid,
 				"class": className,
-			}).Warn("Failed to restore container allocation")
+			}).Warn("Failed to restore container to original RDT class")
 		} else {
 			logger.WithFields(logrus.Fields{
 				"pid":   pid,
 				"class": className,
-			}).Debug("Restored container to original class")
+			}).Debug("Restored container to original RDT class")
 		}
 	}
 

@@ -29,7 +29,7 @@ type ProbeAllocationScheduler struct {
 	// Probing state
 	probeStarted  bool
 	probeComplete bool
-	probeResult   *proberesources.AllocationProbeResult
+	probeResults  []*proberesources.AllocationProbeResult
 }
 
 func NewProbeAllocationScheduler() *ProbeAllocationScheduler {
@@ -182,11 +182,11 @@ func (as *ProbeAllocationScheduler) ProcessDataFrames(dataframes *dataframe.Data
 		Index:   as.containers[0].Index,
 		PID:     as.containers[0].PID,
 		ID:      as.containers[0].ContainerID,
-		Name:    as.containers[0].Config.Name,
-		Cores:   as.containers[0].Config.Core,
-		Socket:  0, // Assume socket 0
-		Image:   as.containers[0].Config.Image,
-		Command: as.containers[0].Config.Command,
+		Name:    "", // Not available in scheduler ContainerInfo
+		Cores:   "", // Not available in scheduler ContainerInfo
+		Socket:  0,  // Assume socket 0
+		Image:   "", // Not available in scheduler ContainerInfo
+		Command: "", // Not available in scheduler ContainerInfo
 	}
 
 	// Build list of other containers for isolation
@@ -219,8 +219,7 @@ func (as *ProbeAllocationScheduler) ProcessDataFrames(dataframes *dataframe.Data
 
 	// Define break condition: stop if IPC efficiency > 0.85
 	breakCondition := func(result *proberesources.AllocationResult, allResults []proberesources.AllocationResult) bool {
-		// TODO: Put function on YML,  for now turn off early returnj
-		if result.IPCEfficiency > 10000.0 {
+		if result.IPCEfficiency > 0.85 {
 			as.schedulerLogger.WithFields(logrus.Fields{
 				"ipc_efficiency": result.IPCEfficiency,
 				"l3_ways":        result.L3Ways,
@@ -231,7 +230,7 @@ func (as *ProbeAllocationScheduler) ProcessDataFrames(dataframes *dataframe.Data
 		return false
 	}
 
-	// Run the probe
+	// Run the probe - note the parameter order matches the function signature
 	result, err := proberesources.ProbeAllocation(
 		targetContainer,
 		otherContainers,
@@ -248,11 +247,12 @@ func (as *ProbeAllocationScheduler) ProcessDataFrames(dataframes *dataframe.Data
 		return err
 	}
 
-	as.probeResult = result
+	as.probeResults = append(as.probeResults, result)
 	as.probeComplete = true
 
 	// Log summary
 	as.schedulerLogger.WithFields(logrus.Fields{
+		"probe_run":         len(as.probeResults),
 		"total_probe_time":  result.TotalProbeTime,
 		"allocations_tried": len(result.Allocations),
 		"aborted":           result.Aborted,
@@ -296,13 +296,13 @@ func (as *ProbeAllocationScheduler) SetBenchmarkID(benchmarkID int) {
 	as.schedulerLogger.WithField("benchmark_id", benchmarkID).Debug("Benchmark ID set")
 }
 
+// GetAllocationProbeResults returns allocation probe results if available
 func (as *ProbeAllocationScheduler) GetAllocationProbeResults() []*proberesources.AllocationProbeResult {
-	if as.probeResult != nil {
-		return []*proberesources.AllocationProbeResult{as.probeResult}
-	}
-	return nil
+	return as.probeResults
 }
 
+// HasAllocationProbeResults returns true if allocation probe results are available
 func (as *ProbeAllocationScheduler) HasAllocationProbeResults() bool {
-	return as.probeResult != nil
+	return len(as.probeResults) > 0
 }
+
