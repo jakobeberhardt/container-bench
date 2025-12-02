@@ -467,6 +467,9 @@ func runBenchmark(configFile string) error {
 	// Set host config for scheduler
 	bench.scheduler.SetHostConfig(bench.hostConfig)
 
+	// Set benchmark ID for scheduler
+	bench.scheduler.SetBenchmarkID(bench.benchmarkID)
+
 	// Initialize Probe if configured
 	if bench.config.Benchmark.Scheduler.Prober != nil {
 		proberConfig := bench.config.Benchmark.Scheduler.Prober
@@ -1228,6 +1231,18 @@ func (cb *ContainerBench) writeDatabaseData() error {
 			if err := cb.dbClient.WriteProbeResults(probeResults); err != nil {
 				logger.WithError(err).Error("Failed to export probe results")
 				return fmt.Errorf("failed to export probe results: %w", err)
+			}
+		}
+	}
+
+	// Export allocation probe results if probe_allocation scheduler was used
+	if probeAllocScheduler, ok := cb.scheduler.(*scheduler.ProbeAllocationScheduler); ok {
+		if probeAllocScheduler.HasAllocationProbeResults() {
+			allocProbeResults := probeAllocScheduler.GetAllocationProbeResults()
+			logger.WithField("allocation_probe_count", len(allocProbeResults)).Info("Exporting allocation probe results")
+			if err := cb.dbClient.WriteAllocationProbeResults(allocProbeResults); err != nil {
+				logger.WithError(err).Error("Failed to export allocation probe results")
+				return fmt.Errorf("failed to export allocation probe results: %w", err)
 			}
 		}
 	}

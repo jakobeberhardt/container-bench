@@ -26,11 +26,11 @@ type Scheduler interface {
 	GetVersion() string
 	SetLogLevel(level string) error
 
-	// Host configuration for scheduler decisions
 	SetHostConfig(hostConfig *host.HostConfig)
 
-	// Probe injection for sensitivity analysis
 	SetProbe(prober *probe.Probe)
+
+	SetBenchmarkID(benchmarkID int)
 }
 
 type DefaultScheduler struct {
@@ -113,5 +113,9 @@ func (ds *DefaultScheduler) SetHostConfig(hostConfig *host.HostConfig) {
 
 func (ds *DefaultScheduler) SetProbe(prober *probe.Probe) {
 	ds.prober = prober
-	ds.schedulerLogger.Debug("Probe injected into scheduler")
+	ds.schedulerLogger.Debug("Probe injected into default scheduler")
+}
+
+func (ds *DefaultScheduler) SetBenchmarkID(benchmarkID int) {
+	// Default scheduler doesn't use benchmark ID
 }

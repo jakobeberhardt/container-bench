@@ -66,18 +66,18 @@ type AllocationResult struct {
 
 // AllocationRange defines the range of allocations to test
 type AllocationRange struct {
-	MinL3Ways          int     `json:"min_l3_ways"`
-	MaxL3Ways          int     `json:"max_l3_ways"`
-	MinMemBandwidth    float64 `json:"min_memory_bandwidth"` // Percentage 0-100
-	MaxMemBandwidth    float64 `json:"max_memory_bandwidth"` // Percentage 0-100
-	StepL3Ways         int     `json:"step_l3_ways"`
-	StepMemBandwidth   float64 `json:"step_memory_bandwidth"` // Percentage points
-	Order              string  `json:"order"`                 // "asc" (start smallest) or "desc" (start largest)
-	DurationPerAlloc   int     `json:"duration_per_alloc"`    // Seconds to test each allocation
-	MaxTotalDuration   int     `json:"max_total_duration"`    // Maximum total probe time in seconds
-	SocketID           int     `json:"socket_id"`             // Which socket to test on
-	IsolateOthers      bool    `json:"isolate_others"`        // Move other containers to different allocation
-	ForceReallocation  bool    `json:"force_reallocation"`    // Remove existing allocations if needed
+	MinL3Ways         int     `json:"min_l3_ways"`
+	MaxL3Ways         int     `json:"max_l3_ways"`
+	MinMemBandwidth   float64 `json:"min_memory_bandwidth"` // Percentage 0-100
+	MaxMemBandwidth   float64 `json:"max_memory_bandwidth"` // Percentage 0-100
+	StepL3Ways        int     `json:"step_l3_ways"`
+	StepMemBandwidth  float64 `json:"step_memory_bandwidth"` // Percentage points
+	Order             string  `json:"order"`                 // "asc" (start smallest) or "desc" (start largest)
+	DurationPerAlloc  int     `json:"duration_per_alloc"`    // Seconds to test each allocation
+	MaxTotalDuration  int     `json:"max_total_duration"`    // Maximum total probe time in seconds
+	SocketID          int     `json:"socket_id"`             // Which socket to test on
+	IsolateOthers     bool    `json:"isolate_others"`        // Move other containers to different allocation
+	ForceReallocation bool    `json:"force_reallocation"`    // Remove existing allocations if needed
 }
 
 // BreakCondition defines when to stop probing early
@@ -85,14 +85,14 @@ type BreakCondition func(result *AllocationResult, allResults []AllocationResult
 
 // ContainerInfo holds information about a container for probing
 type ContainerInfo struct {
-	Index    int
-	PID      int
-	Name     string
-	ID       string
-	Cores    string
-	Socket   int
-	Image    string
-	Command  string
+	Index   int
+	PID     int
+	Name    string
+	ID      string
+	Cores   string
+	Socket  int
+	Image   string
+	Command string
 }
 
 // ProbeAllocation tests different resource allocations for a container and measures performance
@@ -109,17 +109,17 @@ func ProbeAllocation(
 	logger := logging.GetSchedulerLogger()
 
 	result := &AllocationProbeResult{
-		BenchmarkID:    benchmarkID,
-		ContainerID:    targetContainer.ID,
-		ContainerName:  targetContainer.Name,
-		ContainerIndex: targetContainer.Index,
-		ContainerCores: targetContainer.Cores,
-		ContainerSocket: targetContainer.Socket,
-		ContainerImage: targetContainer.Image,
+		BenchmarkID:      benchmarkID,
+		ContainerID:      targetContainer.ID,
+		ContainerName:    targetContainer.Name,
+		ContainerIndex:   targetContainer.Index,
+		ContainerCores:   targetContainer.Cores,
+		ContainerSocket:  targetContainer.Socket,
+		ContainerImage:   targetContainer.Image,
 		ContainerCommand: targetContainer.Command,
-		Started:        time.Now(),
-		Range:          allocRange,
-		Allocations:    make([]AllocationResult, 0),
+		Started:          time.Now(),
+		Range:            allocRange,
+		Allocations:      make([]AllocationResult, 0),
 	}
 
 	logger.WithFields(logrus.Fields{
@@ -155,6 +155,12 @@ func ProbeAllocation(
 	isolationClassName := fmt.Sprintf("probe-isolated-%d", targetContainer.Index)
 	probeClassCreated := false
 	isolationClassCreated := false
+
+	// IMPORTANT: Before creating any classes, we need to ensure system/default is shrunk
+	// to make room for our allocations. We do this by creating a temporary minimal allocation
+	// for system/default so the resctrl filesystem allows our overlapping allocations.
+	// This is necessary because by default, system/default owns all cache ways.
+	logger.Debug("Preparing system/default for probe allocations")
 
 	probeStartTime := time.Now()
 
@@ -255,12 +261,12 @@ func ProbeAllocation(
 		if className == probeClassName || className == isolationClassName {
 			continue
 		}
-		
+
 		// If not in default class and force=false, we didn't move them, so skip
 		if !allocRange.ForceReallocation && className != "system/default" && className != "" {
 			continue
 		}
-		
+
 		if err := rdtAccountant.MoveContainer(pid, className); err != nil {
 			logger.WithError(err).WithFields(logrus.Fields{
 				"pid":   pid,
@@ -292,7 +298,8 @@ type allocationSpec struct {
 // generateAllocationSequence creates the sequence of allocations to test
 // Sequence: Fix L3 ways, vary memory bandwidth from min to max, then change L3 ways and repeat
 // Example with asc order: (2 ways, 20% mem), (2 ways, 30% mem), ..., (2 ways, 100% mem),
-//                         (4 ways, 20% mem), (4 ways, 30% mem), ..., (4 ways, 100% mem), ...
+//
+//	(4 ways, 20% mem), (4 ways, 30% mem), ..., (4 ways, 100% mem), ...
 func generateAllocationSequence(allocRange AllocationRange) []allocationSpec {
 	sequence := make([]allocationSpec, 0)
 
@@ -399,7 +406,7 @@ func applyAndMeasureAllocation(
 
 	// Step 1: Create or update probe class for target container
 	if !probeClassExists {
-		// First allocation - create the class
+		// First allocation
 		err := rdtAccountant.CreateClass(probeClassName,
 			&accounting.AllocationRequest{
 				L3Ways:       waysRange,
@@ -433,8 +440,14 @@ func applyAndMeasureAllocation(
 			}
 		}
 		status.ProbeCreated = true
+
+		// Assign target container to probe class immediately after creation
+		err = rdtAccountant.MoveContainer(targetContainer.PID, probeClassName)
+		if err != nil {
+			return nil, status, fmt.Errorf("failed to move container to probe class: %w", err)
+		}
 	} else {
-		// Subsequent allocations - update the existing class
+		// Subsequent allocations
 		err := rdtAccountant.UpdateClass(probeClassName,
 			&accounting.AllocationRequest{
 				L3Ways:       waysRange,
@@ -464,7 +477,7 @@ func applyAndMeasureAllocation(
 			}
 
 			if !isolationClassExists {
-				// First allocation - create isolation class
+				// First allocation
 				err := rdtAccountant.CreateClass(isolationClassName,
 					&accounting.AllocationRequest{
 						L3Ways:       isolationWaysRange,
@@ -476,57 +489,46 @@ func applyAndMeasureAllocation(
 					},
 				)
 
-				if err != nil && allocRange.ForceReallocation {
-					_ = rdtAccountant.DeleteClass(isolationClassName)
-					_ = rdtAccountant.CreateClass(isolationClassName,
-						&accounting.AllocationRequest{
-							L3Ways:       isolationWaysRange,
-							MemBandwidth: remainingMemBW,
-						},
-						&accounting.AllocationRequest{
-							L3Ways:       isolationWaysRange,
-							MemBandwidth: remainingMemBW,
-						},
-					)
-				}
-				if err == nil {
+				if err != nil {
+					logger.WithError(err).Warn("Failed to create isolation class, continuing without isolation")
+				} else {
 					status.IsolationCreated = true
-				}
 
-				// Move other containers to isolation class based on force flag
-				for _, other := range otherContainers {
-					if other.Socket == allocRange.SocketID {
-						// Check if we should move this container
-						currentClass, err := rdtAccountant.GetContainerClass(other.PID)
-						if err != nil {
-							logger.WithError(err).WithField("pid", other.PID).Debug("Failed to get container class")
-							continue
-						}
-						
-						// Only move if in system/default OR if force is enabled
-						if currentClass == "system/default" || currentClass == "" || allocRange.ForceReallocation {
-							if err := rdtAccountant.MoveContainer(other.PID, isolationClassName); err != nil {
-								logger.WithError(err).WithFields(logrus.Fields{
-									"pid":           other.PID,
-									"current_class": currentClass,
-								}).Warn("Failed to move container to isolation class")
+					// Move other containers to isolation class based on force flag
+					for _, other := range otherContainers {
+						if other.Socket == allocRange.SocketID {
+							// Check if we should move this container
+							currentClass, err := rdtAccountant.GetContainerClass(other.PID)
+							if err != nil {
+								logger.WithError(err).WithField("pid", other.PID).Debug("Failed to get container class")
+								continue
+							}
+
+							// Only move if in system/default OR if force is enabled
+							if currentClass == "system/default" || currentClass == "" || allocRange.ForceReallocation {
+								if err := rdtAccountant.MoveContainer(other.PID, isolationClassName); err != nil {
+									logger.WithError(err).WithFields(logrus.Fields{
+										"pid":           other.PID,
+										"current_class": currentClass,
+									}).Warn("Failed to move container to isolation class")
+								} else {
+									logger.WithFields(logrus.Fields{
+										"pid":        other.PID,
+										"from_class": currentClass,
+										"to_class":   isolationClassName,
+									}).Debug("Moved container to isolation class")
+								}
 							} else {
 								logger.WithFields(logrus.Fields{
-									"pid":        other.PID,
-									"from_class": currentClass,
-									"to_class":   isolationClassName,
-								}).Debug("Moved container to isolation class")
+									"pid":   other.PID,
+									"class": currentClass,
+								}).Debug("Skipping container in non-default class (force=false)")
 							}
-						} else {
-							logger.WithFields(logrus.Fields{
-								"pid":   other.PID,
-								"class": currentClass,
-							}).Debug("Skipping container in non-default class (force=false)")
 						}
 					}
 				}
 			} else {
-				// Subsequent allocations - update existing isolation class
+				// Subsequent allocations
 				err := rdtAccountant.UpdateClass(isolationClassName,
 					&accounting.AllocationRequest{
 						L3Ways:       isolationWaysRange,
@@ -544,14 +546,6 @@ func applyAndMeasureAllocation(
 		}
 	}
 
-	// Step 3: Assign target container to probe class (only on first allocation)
-	if !probeClassExists {
-		err := rdtAccountant.MoveContainer(targetContainer.PID, probeClassName)
-		if err != nil {
-			return nil, status, fmt.Errorf("failed to move container to probe class: %w", err)
-		}
-	}
-
 	// Step 4: Wait for the allocation duration and collect metrics
 	startStepNumber := getLatestStepNumber(dataframes, targetContainer.Index)
 
@@ -564,7 +558,7 @@ func applyAndMeasureAllocation(
 	// Step 5: Compute performance metrics from dataframes
 	computeAllocationMetrics(allocResult, dataframes, targetContainer.Index, startStepNumber, endStepNumber)
 
-	// Note: We do NOT cleanup probe classes here - they persist across allocations
+	// Note: We do NOT cleanup probe classes here
 	// The scheduler or ProbeAllocation caller will clean them up at the end
 
 	return allocResult, status, nil

@@ -12,6 +12,7 @@ import (
 	"container-bench/internal/host"
 	"container-bench/internal/logging"
 	"container-bench/internal/probe"
+	"container-bench/internal/probe/resources"
 
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/influxdata/influxdb-client-go/v2/api"
@@ -25,6 +26,7 @@ type DatabaseClient interface {
 	WriteBenchmarkMetrics(benchmarkID int, benchmarkConfig *config.BenchmarkConfig, metrics *datahandeling.BenchmarkMetrics, startTime, endTime time.Time) error
 	WriteMetadata(metadata *BenchmarkMetadata) error
 	WriteProbeResults(probeResults []*probe.ProbeResult) error
+	WriteAllocationProbeResults(allocationProbeResults []*resources.AllocationProbeResult) error
 	Close()
 }
 
@@ -526,6 +528,127 @@ func (idb *InfluxDBClient) WriteProbeResults(probeResults []*probe.ProbeResult) 
 	}
 
 	logger.WithField("probe_count", len(probeResults)).Info("Probe results written successfully")
+	return nil
+}
+
+// WriteAllocationProbeResults writes allocation probe results to the benchmark_allocation table
+func (idb *InfluxDBClient) WriteAllocationProbeResults(allocationProbeResults []*resources.AllocationProbeResult) error {
+	logger := logging.GetLogger()
+
+	if len(allocationProbeResults) == 0 {
+		logger.Info("No allocation probe results to write")
+		return nil
+	}
+
+	logger.WithField("allocation_probe_count", len(allocationProbeResults)).Info("Writing allocation probe results to InfluxDB")
+
+	var points []*write.Point
+
+	for probeIndex, probeResult := range allocationProbeResults {
+		// Write each allocation result as a separate point
+		for _, allocResult := range probeResult.Allocations {
+			tags := map[string]string{
+				"benchmark_id":           fmt.Sprintf("%d", probeResult.BenchmarkID),
+				"allocation_probe_index": fmt.Sprintf("%d", probeIndex),
+				"container_id":           probeResult.ContainerID,
+				"container_name":         probeResult.ContainerName,
+				"container_index":        fmt.Sprintf("%d", probeResult.ContainerIndex),
+				"container_cores":        probeResult.ContainerCores,
+				"container_image":        probeResult.ContainerImage,
+				"socket_id":              fmt.Sprintf("%d", allocResult.SocketID),
+				"isolated_others":        fmt.Sprintf("%v", allocResult.IsolatedOthers),
+			}
+
+			fields := map[string]interface{}{
+				// Container info
+				"container_command": probeResult.ContainerCommand,
+
+				// Probe metadata
+				"probe_aborted":    probeResult.Aborted,
+				"probe_started":    probeResult.Started.Format(time.RFC3339),
+				"probe_finished":   probeResult.Finished.Format(time.RFC3339),
+				"total_probe_time": probeResult.TotalProbeTime.Nanoseconds(),
+
+				// Allocation parameters
+				"l3_ways":       allocResult.L3Ways,
+				"mem_bandwidth": allocResult.MemBandwidth,
+
+				// Allocation timing
+				"allocation_started":  allocResult.Started.Format(time.RFC3339),
+				"allocation_duration": allocResult.Duration.Nanoseconds(),
+
+				// Performance metrics
+				"avg_ipc":                allocResult.AvgIPC,
+				"avg_theoretical_ipc":    allocResult.AvgTheoreticalIPC,
+				"ipc_efficiency":         allocResult.IPCEfficiency,
+				"avg_cache_miss_rate":    allocResult.AvgCacheMissRate,
+				"avg_stalled_cycles":     allocResult.AvgStalledCycles,
+				"avg_l3_occupancy":       allocResult.AvgL3Occupancy,
+				"avg_mem_bandwidth_used": allocResult.AvgMemBandwidthUsed,
+			}
+
+			// Add dataframe references if available
+			if len(allocResult.DataFrameSteps) > 0 {
+				fields["first_dataframe_step"] = allocResult.DataFrameSteps[0]
+				fields["last_dataframe_step"] = allocResult.DataFrameSteps[len(allocResult.DataFrameSteps)-1]
+				fields["num_dataframe_steps"] = len(allocResult.DataFrameSteps)
+			}
+
+			// Add optional fields
+			if probeResult.ContainerSocket > 0 {
+				fields["container_socket"] = probeResult.ContainerSocket
+			}
+			if probeResult.Aborted {
+				fields["abort_reason"] = probeResult.AbortReason
+				if probeResult.AbortedAt != nil {
+					fields["aborted_at"] = probeResult.AbortedAt.Format(time.RFC3339)
+				}
+			}
+
+			// Add range configuration as metadata
+			fields["range_min_l3_ways"] = probeResult.Range.MinL3Ways
+			fields["range_max_l3_ways"] = probeResult.Range.MaxL3Ways
+			fields["range_min_mem_bandwidth"] = probeResult.Range.MinMemBandwidth
+			fields["range_max_mem_bandwidth"] = probeResult.Range.MaxMemBandwidth
+			fields["range_step_l3_ways"] = probeResult.Range.StepL3Ways
+			fields["range_step_mem_bandwidth"] = probeResult.Range.StepMemBandwidth
+			fields["range_order"] = probeResult.Range.Order
+			fields["range_duration_per_alloc"] = probeResult.Range.DurationPerAlloc
+			fields["range_max_total_duration"] = probeResult.Range.MaxTotalDuration
+			fields["range_isolate_others"] = probeResult.Range.IsolateOthers
+			fields["range_force_reallocation"] = probeResult.Range.ForceReallocation
+
+			point := influxdb2.NewPoint("benchmark_allocation", tags, fields, allocResult.Started)
+			points = append(points, point)
+		}
+	}
+
+	// Write all allocation probe result points
+	operation := func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		for _, point := range points {
+			if err := idb.writeAPI.WritePoint(ctx, point); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	if err := idb.retryWithBackoff(operation, "write_allocation_probe_results"); err != nil {
+		return fmt.Errorf("failed to write allocation probe results: %w", err)
+	}
+
+	totalAllocations := 0
+	for _, probeResult := range allocationProbeResults {
+		totalAllocations += len(probeResult.Allocations)
+	}
+
+	logger.WithFields(logrus.Fields{
+		"allocation_probe_count": len(allocationProbeResults),
+		"total_allocations":      totalAllocations,
+	}).Info("Allocation probe results written successfully")
 	return nil
 }
 

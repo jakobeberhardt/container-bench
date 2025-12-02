@@ -24,6 +24,7 @@ type ProbeAllocationScheduler struct {
 	config             *config.SchedulerConfig
 	accounting         Accounts
 	warmupCompleteTime time.Time
+	benchmarkID        int
 
 	// Probing state
 	probeStarted  bool
@@ -181,11 +182,11 @@ func (as *ProbeAllocationScheduler) ProcessDataFrames(dataframes *dataframe.Data
 		Index:   as.containers[0].Index,
 		PID:     as.containers[0].PID,
 		ID:      as.containers[0].ContainerID,
-		Name:    "", // Not available in scheduler ContainerInfo
-		Cores:   "", // Not available in scheduler ContainerInfo
-		Socket:  0,  // Assume socket 0
-		Image:   "", // Not available in scheduler ContainerInfo
-		Command: "", // Not available in scheduler ContainerInfo
+		Name:    as.containers[0].Config.Name,
+		Cores:   as.containers[0].Config.Core,
+		Socket:  0, // Assume socket 0
+		Image:   as.containers[0].Config.Image,
+		Command: as.containers[0].Config.Command,
 	}
 
 	// Build list of other containers for isolation
@@ -218,7 +219,8 @@ func (as *ProbeAllocationScheduler) ProcessDataFrames(dataframes *dataframe.Data
 
 	// Define break condition: stop if IPC efficiency > 0.85
 	breakCondition := func(result *proberesources.AllocationResult, allResults []proberesources.AllocationResult) bool {
-		if result.IPCEfficiency > 0.85 {
+		// TODO: Put function on YML,  for now turn off early returnj
+		if result.IPCEfficiency > 10000.0 {
 			as.schedulerLogger.WithFields(logrus.Fields{
 				"ipc_efficiency": result.IPCEfficiency,
 				"l3_ways":        result.L3Ways,
@@ -229,7 +231,7 @@ func (as *ProbeAllocationScheduler) ProcessDataFrames(dataframes *dataframe.Data
 		return false
 	}
 
-	// Run the probe - note the parameter order matches the function signature
+	// Run the probe
 	result, err := proberesources.ProbeAllocation(
 		targetContainer,
 		otherContainers,
@@ -237,7 +239,7 @@ func (as *ProbeAllocationScheduler) ProcessDataFrames(dataframes *dataframe.Data
 		as.rdtAccountant,
 		probeRange,
 		breakCondition,
-		0, // benchmarkID - not available here
+		as.benchmarkID,
 	)
 
 	if err != nil {
@@ -287,4 +289,20 @@ func (as *ProbeAllocationScheduler) SetHostConfig(hostConfig *host.HostConfig) {
 func (as *ProbeAllocationScheduler) SetProbe(prober *probe.Probe) {
 	as.prober = prober
 	as.schedulerLogger.Debug("Probe injected into scheduler")
+}
+
+func (as *ProbeAllocationScheduler) SetBenchmarkID(benchmarkID int) {
+	as.benchmarkID = benchmarkID
+	as.schedulerLogger.WithField("benchmark_id", benchmarkID).Debug("Benchmark ID set")
+}
+
+func (as *ProbeAllocationScheduler) GetAllocationProbeResults() []*proberesources.AllocationProbeResult {
+	if as.probeResult != nil {
+		return []*proberesources.AllocationProbeResult{as.probeResult}
+	}
+	return nil
+}
+
+func (as *ProbeAllocationScheduler) HasAllocationProbeResults() bool {
+	return as.probeResult != nil
 }

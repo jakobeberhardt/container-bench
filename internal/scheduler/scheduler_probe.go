@@ -245,3 +245,7 @@ func (ps *ProbeScheduler) SetProbe(prober *probe.Probe) {
 	ps.prober = prober
 	ps.schedulerLogger.Info("Probe injected into scheduler")
 }
+
+func (ps *ProbeScheduler) SetBenchmarkID(benchmarkID int) {
+	// Probe scheduler doesn't use benchmark ID
+}

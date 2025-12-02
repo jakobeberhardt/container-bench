@@ -302,3 +302,7 @@ func (as *AllocationScheduler) SetProbe(prober *probe.Probe) {
 	as.prober = prober
 	as.schedulerLogger.Debug("Probe injected into scheduler")
 }
+
+func (as *AllocationScheduler) SetBenchmarkID(benchmarkID int) {
+	// Allocation scheduler doesn't use benchmark ID
+}
