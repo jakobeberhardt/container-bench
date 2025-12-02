@@ -1,0 +1,290 @@
+package scheduler
+
+import (
+	"container-bench/internal/accounting"
+	"container-bench/internal/config"
+	"container-bench/internal/dataframe"
+	"container-bench/internal/host"
+	"container-bench/internal/logging"
+	"container-bench/internal/probe"
+	proberesources "container-bench/internal/probe/resources"
+	"time"
+
+	"github.com/sirupsen/logrus"
+)
+
+type ProbeAllocationScheduler struct {
+	name               string
+	version            string
+	schedulerLogger    *logrus.Logger
+	hostConfig         *host.HostConfig
+	containers         []ContainerInfo
+	rdtAccountant      *accounting.RDTAccountant
+	prober             *probe.Probe
+	config             *config.SchedulerConfig
+	accounting         Accounts
+	warmupCompleteTime time.Time
+
+	// Probing state
+	probeStarted  bool
+	probeComplete bool
+	probeResult   *proberesources.AllocationProbeResult
+}
+
+func NewProbeAllocationScheduler() *ProbeAllocationScheduler {
+	return &ProbeAllocationScheduler{
+		name:            "probe-allocation",
+		version:         "1.0.0",
+		schedulerLogger: logging.GetSchedulerLogger(),
+		probeStarted:    false,
+		probeComplete:   false,
+	}
+}
+
+func (as *ProbeAllocationScheduler) Initialize(accountant *accounting.RDTAccountant, containers []ContainerInfo, schedulerConfig *config.SchedulerConfig) error {
+	as.rdtAccountant = accountant
+	as.containers = containers
+	as.config = schedulerConfig
+	as.accounting = Accounts{}
+	as.accounting.accounts = make([]Account, len(containers))
+
+	for i := range containers {
+		as.accounting.accounts[i] = Account{
+			L3Allocation:              0.0,
+			MemoryBandwidthAllocation: 0.0,
+		}
+	}
+
+	warmupSeconds := 0
+	if as.config != nil && as.config.Allocator != nil && as.config.Allocator.WarmupT > 0 {
+		warmupSeconds = as.config.Allocator.WarmupT
+		as.schedulerLogger.WithField("seconds", as.config.Allocator.WarmupT).Info("Warming up benchmark")
+	}
+
+	as.warmupCompleteTime = time.Now().Add(time.Duration(warmupSeconds) * time.Second)
+
+	as.schedulerLogger.WithFields(logrus.Fields{
+		"containers":     len(containers),
+		"warmup_seconds": warmupSeconds,
+	}).Info("Probe allocation scheduler initialized")
+	return nil
+}
+
+func (as *ProbeAllocationScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) error {
+	if time.Now().Before(as.warmupCompleteTime) {
+		return nil
+	}
+
+	if as.probeComplete {
+		return nil
+	}
+
+	if as.probeStarted {
+		return nil
+	}
+
+	// Start the allocation probe
+	as.probeStarted = true
+
+	// Get configuration from scheduler config
+	allocCfg := as.config.Allocator
+	if allocCfg == nil {
+		as.schedulerLogger.Warn("No allocator config, using defaults")
+		allocCfg = &config.AllocatorConfig{
+			Duration:   10,
+			StepSizeL3: 1,
+			StepSizeMB: 10,
+		}
+	}
+
+	// Get total ways from host config (single source of truth)
+	totalWays := 12 // Fallback default
+	if as.hostConfig != nil && as.hostConfig.L3Cache.WaysPerCache > 0 {
+		totalWays = as.hostConfig.L3Cache.WaysPerCache
+	}
+
+	// Determine allocation range from config or defaults
+	minL3Ways := 1
+	maxL3Ways := totalWays
+	minMemBandwidth := 10.0
+	maxMemBandwidth := 100.0
+	order := "asc"
+	isolateOthers := true
+	forceReallocation := false
+
+	if allocCfg.MinL3Ways > 0 {
+		minL3Ways = allocCfg.MinL3Ways
+	}
+	if allocCfg.MaxL3Ways > 0 {
+		maxL3Ways = allocCfg.MaxL3Ways
+	}
+	if allocCfg.MinMemBandwidth > 0 {
+		minMemBandwidth = allocCfg.MinMemBandwidth
+	}
+	if allocCfg.MaxMemBandwidth > 0 {
+		maxMemBandwidth = allocCfg.MaxMemBandwidth
+	}
+	if allocCfg.Order != "" {
+		order = allocCfg.Order
+	}
+	isolateOthers = allocCfg.IsolateOthers
+	forceReallocation = allocCfg.ForceReallocation
+
+	// Calculate number of distinct allocations to determine duration per allocation
+	// Duration in config is total time, so we need to divide by number of allocations
+	numL3Steps := ((maxL3Ways - minL3Ways) / allocCfg.StepSizeL3) + 1
+	numMemSteps := int((maxMemBandwidth-minMemBandwidth)/float64(allocCfg.StepSizeMB)) + 1
+	totalAllocations := numL3Steps * numMemSteps
+
+	durationPerAlloc := allocCfg.Duration
+	if totalAllocations > 0 && allocCfg.Duration > 0 {
+		durationPerAlloc = allocCfg.Duration / totalAllocations
+		if durationPerAlloc < 1 {
+			durationPerAlloc = 1 // Minimum 1 second per allocation
+		}
+	}
+
+	as.schedulerLogger.WithFields(logrus.Fields{
+		"total_duration":     allocCfg.Duration,
+		"num_l3_steps":       numL3Steps,
+		"num_mem_steps":      numMemSteps,
+		"total_allocations":  totalAllocations,
+		"duration_per_alloc": durationPerAlloc,
+	}).Info("Calculated allocation probe timing")
+
+	// Build allocation range configuration
+	probeRange := proberesources.AllocationRange{
+		MinL3Ways:         minL3Ways,
+		MaxL3Ways:         maxL3Ways,
+		MinMemBandwidth:   minMemBandwidth,
+		MaxMemBandwidth:   maxMemBandwidth,
+		StepL3Ways:        allocCfg.StepSizeL3,
+		StepMemBandwidth:  float64(allocCfg.StepSizeMB),
+		Order:             order,
+		DurationPerAlloc:  durationPerAlloc,
+		MaxTotalDuration:  allocCfg.Duration,
+		SocketID:          0,
+		IsolateOthers:     isolateOthers,
+		ForceReallocation: forceReallocation,
+	}
+
+	// Only probe first container for now
+	if len(as.containers) == 0 {
+
+		as.schedulerLogger.Error("No containers to probe")
+		as.probeComplete = true
+		return nil
+	}
+
+	// Build target container info from scheduler's ContainerInfo
+	targetContainer := proberesources.ContainerInfo{
+		Index:   as.containers[0].Index,
+		PID:     as.containers[0].PID,
+		ID:      as.containers[0].ContainerID,
+		Name:    "", // Not available in scheduler ContainerInfo
+		Cores:   "", // Not available in scheduler ContainerInfo
+		Socket:  0,  // Assume socket 0
+		Image:   "", // Not available in scheduler ContainerInfo
+		Command: "", // Not available in scheduler ContainerInfo
+	}
+
+	// Build list of other containers for isolation
+	var otherContainers []proberesources.ContainerInfo
+	for i := 1; i < len(as.containers); i++ {
+		otherContainers = append(otherContainers, proberesources.ContainerInfo{
+			Index:   as.containers[i].Index,
+			PID:     as.containers[i].PID,
+			ID:      as.containers[i].ContainerID,
+			Name:    "",
+			Cores:   "",
+			Socket:  0,
+			Image:   "",
+			Command: "",
+		})
+	}
+
+	as.schedulerLogger.WithFields(logrus.Fields{
+		"target_index":   targetContainer.Index,
+		"target_pid":     targetContainer.PID,
+		"min_l3_ways":    probeRange.MinL3Ways,
+		"max_l3_ways":    probeRange.MaxL3Ways,
+		"step_l3_ways":   probeRange.StepL3Ways,
+		"min_mem_bw":     probeRange.MinMemBandwidth,
+		"max_mem_bw":     probeRange.MaxMemBandwidth,
+		"step_mem_bw":    probeRange.StepMemBandwidth,
+		"duration_per":   probeRange.DurationPerAlloc,
+		"isolate_others": probeRange.IsolateOthers,
+	}).Info("Starting allocation probe")
+
+	// Define break condition: stop if IPC efficiency > 0.85
+	breakCondition := func(result *proberesources.AllocationResult, allResults []proberesources.AllocationResult) bool {
+		if result.IPCEfficiency > 0.85 {
+			as.schedulerLogger.WithFields(logrus.Fields{
+				"ipc_efficiency": result.IPCEfficiency,
+				"l3_ways":        result.L3Ways,
+				"mem_bandwidth":  result.MemBandwidth,
+			}).Info("Break condition met: IPC efficiency > 0.85")
+			return true
+		}
+		return false
+	}
+
+	// Run the probe - note the parameter order matches the function signature
+	result, err := proberesources.ProbeAllocation(
+		targetContainer,
+		otherContainers,
+		dataframes,
+		as.rdtAccountant,
+		probeRange,
+		breakCondition,
+		0, // benchmarkID - not available here
+	)
+
+	if err != nil {
+		as.schedulerLogger.WithError(err).Error("Allocation probe failed")
+		as.probeComplete = true
+		return err
+	}
+
+	as.probeResult = result
+	as.probeComplete = true
+
+	// Log summary
+	as.schedulerLogger.WithFields(logrus.Fields{
+		"total_probe_time":  result.TotalProbeTime,
+		"allocations_tried": len(result.Allocations),
+		"aborted":           result.Aborted,
+	}).Info("Allocation probe complete")
+
+	return nil
+}
+
+func (as *ProbeAllocationScheduler) Shutdown() error {
+	err := as.rdtAccountant.Cleanup()
+	if err != nil {
+		as.schedulerLogger.WithError(err).Error("Could not clean up RDT classes")
+	}
+	return nil
+}
+
+func (as *ProbeAllocationScheduler) GetVersion() string {
+	return as.version
+}
+
+func (as *ProbeAllocationScheduler) SetLogLevel(level string) error {
+	logLevel, err := logrus.ParseLevel(level)
+	if err != nil {
+		return err
+	}
+	as.schedulerLogger.SetLevel(logLevel)
+	return nil
+}
+
+func (as *ProbeAllocationScheduler) SetHostConfig(hostConfig *host.HostConfig) {
+	as.hostConfig = hostConfig
+}
+
+func (as *ProbeAllocationScheduler) SetProbe(prober *probe.Probe) {
+	as.prober = prober
+	as.schedulerLogger.Debug("Probe injected into scheduler")
+}

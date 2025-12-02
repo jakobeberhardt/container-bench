@@ -1,20 +1,26 @@
 benchmark:
   name: PostgreSQL
   description: Adds and removes allocations
-  max_t: 120
+  max_t: 60  # 2 minutes max
   pid_sync_interval: 100  
   log_level: info
   scheduler:
-    implementation: allocation
+    implementation: probe_allocation
     rdt: true
     log_level: info
     allocator:
       implementation: default
       warmup_t: 5
-      duration: 5
-      target: 1.0
-      step_size_l3: 1
-      step_size_mb: 10
+      duration: 50           # Total duration for all allocations (90 seconds)
+      step_size_l3: 2        # Increment L3 by 2 ways at a time
+      step_size_mb: 10       # Increment memory bandwidth by 10% at a time
+      min_l3_ways: 2         # Start with 2 ways
+      max_l3_ways: 12        # Up to 12 ways (or host max)
+      min_mem_bandwidth: 20  # Start with 20% bandwidth
+      max_mem_bandwidth: 100 # Up to 100% bandwidth
+      order: asc             # Start with smallest allocation
+      isolate_others: true   # Move other containers to separate allocation
+      force_reallocation: false  # Don't remove existing allocations
 
   data:
     db:
@@ -34,6 +40,17 @@ victim:
   image: registry.jakob-eberhardt.de/rdt4nn/postgres:latest
   port: 5432:5432
   core: 0
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+second:
+  index: 1
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 1
+  command: "stress-ng --cache 1 --cache-level 2 --timeout 0"
   data:
     frequency: 100
     perf: true

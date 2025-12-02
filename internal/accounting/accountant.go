@@ -551,3 +551,15 @@ func removeInt(slice []int, val int) []int {
 	}
 	return result
 }
+
+// GetTotalWays returns the total number of cache ways for a socket
+func (a *RDTAccountant) GetTotalWays(socketID int) int {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if socketID == 0 {
+		return a.socket0State.TotalWays
+	}
+	return a.socket1State.TotalWays
+}
+
