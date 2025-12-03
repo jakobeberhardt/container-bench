@@ -1,6 +1,6 @@
 benchmark:
-  name: tsearch stress-ng allocation
-  description: Finds Allocation for tsearch
+  name: io stress-ng allocation
+  description: Finds Allocation for io
   max_t: 380
   pid_sync_interval: 100  
   log_level: info
@@ -34,13 +34,13 @@ benchmark:
       username: ${DOCKER_REGISTRY_USERNAME}
       password: ${DOCKER_REGISTRY_PASSWORD}
 
-tsearch:
+io:
   index: 0
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
   core: 0
-  command: "stress-ng --tsearch 1 --timeout 0"
+  command: "stress-ng --io 1 --timeout 0"
   data:
     frequency: 100
     perf: true
     docker: true
-    rdt: true  
+    rdt: true

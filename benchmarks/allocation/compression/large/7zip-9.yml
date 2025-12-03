@@ -1,6 +1,6 @@
 benchmark:
-  name: 7zip Probe High/Large
-  description: Probes a 7zip container with high settings and large file size
+  name: 7zip Probe Level 9/Large
+  description: Probes a 7zip container with compression level 9 (ultra) and large file size
   max_t: 381
   pid_sync_interval: 100  
   log_level: info
