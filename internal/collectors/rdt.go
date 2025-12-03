@@ -621,37 +621,49 @@ func (rc *RDTCollector) Collect() *dataframe.RDTMetrics {
 		return nil
 	}
 
-	// Thread-safe read of monGroup
+	// Check if container has been moved to a different RDT class BEFORE reading monGroup
+	// This handles the case where the class was updated externally (e.g., during allocation probe)
+	if err := rc.detectAndHandleClassMigration(); err != nil {
+		rc.logger.WithError(err).WithField("pid", rc.pid).Debug("Failed to handle RDT class migration during collect")
+		// Don't return - try to collect anyway with current monitoring group
+	}
+
+	// Thread-safe read of monGroup after migration check
 	rc.mu.RLock()
 	monGroup := rc.monGroup
 	rc.mu.RUnlock()
 
+	// Verify monitoring group is valid
 	if monGroup == nil {
+		rc.logger.WithField("pid", rc.pid).Trace("No valid monitoring group available for collection")
 		return nil
 	}
 
-	// Check if container has been moved to a different RDT class
-	if err := rc.detectAndHandleClassMigration(); err != nil {
-		rc.logger.WithError(err).WithField("pid", rc.pid).Warn("Failed to handle RDT class migration")
-		// Continue with collection using current monitoring group
-	}
-
-	// Re-read monGroup after potential migration
-	rc.mu.RLock()
-	monGroup = rc.monGroup
-	rc.mu.RUnlock()
-
-	// Verify monitoring group is still valid after potential migration
-	if monGroup == nil {
-		rc.logger.WithField("pid", rc.pid).Warn("No valid monitoring group available after migration check")
-		return nil
-	}
-
-	// Get monitoring data
+	// Get monitoring data - may fail if monitoring group was deleted during class update
 	monData := monGroup.GetMonData()
+	
+	// If we got no data, check if this is due to monitoring group being deleted
+	// This can happen during RDT class updates in allocation probes
 	if monData.L3 == nil {
-		rc.logger.WithField("pid", rc.pid).Debug("No L3 monitoring data available")
-		return nil
+		// Try migration detection one more time in case the group was deleted
+		rc.logger.WithField("pid", rc.pid).Trace("No L3 monitoring data, checking for class changes")
+		if err := rc.detectAndHandleClassMigration(); err != nil {
+			rc.logger.WithError(err).WithField("pid", rc.pid).Debug("Migration check failed after empty data")
+		}
+		// Re-read after potential migration
+		rc.mu.RLock()
+		monGroup = rc.monGroup
+		rc.mu.RUnlock()
+		
+		if monGroup != nil {
+			monData = monGroup.GetMonData()
+		}
+		
+		// If still no data, return nil
+		if monData.L3 == nil {
+			rc.logger.WithField("pid", rc.pid).Trace("No L3 monitoring data available after migration check")
+			return nil
+		}
 	}
 
 	metrics := &dataframe.RDTMetrics{}
