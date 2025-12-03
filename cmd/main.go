@@ -210,7 +210,10 @@ func main() {
 	var minSet, maxSet bool
 	var probeIndices []int
 	var probeMetric string
+	var allocationProbeIndex int
+	var allocationMetrics []string
 	var onlyPlot, onlyWrapper bool
+	var outputDir string
 	var logLevel string
 
 	rootCmd := &cobra.Command{
@@ -286,6 +289,18 @@ func main() {
 		},
 	}
 
+	allocationCmd := &cobra.Command{
+		Use:   "allocation",
+		Short: "Generate an allocation probe plot",
+		Long:  "Generate a plot showing performance metrics vs L3 cache ways for different memory bandwidth allocations",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateEnvironment(); err != nil {
+				return err
+			}
+			return generateAllocationPlot(benchmarkID, allocationProbeIndex, allocationMetrics, onlyPlot, onlyWrapper, outputDir)
+		},
+	}
+
 	runCmd.Flags().StringVarP(&configFile, "config", "c", "", "Path to benchmark configuration file")
 	runCmd.MarkFlagRequired("config")
 
@@ -315,8 +330,18 @@ func main() {
 	polarCmd.Flags().BoolVar(&onlyWrapper, "wrapper", false, "Print only the wrapper file (LaTeX)")
 	polarCmd.MarkFlagRequired("probes")
 
+	allocationCmd.Flags().IntVar(&benchmarkID, "benchmark", 0, "Benchmark ID")
+	allocationCmd.Flags().IntVar(&allocationProbeIndex, "probe-id", 0, "Allocation probe index")
+	allocationCmd.Flags().StringSliceVar(&allocationMetrics, "metrics", []string{"stalled_cycles"}, "Metrics to plot (comma-separated or 'all': ipc, ipc_efficiency, cache_miss_rate, stalled_cycles, l3_occupancy, mem_bandwidth_used)")
+	allocationCmd.Flags().BoolVar(&onlyPlot, "plot", false, "Print only the plot file (TikZ)")
+	allocationCmd.Flags().BoolVar(&onlyWrapper, "wrapper", false, "Print only the wrapper file (LaTeX)")
+	allocationCmd.Flags().StringVar(&outputDir, "files", "", "Output directory to save plot files (creates wrapper.tex and metric.tikz files)")
+	allocationCmd.MarkFlagRequired("benchmark")
+	allocationCmd.MarkFlagRequired("probe-id")
+
 	plotCmd.AddCommand(timeseriesCmd)
 	plotCmd.AddCommand(polarCmd)
+	plotCmd.AddCommand(allocationCmd)
 
 	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(validateCmd)
@@ -1337,5 +1362,160 @@ func generatePolarPlot(probeIndices []int, metricType string, onlyPlot, onlyWrap
 	}
 
 	logger.Debug("Polar plot generated successfully")
+	return nil
+}
+
+func generateAllocationPlot(benchmarkID int, allocationProbeIndex int, metrics []string, onlyPlot, onlyWrapper bool, outputDir string) error {
+	logger := logging.GetLogger()
+	logger.WithFields(logrus.Fields{
+		"benchmark_id":           benchmarkID,
+		"allocation_probe_index": allocationProbeIndex,
+		"metrics":                metrics,
+		"output_dir":             outputDir,
+	}).Debug("Generating allocation plot")
+
+	plotMgr, err := plot.NewPlotManager()
+	if err != nil {
+		logger.WithError(err).Error("Failed to create plot manager")
+		return fmt.Errorf("failed to create plot manager: %w", err)
+	}
+	defer plotMgr.Close()
+
+	if len(metrics) == 0 {
+		return fmt.Errorf("at least one metric must be specified")
+	}
+
+	// Expand 'all' to all available metrics
+	if len(metrics) == 1 && metrics[0] == "all" {
+		metrics = []string{"ipc", "ipc_efficiency", "cache_miss_rate", "stalled_cycles", "l3_occupancy", "mem_bandwidth_used"}
+		logger.WithField("expanded_metrics", metrics).Debug("Expanded 'all' to all available metrics")
+	}
+
+	// Generate plots for multiple metrics
+	if len(metrics) > 1 {
+		return generateAllocationPlotGroup(plotMgr, benchmarkID, allocationProbeIndex, metrics, onlyPlot, onlyWrapper, outputDir)
+	}
+
+	// Single metric - use simple wrapper
+	plotTikz, wrapperTex, err := plotMgr.GenerateAllocationPlot(benchmarkID, allocationProbeIndex, metrics[0])
+	if err != nil {
+		logger.WithError(err).Error("Failed to generate allocation plot")
+		return fmt.Errorf("failed to generate allocation plot: %w", err)
+	}
+
+	// Save to files if output directory specified
+	if outputDir != "" {
+		if err := os.MkdirAll(outputDir, 0755); err != nil {
+			return fmt.Errorf("failed to create output directory: %w", err)
+		}
+
+		plotFile := filepath.Join(outputDir, fmt.Sprintf("%s.tikz.tex", metrics[0]))
+		if err := os.WriteFile(plotFile, []byte(plotTikz), 0644); err != nil {
+			return fmt.Errorf("failed to write plot file: %w", err)
+		}
+		logger.WithField("file", plotFile).Info("Saved plot file")
+
+		wrapperFile := filepath.Join(outputDir, "wrapper.tex")
+		if err := os.WriteFile(wrapperFile, []byte(wrapperTex), 0644); err != nil {
+			return fmt.Errorf("failed to write wrapper file: %w", err)
+		}
+		logger.WithField("file", wrapperFile).Info("Saved wrapper file")
+
+		return nil
+	}
+
+	// Determine what to print
+	showPlot := !onlyWrapper
+	showWrapper := !onlyPlot
+
+	if showPlot {
+		fmt.Println(plotTikz)
+		if showWrapper {
+			fmt.Println()
+		}
+	}
+
+	if showWrapper {
+		fmt.Println(wrapperTex)
+	}
+
+	logger.Debug("Allocation plot generated successfully")
+	return nil
+}
+
+func generateAllocationPlotGroup(plotMgr *plot.PlotManager, benchmarkID int, allocationProbeIndex int, metrics []string, onlyPlot, onlyWrapper bool, outputDir string) error {
+	logger := logging.GetLogger()
+
+	// Generate individual plots - first one with named legend, rest without
+	var plots []string
+	var labelID string
+
+	for i, metric := range metrics {
+		includeLegend := (i == 0)
+		plotTikz, _, err := plotMgr.GenerateAllocationPlotWithLegend(benchmarkID, allocationProbeIndex, metric, includeLegend)
+		if err != nil {
+			logger.WithError(err).WithField("metric", metric).Error("Failed to generate allocation plot")
+			return fmt.Errorf("failed to generate plot for metric %s: %w", metric, err)
+		}
+		plots = append(plots, plotTikz)
+
+		if i == 0 {
+			labelID = fmt.Sprintf("%d-%d", benchmarkID, allocationProbeIndex)
+		}
+	}
+
+	// Generate group wrapper
+	groupWrapper, err := plotMgr.GenerateAllocationPlotGroupWrapper(benchmarkID, allocationProbeIndex, metrics, labelID)
+	if err != nil {
+		logger.WithError(err).Error("Failed to generate group wrapper")
+		return fmt.Errorf("failed to generate group wrapper: %w", err)
+	}
+
+	// Save to files if output directory specified
+	if outputDir != "" {
+		if err := os.MkdirAll(outputDir, 0755); err != nil {
+			return fmt.Errorf("failed to create output directory: %w", err)
+		}
+
+		// Save individual plot files
+		for i, plotTikz := range plots {
+			plotFile := filepath.Join(outputDir, fmt.Sprintf("%s.tikz.tex", metrics[i]))
+			if err := os.WriteFile(plotFile, []byte(plotTikz), 0644); err != nil {
+				return fmt.Errorf("failed to write plot file %s: %w", plotFile, err)
+			}
+			logger.WithField("file", plotFile).Info("Saved plot file")
+		}
+
+		// Save group wrapper
+		wrapperFile := filepath.Join(outputDir, "wrapper.tex")
+		if err := os.WriteFile(wrapperFile, []byte(groupWrapper), 0644); err != nil {
+			return fmt.Errorf("failed to write wrapper file: %w", err)
+		}
+		logger.WithField("file", wrapperFile).Info("Saved wrapper file")
+
+		return nil
+	}
+
+	// Print output
+	showPlot := !onlyWrapper
+	showWrapper := !onlyPlot
+
+	if showPlot {
+		for i, plotTikz := range plots {
+			if i > 0 {
+				fmt.Println()
+			}
+			fmt.Println(plotTikz)
+		}
+		if showWrapper {
+			fmt.Println()
+		}
+	}
+
+	if showWrapper {
+		fmt.Println(groupWrapper)
+	}
+
+	logger.Debug("Allocation plot group generated successfully")
 	return nil
 }

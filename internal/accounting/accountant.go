@@ -562,4 +562,3 @@ func (a *RDTAccountant) GetTotalWays(socketID int) int {
 	}
 	return a.socket1State.TotalWays
 }
-

@@ -87,6 +87,8 @@ type RDTConfig struct {
 	AvailableClasses    []string
 	MonitoringFeatures  map[string][]string // MonResource -> features
 	MaxCLOSIDs          int                 // Maximum number of CLOSIDs
+	MBAGranularity      int                 // MBA granularity in percentage points (e.g., 10 for 10%)
+	MBAMinBandwidth     int                 // MBA minimum bandwidth in percentage (e.g., 10 for 10%)
 
 	// NYI: Memory bandwidth information
 	// No reliable source available for querying actual system memory bandwidth.
@@ -378,12 +380,30 @@ func (hc *HostConfig) initRDTInfo() error {
 		hc.RDT.MaxCLOSIDs = numClosids
 	}
 
+	// Read MBA granularity from resctrl
+	mbaGranPath := "/sys/fs/resctrl/info/MB/bandwidth_gran"
+	if mbaGran, err := readIntFromFile(mbaGranPath); err == nil {
+		hc.RDT.MBAGranularity = mbaGran
+	} else {
+		hc.RDT.MBAGranularity = 10 // Default to 10% if not available
+	}
+
+	// Read MBA minimum bandwidth from resctrl
+	mbaMinPath := "/sys/fs/resctrl/info/MB/min_bandwidth"
+	if mbaMin, err := readIntFromFile(mbaMinPath); err == nil {
+		hc.RDT.MBAMinBandwidth = mbaMin
+	} else {
+		hc.RDT.MBAMinBandwidth = 10 // Default to 10% if not available
+	}
+
 	hc.logger.WithFields(logrus.Fields{
 		"monitoring_supported": hc.RDT.MonitoringSupported,
 		"allocation_supported": hc.RDT.AllocationSupported,
 		"available_classes":    len(hc.RDT.AvailableClasses),
 		"monitoring_features":  len(hc.RDT.MonitoringFeatures),
 		"max_closids":          hc.RDT.MaxCLOSIDs,
+		"mba_granularity":      hc.RDT.MBAGranularity,
+		"mba_min_bandwidth":    hc.RDT.MBAMinBandwidth,
 	}).Debug("RDT info initialized")
 
 	return nil

@@ -8,6 +8,7 @@ import (
 	"container-bench/internal/logging"
 	"container-bench/internal/probe"
 	proberesources "container-bench/internal/probe/resources"
+	"fmt"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -98,6 +99,37 @@ func (as *ProbeAllocationScheduler) ProcessDataFrames(dataframes *dataframe.Data
 		}
 	}
 
+	// Apply defaults for step sizes if not set
+	stepSizeL3 := allocCfg.StepSizeL3
+	if stepSizeL3 == 0 {
+		stepSizeL3 = 1
+	}
+	stepSizeMB := allocCfg.StepSizeMB
+	if stepSizeMB == 0 {
+		stepSizeMB = 10
+	}
+
+	// Get MBA hardware granularity from host config
+	mbaGranularity := 10  // Default fallback
+	mbaMinBandwidth := 10 // Default fallback
+	if as.hostConfig != nil && as.hostConfig.RDT.MBAGranularity > 0 {
+		mbaGranularity = as.hostConfig.RDT.MBAGranularity
+	}
+	if as.hostConfig != nil && as.hostConfig.RDT.MBAMinBandwidth > 0 {
+		mbaMinBandwidth = as.hostConfig.RDT.MBAMinBandwidth
+	}
+
+	// Validate and adjust MBA step size to hardware granularity
+	if stepSizeMB%mbaGranularity != 0 {
+		originalStep := stepSizeMB
+		stepSizeMB = ((stepSizeMB + mbaGranularity - 1) / mbaGranularity) * mbaGranularity
+		as.schedulerLogger.WithFields(logrus.Fields{
+			"requested_step": originalStep,
+			"adjusted_step":  stepSizeMB,
+			"hw_granularity": mbaGranularity,
+		}).Warn("MBA step size adjusted to match hardware granularity")
+	}
+
 	// Get total ways from host config (single source of truth)
 	totalWays := 12 // Fallback default
 	if as.hostConfig != nil && as.hostConfig.L3Cache.WaysPerCache > 0 {
@@ -131,26 +163,65 @@ func (as *ProbeAllocationScheduler) ProcessDataFrames(dataframes *dataframe.Data
 	isolateOthers = allocCfg.IsolateOthers
 	forceReallocation = allocCfg.ForceReallocation
 
+	// Validate and adjust memory bandwidth min/max to hardware granularity
+	if int(minMemBandwidth)%mbaGranularity != 0 {
+		originalMin := minMemBandwidth
+		minMemBandwidth = float64(((int(minMemBandwidth) + mbaGranularity - 1) / mbaGranularity) * mbaGranularity)
+		if minMemBandwidth < float64(mbaMinBandwidth) {
+			minMemBandwidth = float64(mbaMinBandwidth)
+		}
+		as.schedulerLogger.WithFields(logrus.Fields{
+			"requested_min":  originalMin,
+			"adjusted_min":   minMemBandwidth,
+			"hw_granularity": mbaGranularity,
+			"hw_minimum":     mbaMinBandwidth,
+		}).Warn("MBA minimum bandwidth adjusted to match hardware constraints")
+	}
+
+	if int(maxMemBandwidth)%mbaGranularity != 0 {
+		originalMax := maxMemBandwidth
+		maxMemBandwidth = float64((int(maxMemBandwidth) / mbaGranularity) * mbaGranularity)
+		if maxMemBandwidth < minMemBandwidth {
+			maxMemBandwidth = minMemBandwidth
+		}
+		as.schedulerLogger.WithFields(logrus.Fields{
+			"requested_max":  originalMax,
+			"adjusted_max":   maxMemBandwidth,
+			"hw_granularity": mbaGranularity,
+		}).Warn("MBA maximum bandwidth adjusted to match hardware constraints")
+	}
+
 	// Calculate number of distinct allocations to determine duration per allocation
 	// Duration in config is total time, so we need to divide by number of allocations
-	numL3Steps := ((maxL3Ways - minL3Ways) / allocCfg.StepSizeL3) + 1
-	numMemSteps := int((maxMemBandwidth-minMemBandwidth)/float64(allocCfg.StepSizeMB)) + 1
+	numL3Steps := ((maxL3Ways - minL3Ways) / stepSizeL3) + 1
+	numMemSteps := int((maxMemBandwidth-minMemBandwidth)/float64(stepSizeMB)) + 1
 	totalAllocations := numL3Steps * numMemSteps
 
-	durationPerAlloc := allocCfg.Duration
+	durationPerAlloc := 1 // Default
 	if totalAllocations > 0 && allocCfg.Duration > 0 {
 		durationPerAlloc = allocCfg.Duration / totalAllocations
 		if durationPerAlloc < 1 {
-			durationPerAlloc = 1 // Minimum 1 second per allocation
+			as.schedulerLogger.WithFields(logrus.Fields{
+				"total_allocations":  totalAllocations,
+				"total_duration":     allocCfg.Duration,
+				"duration_per_alloc": durationPerAlloc,
+			}).Warn("Duration per allocation is less than 1 second - this may result in insufficient time for metrics collection")
 		}
 	}
 
+	estimatedTotalTime := totalAllocations * durationPerAlloc
+
 	as.schedulerLogger.WithFields(logrus.Fields{
-		"total_duration":     allocCfg.Duration,
-		"num_l3_steps":       numL3Steps,
-		"num_mem_steps":      numMemSteps,
-		"total_allocations":  totalAllocations,
-		"duration_per_alloc": durationPerAlloc,
+		"configured_duration": allocCfg.Duration,
+		"estimated_total":     estimatedTotalTime,
+		"step_size_l3":        stepSizeL3,
+		"step_size_mb":        stepSizeMB,
+		"l3_range":            fmt.Sprintf("%d-%d", minL3Ways, maxL3Ways),
+		"mb_range":            fmt.Sprintf("%.0f%%-%.0f%%", minMemBandwidth, maxMemBandwidth),
+		"num_l3_steps":        numL3Steps,
+		"num_mem_steps":       numMemSteps,
+		"total_allocations":   totalAllocations,
+		"duration_per_alloc":  durationPerAlloc,
 	}).Info("Calculated allocation probe timing")
 
 	// Build allocation range configuration
@@ -159,8 +230,8 @@ func (as *ProbeAllocationScheduler) ProcessDataFrames(dataframes *dataframe.Data
 		MaxL3Ways:         maxL3Ways,
 		MinMemBandwidth:   minMemBandwidth,
 		MaxMemBandwidth:   maxMemBandwidth,
-		StepL3Ways:        allocCfg.StepSizeL3,
-		StepMemBandwidth:  float64(allocCfg.StepSizeMB),
+		StepL3Ways:        stepSizeL3,
+		StepMemBandwidth:  float64(stepSizeMB),
 		Order:             order,
 		DurationPerAlloc:  durationPerAlloc,
 		MaxTotalDuration:  allocCfg.Duration,
@@ -305,4 +376,3 @@ func (as *ProbeAllocationScheduler) GetAllocationProbeResults() []*proberesource
 func (as *ProbeAllocationScheduler) HasAllocationProbeResults() bool {
 	return len(as.probeResults) > 0
 }
-

@@ -498,3 +498,212 @@ func (c *PlotDBClient) QueryProbes(ctx context.Context, probeIndices []int, metr
 	}).Debug("Probe query completed")
 	return selectedProbes, nil
 }
+
+type AllocationData struct {
+	BenchmarkID            int
+	AllocationProbeIndex   int
+	ContainerIndex         int
+	ContainerID            string
+	ContainerName          string
+	ContainerImage         string
+	ContainerCores         string
+	ContainerCommand       string
+	SocketID               int
+	IsolatedOthers         bool
+	L3Ways                 int
+	MemBandwidth           float64
+	AllocationStarted      string
+	AllocationDuration     int64
+	AvgIPC                 float64
+	AvgTheoreticalIPC      float64
+	IPCEfficiency          float64
+	AvgCacheMissRate       float64
+	AvgStalledCycles       float64
+	AvgL3Occupancy         uint64
+	AvgMemBandwidthUsed    uint64
+	ProbeAborted           bool
+	ProbeStarted           string
+	ProbeFinished          string
+	TotalProbeTime         int64
+	FirstDataframeStep     int64
+	LastDataframeStep      int64
+	NumDataframeSteps      int64
+	RangeMinL3Ways         int
+	RangeMaxL3Ways         int
+	RangeMinMemBandwidth   float64
+	RangeMaxMemBandwidth   float64
+	RangeStepL3Ways        int
+	RangeStepMemBandwidth  float64
+	RangeOrder             string
+	RangeDurationPerAlloc  int
+	RangeMaxTotalDuration  int
+	RangeIsolateOthers     bool
+	RangeForceReallocation bool
+}
+
+func (c *PlotDBClient) QueryAllocationData(ctx context.Context, benchmarkID int, allocationProbeIndex int) ([]AllocationData, error) {
+	c.logger.WithFields(map[string]interface{}{
+		"benchmark_id":           benchmarkID,
+		"allocation_probe_index": allocationProbeIndex,
+	}).Debug("Querying allocation probe data")
+
+	query := fmt.Sprintf(`
+		from(bucket: "%s")
+		|> range(start: 0)
+		|> filter(fn: (r) => r["_measurement"] == "benchmark_allocation")
+		|> filter(fn: (r) => r["benchmark_id"] == "%d")
+		|> filter(fn: (r) => r["allocation_probe_index"] == "%d")
+		|> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+	`, c.bucket, benchmarkID, allocationProbeIndex)
+
+	result, err := c.queryAPI.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("query failed: %w", err)
+	}
+
+	var allocations []AllocationData
+
+	for result.Next() {
+		record := result.Record()
+		alloc := AllocationData{}
+
+		// Extract tags
+		if v, ok := record.ValueByKey("benchmark_id").(string); ok {
+			fmt.Sscanf(v, "%d", &alloc.BenchmarkID)
+		}
+		if v, ok := record.ValueByKey("allocation_probe_index").(string); ok {
+			fmt.Sscanf(v, "%d", &alloc.AllocationProbeIndex)
+		}
+		if v, ok := record.ValueByKey("container_index").(string); ok {
+			fmt.Sscanf(v, "%d", &alloc.ContainerIndex)
+		}
+		if v, ok := record.ValueByKey("container_id").(string); ok {
+			alloc.ContainerID = v
+		}
+		if v, ok := record.ValueByKey("container_name").(string); ok {
+			alloc.ContainerName = v
+		}
+		if v, ok := record.ValueByKey("container_image").(string); ok {
+			alloc.ContainerImage = v
+		}
+		if v, ok := record.ValueByKey("container_cores").(string); ok {
+			alloc.ContainerCores = v
+		}
+		if v, ok := record.ValueByKey("socket_id").(string); ok {
+			fmt.Sscanf(v, "%d", &alloc.SocketID)
+		}
+		if v, ok := record.ValueByKey("isolated_others").(string); ok {
+			alloc.IsolatedOthers = (v == "true")
+		}
+
+		// Extract fields
+		if v, ok := record.ValueByKey("container_command").(string); ok {
+			alloc.ContainerCommand = v
+		}
+		if v, ok := record.ValueByKey("l3_ways").(int64); ok {
+			alloc.L3Ways = int(v)
+		}
+		if v, ok := record.ValueByKey("mem_bandwidth").(float64); ok {
+			alloc.MemBandwidth = v
+		}
+		if v, ok := record.ValueByKey("allocation_started").(string); ok {
+			alloc.AllocationStarted = v
+		}
+		if v, ok := record.ValueByKey("allocation_duration").(int64); ok {
+			alloc.AllocationDuration = v
+		}
+		if v, ok := record.ValueByKey("avg_ipc").(float64); ok {
+			alloc.AvgIPC = v
+		}
+		if v, ok := record.ValueByKey("avg_theoretical_ipc").(float64); ok {
+			alloc.AvgTheoreticalIPC = v
+		}
+		if v, ok := record.ValueByKey("ipc_efficiency").(float64); ok {
+			alloc.IPCEfficiency = v
+		}
+		if v, ok := record.ValueByKey("avg_cache_miss_rate").(float64); ok {
+			alloc.AvgCacheMissRate = v
+		}
+		if v, ok := record.ValueByKey("avg_stalled_cycles").(float64); ok {
+			alloc.AvgStalledCycles = v
+		}
+		if v, ok := record.ValueByKey("avg_l3_occupancy").(uint64); ok {
+			alloc.AvgL3Occupancy = v
+		}
+		if v, ok := record.ValueByKey("avg_mem_bandwidth_used").(uint64); ok {
+			alloc.AvgMemBandwidthUsed = v
+		}
+		if v, ok := record.ValueByKey("probe_aborted").(bool); ok {
+			alloc.ProbeAborted = v
+		}
+		if v, ok := record.ValueByKey("probe_started").(string); ok {
+			alloc.ProbeStarted = v
+		}
+		if v, ok := record.ValueByKey("probe_finished").(string); ok {
+			alloc.ProbeFinished = v
+		}
+		if v, ok := record.ValueByKey("total_probe_time").(int64); ok {
+			alloc.TotalProbeTime = v
+		}
+		if v, ok := record.ValueByKey("first_dataframe_step").(int64); ok {
+			alloc.FirstDataframeStep = v
+		}
+		if v, ok := record.ValueByKey("last_dataframe_step").(int64); ok {
+			alloc.LastDataframeStep = v
+		}
+		if v, ok := record.ValueByKey("num_dataframe_steps").(int64); ok {
+			alloc.NumDataframeSteps = v
+		}
+		if v, ok := record.ValueByKey("range_min_l3_ways").(int64); ok {
+			alloc.RangeMinL3Ways = int(v)
+		}
+		if v, ok := record.ValueByKey("range_max_l3_ways").(int64); ok {
+			alloc.RangeMaxL3Ways = int(v)
+		}
+		if v, ok := record.ValueByKey("range_min_mem_bandwidth").(float64); ok {
+			alloc.RangeMinMemBandwidth = v
+		}
+		if v, ok := record.ValueByKey("range_max_mem_bandwidth").(float64); ok {
+			alloc.RangeMaxMemBandwidth = v
+		}
+		if v, ok := record.ValueByKey("range_step_l3_ways").(int64); ok {
+			alloc.RangeStepL3Ways = int(v)
+		}
+		if v, ok := record.ValueByKey("range_step_mem_bandwidth").(float64); ok {
+			alloc.RangeStepMemBandwidth = v
+		}
+		if v, ok := record.ValueByKey("range_order").(string); ok {
+			alloc.RangeOrder = v
+		}
+		if v, ok := record.ValueByKey("range_duration_per_alloc").(int64); ok {
+			alloc.RangeDurationPerAlloc = int(v)
+		}
+		if v, ok := record.ValueByKey("range_max_total_duration").(int64); ok {
+			alloc.RangeMaxTotalDuration = int(v)
+		}
+		if v, ok := record.ValueByKey("range_isolate_others").(bool); ok {
+			alloc.RangeIsolateOthers = v
+		}
+		if v, ok := record.ValueByKey("range_force_reallocation").(bool); ok {
+			alloc.RangeForceReallocation = v
+		}
+
+		allocations = append(allocations, alloc)
+	}
+
+	if result.Err() != nil {
+		return nil, fmt.Errorf("query parsing failed: %w", result.Err())
+	}
+
+	if len(allocations) == 0 {
+		return nil, fmt.Errorf("no allocation data found for benchmark %d, probe %d", benchmarkID, allocationProbeIndex)
+	}
+
+	c.logger.WithFields(map[string]interface{}{
+		"benchmark_id":           benchmarkID,
+		"allocation_probe_index": allocationProbeIndex,
+		"allocations_count":      len(allocations),
+	}).Debug("Allocation query completed")
+
+	return allocations, nil
+}
