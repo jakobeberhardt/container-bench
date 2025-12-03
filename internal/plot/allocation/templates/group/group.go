@@ -17,9 +17,10 @@ const GroupWrapperTemplate = `% Generated on {{.GeneratedDate}}
         \caption{{"{"}}{{.Caption}}{{"}"}}
     \end{subfigure}
     
-{{end}}    \caption[{{.ShortCaption}}]{{"{"}}{{.Caption}}{{"}"}}
+{{end}}    % TODO: Add caption
+	\caption[{{.ShortCaption}}]{{"{"}}{{.Caption}}{{"}"}}
     \label{fig:benchmark-{{.BenchmarkID}}-allocation-{{.AllocationProbeIndex}}}
-	% TODO: Add caption
+	
 \end{figure}
 `
 

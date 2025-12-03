@@ -11,17 +11,16 @@ benchmark:
     allocator:
       implementation: default
       warmup_t: 20
-      duration: 360           # Total duration for all allocations
-      step_size_l3: 1        # Increment L3 by 1 way at a time
-      step_size_mb: 10        # Increment by 5% (will be adjusted to 10% by hardware)
-      min_l3_ways: 1         # Start with 1 way
-      max_l3_ways: 12         # Up to 5 ways
-      min_mem_bandwidth: 10   # Start with 1% bandwidth (will be adjusted to 10% by hardware)
-      max_mem_bandwidth: 100  # Up to 30% bandwidth (will be adjusted to 30%)
-      order: asc             # Start with smallest allocation
-      isolate_others: true   # Move other containers to separate allocation
-      force_reallocation: true  # Don't remove existing allocations
-
+      duration: 36
+      step_size_l3: 1
+      step_size_mb: 10 
+      min_l3_ways: 1  
+      max_l3_ways: 12       
+      min_mem_bandwidth: 10 
+      max_mem_bandwidth: 100  
+      order: asc            
+      isolate_others: true   
+      force_reallocation: true  
   data:
     db:
       host: ${INFLUXDB_HOST}
@@ -45,14 +44,3 @@ victim:
     perf: true
     docker: true
     rdt: true
-
-# c0:
-#   index: 1
-#   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-#   core: 1
-#   command: "stress-ng --cache 1 --cache-level 2 --timeout 0"
-#   data:
-#     frequency: 100
-#     perf: true
-#     docker: true
-#     rdt: true

@@ -8,10 +8,7 @@ const WrapperTemplate = `% Generated on {{.GeneratedDate}}
 \begin{figure}[H]
     \centering
     \resizebox{1\linewidth}{!}{\input{ {{.PlotFileName}} }}
-    % \vspace{0.5em}
-    % \pgfplotslegendfromname{allocation-legend-{{.LabelID}}}
-    % TODO: Add Caption
-    \caption[{{.ShortCaption}}]{ {{.Caption}} }
+    \caption[Allocation Probe for {{.ContainerName}}]{Metrics for different allocation combinations for {{.ContainerName}}}
     \label{fig:benchmark-{{.BenchmarkID}}-allocation-{{.AllocationProbeIndex}}-{{.Metric}}}
     \end{figure}
 \end{center}
@@ -24,6 +21,5 @@ type WrapperData struct {
 	Metric               string
 	LabelID              string
 	PlotFileName         string
-	ShortCaption         string
-	Caption              string
+	ContainerName        string
 }

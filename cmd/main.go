@@ -1385,6 +1385,20 @@ func generateAllocationPlot(benchmarkID int, allocationProbeIndex int, metrics [
 		return fmt.Errorf("at least one metric must be specified")
 	}
 
+	// Trim whitespace from metric names and filter out empty ones
+	var cleanMetrics []string
+	for _, m := range metrics {
+		trimmed := strings.TrimSpace(m)
+		if trimmed != "" {
+			cleanMetrics = append(cleanMetrics, trimmed)
+		}
+	}
+	metrics = cleanMetrics
+
+	if len(metrics) == 0 {
+		return fmt.Errorf("at least one valid metric must be specified")
+	}
+
 	// Expand 'all' to all available metrics
 	if len(metrics) == 1 && metrics[0] == "all" {
 		metrics = []string{"ipc", "ipc_efficiency", "cache_miss_rate", "stalled_cycles", "l3_occupancy", "mem_bandwidth_used"}

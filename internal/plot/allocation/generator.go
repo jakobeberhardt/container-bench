@@ -286,16 +286,6 @@ func (g *AllocationPlotGenerator) prepareWrapperData(
 	meta *database.MetaData,
 ) *wrapperTemplate.WrapperData {
 
-	metricLabel := opts.Metric
-	if metricMapping, exists := allocationMappings.GetMetricMapping(opts.Metric); exists {
-		metricLabel = metricMapping.ShortLabel
-	}
-
-	benchmarkName := fmt.Sprintf("Benchmark %d", opts.BenchmarkID)
-	if meta != nil {
-		benchmarkName = meta.BenchmarkName
-	}
-
 	return &wrapperTemplate.WrapperData{
 		GeneratedDate:        time.Now().Format(time.RFC3339),
 		BenchmarkID:          opts.BenchmarkID,
@@ -303,8 +293,7 @@ func (g *AllocationPlotGenerator) prepareWrapperData(
 		Metric:               opts.Metric,
 		LabelID:              fmt.Sprintf("%d-%d-%s", opts.BenchmarkID, opts.AllocationProbeIndex, opts.Metric),
 		PlotFileName:         fmt.Sprintf("%s.tikz", opts.Metric),
-		ShortCaption:         fmt.Sprintf("%s - Allocation Probe %d", containerName, opts.AllocationProbeIndex),
-		Caption:              fmt.Sprintf("%s: %s vs L3 Cache Ways for different Memory Bandwidth allocations (Benchmark: %s)", containerName, metricLabel, benchmarkName),
+		ContainerName:        containerName,
 	}
 }
 
