@@ -5,6 +5,7 @@ import (
 	"container-bench/internal/dataframe"
 	"container-bench/internal/logging"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -583,6 +584,21 @@ func getLatestStepNumber(dataframes *dataframe.DataFrames, containerIndex int) i
 	return maxStep
 }
 
+// removeOutliers removes the top 3 and bottom 3 values from a slice if it has >= 20 elements
+func removeOutliers(values []float64) []float64 {
+	if len(values) < 20 {
+		return values
+	}
+
+	// Sort the values
+	sorted := make([]float64, len(values))
+	copy(sorted, values)
+	sort.Float64s(sorted)
+
+	// Remove bottom 3 and top 3
+	return sorted[3 : len(sorted)-3]
+}
+
 // computeAllocationMetrics calculates performance metrics from collected dataframes
 func computeAllocationMetrics(
 	result *AllocationResult,
@@ -595,9 +611,8 @@ func computeAllocationMetrics(
 		return
 	}
 
-	var totalIPC, totalTheoreticalIPC, totalCacheMissRate, totalStalledCycles, totalStallsL3MissPercent float64
-	var totalL3Occupancy, totalMemBandwidth uint64
-	var count int
+	var ipcValues, theoreticalIPCValues, cacheMissRateValues, stalledCyclesValues, stallsL3MissPercentValues []float64
+	var l3OccupancyValues, memBandwidthValues []uint64
 
 	steps := containerDF.GetAllSteps()
 	for stepNum := startStep + 1; stepNum <= endStep; stepNum++ {
@@ -611,50 +626,102 @@ func computeAllocationMetrics(
 		// Collect performance metrics
 		if step.Perf != nil {
 			if step.Perf.InstructionsPerCycle != nil {
-				totalIPC += *step.Perf.InstructionsPerCycle
+				ipcValues = append(ipcValues, *step.Perf.InstructionsPerCycle)
 			}
 			if step.Perf.TheoreticalIPC != nil {
-				totalTheoreticalIPC += *step.Perf.TheoreticalIPC
+				theoreticalIPCValues = append(theoreticalIPCValues, *step.Perf.TheoreticalIPC)
 			}
 			if step.Perf.CacheMissRate != nil {
-				totalCacheMissRate += *step.Perf.CacheMissRate
+				cacheMissRateValues = append(cacheMissRateValues, *step.Perf.CacheMissRate)
 			}
 			if step.Perf.StalledCyclesPercent != nil {
-				totalStalledCycles += *step.Perf.StalledCyclesPercent
+				stalledCyclesValues = append(stalledCyclesValues, *step.Perf.StalledCyclesPercent)
 			}
 			if step.Perf.StallsL3MissPercent != nil {
-				totalStallsL3MissPercent += *step.Perf.StallsL3MissPercent
+				stallsL3MissPercentValues = append(stallsL3MissPercentValues, *step.Perf.StallsL3MissPercent)
 			}
 		}
 
 		if step.RDT != nil {
 			if step.RDT.L3OccupancyPerSocket != nil {
 				if occ, ok := step.RDT.L3OccupancyPerSocket[result.SocketID]; ok {
-					totalL3Occupancy += occ
+					l3OccupancyValues = append(l3OccupancyValues, occ)
 				}
 			}
 			if step.RDT.MemoryBandwidthTotalPerSocket != nil {
 				if bw, ok := step.RDT.MemoryBandwidthTotalPerSocket[result.SocketID]; ok {
-					totalMemBandwidth += bw
+					memBandwidthValues = append(memBandwidthValues, bw)
 				}
 			}
 		}
-
-		count++
 	}
 
-	if count > 0 {
-		result.AvgIPC = totalIPC / float64(count)
-		result.AvgTheoreticalIPC = totalTheoreticalIPC / float64(count)
-		result.AvgCacheMissRate = totalCacheMissRate / float64(count)
-		result.AvgStalledCycles = totalStalledCycles / float64(count)
-		result.AvgStallsL3MissPercent = totalStallsL3MissPercent / float64(count)
-		result.AvgL3Occupancy = totalL3Occupancy / uint64(count)
-		result.AvgMemBandwidthUsed = totalMemBandwidth / uint64(count)
+	// Remove outliers from float metrics
+	ipcValues = removeOutliers(ipcValues)
+	theoreticalIPCValues = removeOutliers(theoreticalIPCValues)
+	cacheMissRateValues = removeOutliers(cacheMissRateValues)
+	stalledCyclesValues = removeOutliers(stalledCyclesValues)
+	stallsL3MissPercentValues = removeOutliers(stallsL3MissPercentValues)
 
-		// Calculate IPC efficiency
-		if result.AvgTheoreticalIPC > 0 {
-			result.IPCEfficiency = result.AvgIPC / result.AvgTheoreticalIPC
+	// Calculate averages from filtered values
+	if len(ipcValues) > 0 {
+		var sum float64
+		for _, v := range ipcValues {
+			sum += v
 		}
+		result.AvgIPC = sum / float64(len(ipcValues))
+	}
+
+	if len(theoreticalIPCValues) > 0 {
+		var sum float64
+		for _, v := range theoreticalIPCValues {
+			sum += v
+		}
+		result.AvgTheoreticalIPC = sum / float64(len(theoreticalIPCValues))
+	}
+
+	if len(cacheMissRateValues) > 0 {
+		var sum float64
+		for _, v := range cacheMissRateValues {
+			sum += v
+		}
+		result.AvgCacheMissRate = sum / float64(len(cacheMissRateValues))
+	}
+
+	if len(stalledCyclesValues) > 0 {
+		var sum float64
+		for _, v := range stalledCyclesValues {
+			sum += v
+		}
+		result.AvgStalledCycles = sum / float64(len(stalledCyclesValues))
+	}
+
+	if len(stallsL3MissPercentValues) > 0 {
+		var sum float64
+		for _, v := range stallsL3MissPercentValues {
+			sum += v
+		}
+		result.AvgStallsL3MissPercent = sum / float64(len(stallsL3MissPercentValues))
+	}
+
+	if len(l3OccupancyValues) > 0 {
+		var sum uint64
+		for _, v := range l3OccupancyValues {
+			sum += v
+		}
+		result.AvgL3Occupancy = sum / uint64(len(l3OccupancyValues))
+	}
+
+	if len(memBandwidthValues) > 0 {
+		var sum uint64
+		for _, v := range memBandwidthValues {
+			sum += v
+		}
+		result.AvgMemBandwidthUsed = sum / uint64(len(memBandwidthValues))
+	}
+
+	// Calculate IPC efficiency
+	if result.AvgTheoreticalIPC > 0 {
+		result.IPCEfficiency = result.AvgIPC / result.AvgTheoreticalIPC
 	}
 }

@@ -204,8 +204,8 @@ func (as *ProbeAllocationScheduler) ProcessDataFrames(dataframes *dataframe.Data
 		durationPerAllocMs = (allocCfg.Duration * 1000) / totalAllocations
 		if durationPerAllocMs < 500 {
 			as.schedulerLogger.WithFields(logrus.Fields{
-				"total_allocations":   totalAllocations,
-				"total_duration":      allocCfg.Duration,
+				"total_allocations":     totalAllocations,
+				"total_duration":        allocCfg.Duration,
 				"duration_per_alloc_ms": durationPerAllocMs,
 				"duration_per_alloc_s":  float64(durationPerAllocMs) / 1000.0,
 			}).Warn("Duration per allocation is less than 500ms - this may result in insufficient time for metrics collection")
@@ -215,17 +215,17 @@ func (as *ProbeAllocationScheduler) ProcessDataFrames(dataframes *dataframe.Data
 	estimatedTotalTimeMs := totalAllocations * durationPerAllocMs
 
 	as.schedulerLogger.WithFields(logrus.Fields{
-		"configured_duration_s":   allocCfg.Duration,
-		"estimated_total_s":       float64(estimatedTotalTimeMs) / 1000.0,
-		"step_size_l3":            stepSizeL3,
-		"step_size_mb":            stepSizeMB,
-		"l3_range":                fmt.Sprintf("%d-%d", minL3Ways, maxL3Ways),
-		"mb_range":                fmt.Sprintf("%.0f%%-%.0f%%", minMemBandwidth, maxMemBandwidth),
-		"num_l3_steps":            numL3Steps,
-		"num_mem_steps":           numMemSteps,
-		"total_allocations":       totalAllocations,
-		"duration_per_alloc_ms":   durationPerAllocMs,
-		"duration_per_alloc_s":    float64(durationPerAllocMs) / 1000.0,
+		"configured_duration_s": allocCfg.Duration,
+		"estimated_total_s":     float64(estimatedTotalTimeMs) / 1000.0,
+		"step_size_l3":          stepSizeL3,
+		"step_size_mb":          stepSizeMB,
+		"l3_range":              fmt.Sprintf("%d-%d", minL3Ways, maxL3Ways),
+		"mb_range":              fmt.Sprintf("%.0f%%-%.0f%%", minMemBandwidth, maxMemBandwidth),
+		"num_l3_steps":          numL3Steps,
+		"num_mem_steps":         numMemSteps,
+		"total_allocations":     totalAllocations,
+		"duration_per_alloc_ms": durationPerAllocMs,
+		"duration_per_alloc_s":  float64(durationPerAllocMs) / 1000.0,
 	}).Info("Calculated allocation probe timing")
 
 	// Build allocation range configuration

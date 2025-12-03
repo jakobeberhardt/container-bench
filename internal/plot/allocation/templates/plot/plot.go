@@ -53,37 +53,37 @@ every axis legend/.code={\let\addlegendentry\relax},{{end}}
 `
 
 type PlotData struct {
-	GeneratedDate         string
-	BenchmarkID           int
-	AllocationProbeIndex  int
-	LabelID               string
-	IncludeLegend         bool
-	BaselineValue         *float64
-	ContainerIndex        int
-	ContainerName         string
-	ContainerImage        string
-	ContainerCores        string
-	ProbeStarted          string
-	ProbeFinished         string
-	TotalProbeTimeSeconds float64
-	ProbeAborted          bool
-	RangeMinL3Ways        int
-	RangeMaxL3Ways        int
-	RangeMinMemBandwidth  float64
-	RangeMaxMemBandwidth  float64
-	RangeStepL3Ways       int
-	RangeStepMemBandwidth float64
-	RangeOrder            string
-	RangeDurationPerAlloc int
+	GeneratedDate                string
+	BenchmarkID                  int
+	AllocationProbeIndex         int
+	LabelID                      string
+	IncludeLegend                bool
+	BaselineValue                *float64
+	ContainerIndex               int
+	ContainerName                string
+	ContainerImage               string
+	ContainerCores               string
+	ProbeStarted                 string
+	ProbeFinished                string
+	TotalProbeTimeSeconds        float64
+	ProbeAborted                 bool
+	RangeMinL3Ways               int
+	RangeMaxL3Ways               int
+	RangeMinMemBandwidth         float64
+	RangeMaxMemBandwidth         float64
+	RangeStepL3Ways              int
+	RangeStepMemBandwidth        float64
+	RangeOrder                   string
+	RangeDurationPerAlloc        int
 	RangeDurationPerAllocSeconds float64
-	RangeIsolateOthers    bool
-	XLabel                string
-	YLabel                string
-	XMin                  string
-	XMax                  string
-	YMin                  string
-	YMax                  string
-	Plots                 []PlotSeries
+	RangeIsolateOthers           bool
+	XLabel                       string
+	YLabel                       string
+	XMin                         string
+	XMax                         string
+	YMin                         string
+	YMax                         string
+	Plots                        []PlotSeries
 }
 
 type PlotSeries struct {

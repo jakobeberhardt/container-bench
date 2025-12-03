@@ -641,7 +641,7 @@ func (rc *RDTCollector) Collect() *dataframe.RDTMetrics {
 
 	// Get monitoring data - may fail if monitoring group was deleted during class update
 	monData := monGroup.GetMonData()
-	
+
 	// If we got no data, check if this is due to monitoring group being deleted
 	// This can happen during RDT class updates in allocation probes
 	if monData.L3 == nil {
@@ -654,11 +654,11 @@ func (rc *RDTCollector) Collect() *dataframe.RDTMetrics {
 		rc.mu.RLock()
 		monGroup = rc.monGroup
 		rc.mu.RUnlock()
-		
+
 		if monGroup != nil {
 			monData = monGroup.GetMonData()
 		}
-		
+
 		// If still no data, return nil
 		if monData.L3 == nil {
 			rc.logger.WithField("pid", rc.pid).Trace("No L3 monitoring data available after migration check")

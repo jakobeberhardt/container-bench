@@ -41,19 +41,19 @@ type SchedulerConfig struct {
 }
 
 type AllocatorConfig struct {
-	Implementation    string  `yaml:"implementation"`
-	WarmupT           int     `yaml:"warmup_t,omitempty"`
-	Duration          int     `yaml:"duration,omitempty"`
-	Target            float64 `yaml:"target,omitempty"`
-	StepSizeL3        int     `yaml:"step_size_l3,omitempty"`
-	StepSizeMB        int     `yaml:"step_size_mb,omitempty"`
-	MinL3Ways         int     `yaml:"min_l3_ways,omitempty"`
-	MaxL3Ways         int     `yaml:"max_l3_ways,omitempty"`
-	MinMemBandwidth   float64 `yaml:"min_mem_bandwidth,omitempty"`
-	MaxMemBandwidth   float64 `yaml:"max_mem_bandwidth,omitempty"`
-	ForceReallocation bool    `yaml:"force_reallocation,omitempty"`
-	IsolateOthers     bool    `yaml:"isolate_others,omitempty"`
-	Order             string  `yaml:"order,omitempty"`
+	Implementation    string   `yaml:"implementation"`
+	WarmupT           int      `yaml:"warmup_t,omitempty"`
+	Duration          int      `yaml:"duration,omitempty"`
+	Target            float64  `yaml:"target,omitempty"`
+	StepSizeL3        int      `yaml:"step_size_l3,omitempty"`
+	StepSizeMB        int      `yaml:"step_size_mb,omitempty"`
+	MinL3Ways         int      `yaml:"min_l3_ways,omitempty"`
+	MaxL3Ways         int      `yaml:"max_l3_ways,omitempty"`
+	MinMemBandwidth   float64  `yaml:"min_mem_bandwidth,omitempty"`
+	MaxMemBandwidth   float64  `yaml:"max_mem_bandwidth,omitempty"`
+	ForceReallocation bool     `yaml:"force_reallocation,omitempty"`
+	IsolateOthers     bool     `yaml:"isolate_others,omitempty"`
+	Order             string   `yaml:"order,omitempty"`
 	BreakOnEfficiency *float64 `yaml:"break_on_efficiency,omitempty"` // Stop probe when IPC efficiency exceeds this (nil = never break)
 }
 

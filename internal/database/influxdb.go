@@ -577,16 +577,16 @@ func (idb *InfluxDBClient) WriteAllocationProbeResults(allocationProbeResults []
 				"allocation_started":  allocResult.Started.Format(time.RFC3339),
 				"allocation_duration": allocResult.Duration.Nanoseconds(),
 
-			// Performance metrics
-			"avg_ipc":                   allocResult.AvgIPC,
-			"avg_theoretical_ipc":       allocResult.AvgTheoreticalIPC,
-			"ipc_efficiency":            allocResult.IPCEfficiency,
-			"avg_cache_miss_rate":       allocResult.AvgCacheMissRate,
-			"avg_stalled_cycles":        allocResult.AvgStalledCycles,
-			"avg_stalls_l3_miss_percent": allocResult.AvgStallsL3MissPercent,
-			"avg_l3_occupancy":          allocResult.AvgL3Occupancy,
-			"avg_mem_bandwidth_used":    allocResult.AvgMemBandwidthUsed,
-		}			// Add dataframe references if available
+				// Performance metrics
+				"avg_ipc":                    allocResult.AvgIPC,
+				"avg_theoretical_ipc":        allocResult.AvgTheoreticalIPC,
+				"ipc_efficiency":             allocResult.IPCEfficiency,
+				"avg_cache_miss_rate":        allocResult.AvgCacheMissRate,
+				"avg_stalled_cycles":         allocResult.AvgStalledCycles,
+				"avg_stalls_l3_miss_percent": allocResult.AvgStallsL3MissPercent,
+				"avg_l3_occupancy":           allocResult.AvgL3Occupancy,
+				"avg_mem_bandwidth_used":     allocResult.AvgMemBandwidthUsed,
+			} // Add dataframe references if available
 			if len(allocResult.DataFrameSteps) > 0 {
 				fields["first_dataframe_step"] = allocResult.DataFrameSteps[0]
 				fields["last_dataframe_step"] = allocResult.DataFrameSteps[len(allocResult.DataFrameSteps)-1]

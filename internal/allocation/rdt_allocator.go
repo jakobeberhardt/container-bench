@@ -423,7 +423,7 @@ func (a *DefaultRDTAllocator) Cleanup() error {
 		return nil
 	}
 
-	a.logger.Info("Cleaning up RDT allocator - removing all managed classes")
+	a.logger.Info("Cleaning up RDT allocations")
 
 	// Get list of class names before deleting (to avoid modifying map during iteration)
 	classNames := make([]string, 0, len(a.managedClasses))
