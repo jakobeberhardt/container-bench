@@ -37,6 +37,13 @@ var MetricMappings = map[string]MetricMapping{
 		Max:        100.0,
 		Unit:       "\\%",
 	},
+	"stalls_l3_miss_percent": {
+		Label:      "L3 Stalls (\\%)",
+		ShortLabel: "L3 Stalls (\\%)",
+		Min:        0.0,
+		Max:        100.0,
+		Unit:       "\\%",
+	},
 	"l3_occupancy": {
 		Label:      "L3 Cache Occupancy (MB)",
 		ShortLabel: "L3 Occ.",

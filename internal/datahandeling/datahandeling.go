@@ -50,6 +50,7 @@ type MetricStep struct {
 	// Derived perf metrics
 	PerfBranchMissRate       *float64 `json:"perf_branch_miss_rate,omitempty"`
 	PerfStalledCyclesPercent *float64 `json:"perf_stalled_cycles_percent,omitempty"`
+	PerfStallsL3MissPercent  *float64 `json:"perf_stalls_l3_miss_percent,omitempty"`
 	PerfTheoreticalIPC       *float64 `json:"perf_theoretical_ipc,omitempty"`
 
 	DockerCPUUsageTotal      *uint64  `json:"docker_cpu_usage_total,omitempty"`
@@ -207,6 +208,7 @@ func (h *DefaultDataHandler) processPerfMetrics(perf *dataframe.PerfMetrics, ste
 	step.PerfResourceStallsScoreboard = perf.ResourceStallsScoreboard
 
 	step.PerfStalledCyclesPercent = perf.StalledCyclesPercent
+	step.PerfStallsL3MissPercent = perf.StallsL3MissPercent
 	step.PerfTheoreticalIPC = perf.TheoreticalIPC
 
 	// Calculate derived metrics: Branch miss rate

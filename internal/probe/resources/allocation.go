@@ -52,13 +52,14 @@ type AllocationResult struct {
 	Duration time.Duration `json:"duration"`
 
 	// Performance metrics (computed from dataframes)
-	AvgIPC              float64 `json:"avg_ipc,omitempty"`
-	AvgTheoreticalIPC   float64 `json:"avg_theoretical_ipc,omitempty"`
-	IPCEfficiency       float64 `json:"ipc_efficiency,omitempty"` // IPC / Theoretical IPC
-	AvgCacheMissRate    float64 `json:"avg_cache_miss_rate,omitempty"`
-	AvgStalledCycles    float64 `json:"avg_stalled_cycles,omitempty"`
-	AvgL3Occupancy      uint64  `json:"avg_l3_occupancy,omitempty"`
-	AvgMemBandwidthUsed uint64  `json:"avg_mem_bandwidth_used,omitempty"`
+	AvgIPC                 float64 `json:"avg_ipc,omitempty"`
+	AvgTheoreticalIPC      float64 `json:"avg_theoretical_ipc,omitempty"`
+	IPCEfficiency          float64 `json:"ipc_efficiency,omitempty"` // IPC / Theoretical IPC
+	AvgCacheMissRate       float64 `json:"avg_cache_miss_rate,omitempty"`
+	AvgStalledCycles       float64 `json:"avg_stalled_cycles,omitempty"`
+	AvgStallsL3MissPercent float64 `json:"avg_stalls_l3_miss_percent,omitempty"`
+	AvgL3Occupancy         uint64  `json:"avg_l3_occupancy,omitempty"`
+	AvgMemBandwidthUsed    uint64  `json:"avg_mem_bandwidth_used,omitempty"`
 
 	// Raw data frames for this allocation period
 	DataFrameSteps []int `json:"dataframe_steps"` // Step numbers captured during this allocation
@@ -73,7 +74,7 @@ type AllocationRange struct {
 	StepL3Ways        int     `json:"step_l3_ways"`
 	StepMemBandwidth  float64 `json:"step_memory_bandwidth"` // Percentage points
 	Order             string  `json:"order"`                 // "asc" (start smallest) or "desc" (start largest)
-	DurationPerAlloc  int     `json:"duration_per_alloc"`    // Seconds to test each allocation
+	DurationPerAlloc  int     `json:"duration_per_alloc"`    // Milliseconds to test each allocation
 	MaxTotalDuration  int     `json:"max_total_duration"`    // Maximum total probe time in seconds
 	SocketID          int     `json:"socket_id"`             // Which socket to test on
 	IsolateOthers     bool    `json:"isolate_others"`        // Move other containers to different allocation
@@ -550,7 +551,7 @@ func applyAndMeasureAllocation(
 	// Step 4: Wait for the allocation duration and collect metrics
 	startStepNumber := getLatestStepNumber(dataframes, targetContainer.Index)
 
-	time.Sleep(time.Duration(allocRange.DurationPerAlloc) * time.Second)
+	time.Sleep(time.Duration(allocRange.DurationPerAlloc) * time.Millisecond)
 
 	endStepNumber := getLatestStepNumber(dataframes, targetContainer.Index)
 
@@ -594,7 +595,7 @@ func computeAllocationMetrics(
 		return
 	}
 
-	var totalIPC, totalTheoreticalIPC, totalCacheMissRate, totalStalledCycles float64
+	var totalIPC, totalTheoreticalIPC, totalCacheMissRate, totalStalledCycles, totalStallsL3MissPercent float64
 	var totalL3Occupancy, totalMemBandwidth uint64
 	var count int
 
@@ -621,6 +622,9 @@ func computeAllocationMetrics(
 			if step.Perf.StalledCyclesPercent != nil {
 				totalStalledCycles += *step.Perf.StalledCyclesPercent
 			}
+			if step.Perf.StallsL3MissPercent != nil {
+				totalStallsL3MissPercent += *step.Perf.StallsL3MissPercent
+			}
 		}
 
 		if step.RDT != nil {
@@ -644,6 +648,7 @@ func computeAllocationMetrics(
 		result.AvgTheoreticalIPC = totalTheoreticalIPC / float64(count)
 		result.AvgCacheMissRate = totalCacheMissRate / float64(count)
 		result.AvgStalledCycles = totalStalledCycles / float64(count)
+		result.AvgStallsL3MissPercent = totalStallsL3MissPercent / float64(count)
 		result.AvgL3Occupancy = totalL3Occupancy / uint64(count)
 		result.AvgMemBandwidthUsed = totalMemBandwidth / uint64(count)
 

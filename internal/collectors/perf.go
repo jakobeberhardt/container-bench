@@ -309,6 +309,11 @@ func (pc *PerfCollector) Collect() *dataframe.PerfMetrics {
 		}
 	}
 
+	if metrics.StallsTotal != nil && metrics.StallsL3Miss != nil && *metrics.StallsTotal > 0 {
+		stallsL3Percent := (float64(*metrics.StallsL3Miss) / float64(*metrics.StallsTotal)) * 100.0
+		metrics.StallsL3MissPercent = &stallsL3Percent
+	}
+
 	return metrics
 }
 

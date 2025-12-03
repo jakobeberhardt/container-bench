@@ -13,7 +13,7 @@ const PlotTemplate = `% Generated on {{.GeneratedDate}}
 % Allocation Range:
 % L3 Ways: {{.RangeMinL3Ways}}-{{.RangeMaxL3Ways}} (step: {{.RangeStepL3Ways}})
 % Memory Bandwidth: {{.RangeMinMemBandwidth}}%-{{.RangeMaxMemBandwidth}}% (step: {{.RangeStepMemBandwidth}}%)
-% Duration per Allocation: {{.RangeDurationPerAlloc}}s
+% Duration per Allocation: {{.RangeDurationPerAllocSeconds}}s
 % Order: {{.RangeOrder}}
 % Isolated Others: {{.RangeIsolateOthers}}
 %
@@ -75,6 +75,7 @@ type PlotData struct {
 	RangeStepMemBandwidth float64
 	RangeOrder            string
 	RangeDurationPerAlloc int
+	RangeDurationPerAllocSeconds float64
 	RangeIsolateOthers    bool
 	XLabel                string
 	YLabel                string

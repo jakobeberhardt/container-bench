@@ -54,6 +54,7 @@ type AllocatorConfig struct {
 	ForceReallocation bool    `yaml:"force_reallocation,omitempty"`
 	IsolateOthers     bool    `yaml:"isolate_others,omitempty"`
 	Order             string  `yaml:"order,omitempty"`
+	BreakOnEfficiency *float64 `yaml:"break_on_efficiency,omitempty"` // Stop probe when IPC efficiency exceeds this (nil = never break)
 }
 
 type ProberConfig struct {

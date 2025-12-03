@@ -332,7 +332,7 @@ func main() {
 
 	allocationCmd.Flags().IntVar(&benchmarkID, "benchmark", 0, "Benchmark ID")
 	allocationCmd.Flags().IntVar(&allocationProbeIndex, "probe-id", 0, "Allocation probe index")
-	allocationCmd.Flags().StringSliceVar(&allocationMetrics, "metrics", []string{"stalled_cycles"}, "Metrics to plot (comma-separated or 'all': ipc, ipc_efficiency, cache_miss_rate, stalled_cycles, l3_occupancy, mem_bandwidth_used)")
+	allocationCmd.Flags().StringSliceVar(&allocationMetrics, "metrics", []string{"stalled_cycles"}, "Metrics to plot (comma-separated or 'all': ipc, ipc_efficiency, cache_miss_rate, stalled_cycles, stalls_l3_miss_percent, l3_occupancy, mem_bandwidth_used)")
 	allocationCmd.Flags().BoolVar(&onlyPlot, "plot", false, "Print only the plot file (TikZ)")
 	allocationCmd.Flags().BoolVar(&onlyWrapper, "wrapper", false, "Print only the wrapper file (LaTeX)")
 	allocationCmd.Flags().StringVar(&outputDir, "files", "", "Output directory to save plot files (creates wrapper.tex and metric.tikz files)")
@@ -1401,7 +1401,7 @@ func generateAllocationPlot(benchmarkID int, allocationProbeIndex int, metrics [
 
 	// Expand 'all' to all available metrics
 	if len(metrics) == 1 && metrics[0] == "all" {
-		metrics = []string{"ipc", "ipc_efficiency", "cache_miss_rate", "stalled_cycles", "l3_occupancy", "mem_bandwidth_used"}
+		metrics = []string{"ipc", "ipc_efficiency", "cache_miss_rate", "stalled_cycles", "stalls_l3_miss_percent", "l3_occupancy", "mem_bandwidth_used"}
 		logger.WithField("expanded_metrics", metrics).Debug("Expanded 'all' to all available metrics")
 	}
 

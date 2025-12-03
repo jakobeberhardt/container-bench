@@ -197,31 +197,35 @@ func (as *ProbeAllocationScheduler) ProcessDataFrames(dataframes *dataframe.Data
 	numMemSteps := int((maxMemBandwidth-minMemBandwidth)/float64(stepSizeMB)) + 1
 	totalAllocations := numL3Steps * numMemSteps
 
-	durationPerAlloc := 1 // Default
+	// Calculate duration per allocation in milliseconds
+	durationPerAllocMs := 1000 // Default 1 second
 	if totalAllocations > 0 && allocCfg.Duration > 0 {
-		durationPerAlloc = allocCfg.Duration / totalAllocations
-		if durationPerAlloc < 1 {
+		// Convert total duration (seconds) to milliseconds and divide by allocations
+		durationPerAllocMs = (allocCfg.Duration * 1000) / totalAllocations
+		if durationPerAllocMs < 500 {
 			as.schedulerLogger.WithFields(logrus.Fields{
-				"total_allocations":  totalAllocations,
-				"total_duration":     allocCfg.Duration,
-				"duration_per_alloc": durationPerAlloc,
-			}).Warn("Duration per allocation is less than 1 second - this may result in insufficient time for metrics collection")
+				"total_allocations":   totalAllocations,
+				"total_duration":      allocCfg.Duration,
+				"duration_per_alloc_ms": durationPerAllocMs,
+				"duration_per_alloc_s":  float64(durationPerAllocMs) / 1000.0,
+			}).Warn("Duration per allocation is less than 500ms - this may result in insufficient time for metrics collection")
 		}
 	}
 
-	estimatedTotalTime := totalAllocations * durationPerAlloc
+	estimatedTotalTimeMs := totalAllocations * durationPerAllocMs
 
 	as.schedulerLogger.WithFields(logrus.Fields{
-		"configured_duration": allocCfg.Duration,
-		"estimated_total":     estimatedTotalTime,
-		"step_size_l3":        stepSizeL3,
-		"step_size_mb":        stepSizeMB,
-		"l3_range":            fmt.Sprintf("%d-%d", minL3Ways, maxL3Ways),
-		"mb_range":            fmt.Sprintf("%.0f%%-%.0f%%", minMemBandwidth, maxMemBandwidth),
-		"num_l3_steps":        numL3Steps,
-		"num_mem_steps":       numMemSteps,
-		"total_allocations":   totalAllocations,
-		"duration_per_alloc":  durationPerAlloc,
+		"configured_duration_s":   allocCfg.Duration,
+		"estimated_total_s":       float64(estimatedTotalTimeMs) / 1000.0,
+		"step_size_l3":            stepSizeL3,
+		"step_size_mb":            stepSizeMB,
+		"l3_range":                fmt.Sprintf("%d-%d", minL3Ways, maxL3Ways),
+		"mb_range":                fmt.Sprintf("%.0f%%-%.0f%%", minMemBandwidth, maxMemBandwidth),
+		"num_l3_steps":            numL3Steps,
+		"num_mem_steps":           numMemSteps,
+		"total_allocations":       totalAllocations,
+		"duration_per_alloc_ms":   durationPerAllocMs,
+		"duration_per_alloc_s":    float64(durationPerAllocMs) / 1000.0,
 	}).Info("Calculated allocation probe timing")
 
 	// Build allocation range configuration
@@ -233,7 +237,7 @@ func (as *ProbeAllocationScheduler) ProcessDataFrames(dataframes *dataframe.Data
 		StepL3Ways:        stepSizeL3,
 		StepMemBandwidth:  float64(stepSizeMB),
 		Order:             order,
-		DurationPerAlloc:  durationPerAlloc,
+		DurationPerAlloc:  durationPerAllocMs,
 		MaxTotalDuration:  allocCfg.Duration,
 		SocketID:          0,
 		IsolateOthers:     isolateOthers,
@@ -288,17 +292,27 @@ func (as *ProbeAllocationScheduler) ProcessDataFrames(dataframes *dataframe.Data
 		"isolate_others": probeRange.IsolateOthers,
 	}).Info("Starting allocation probe")
 
-	// Define break condition: stop if IPC efficiency > 0.85
-	breakCondition := func(result *proberesources.AllocationResult, allResults []proberesources.AllocationResult) bool {
-		if result.IPCEfficiency > 0.85 {
-			as.schedulerLogger.WithFields(logrus.Fields{
-				"ipc_efficiency": result.IPCEfficiency,
-				"l3_ways":        result.L3Ways,
-				"mem_bandwidth":  result.MemBandwidth,
-			}).Info("Break condition met: IPC efficiency > 0.85")
-			return true
+	// Define break condition based on configuration
+	var breakCondition func(*proberesources.AllocationResult, []proberesources.AllocationResult) bool
+	if allocCfg.BreakOnEfficiency != nil && *allocCfg.BreakOnEfficiency > 0 {
+		threshold := *allocCfg.BreakOnEfficiency
+		breakCondition = func(result *proberesources.AllocationResult, allResults []proberesources.AllocationResult) bool {
+			if result.IPCEfficiency > threshold {
+				as.schedulerLogger.WithFields(logrus.Fields{
+					"ipc_efficiency": result.IPCEfficiency,
+					"threshold":      threshold,
+					"l3_ways":        result.L3Ways,
+					"mem_bandwidth":  result.MemBandwidth,
+				}).Info("Break condition met: IPC efficiency exceeded threshold")
+				return true
+			}
+			return false
 		}
-		return false
+		as.schedulerLogger.WithField("threshold", threshold).Info("Break condition enabled for IPC efficiency")
+	} else {
+		// No break condition - test all allocations
+		breakCondition = nil
+		as.schedulerLogger.Info("Break condition disabled - will test all allocations")
 	}
 
 	// Run the probe - note the parameter order matches the function signature

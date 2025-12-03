@@ -203,7 +203,7 @@ func (g *AllocationPlotGenerator) preparePlotData(
 	// For metrics where higher is better: 90% of max value
 	// For metrics where lower is better: 110% of min value
 	var baselineValue *float64
-	lowerIsBetter := opts.Metric == "cache_miss_rate" || opts.Metric == "stalled_cycles"
+	lowerIsBetter := opts.Metric == "cache_miss_rate" || opts.Metric == "stalled_cycles" || opts.Metric == "stalls_l3_miss_percent"
 
 	for _, alloc := range allocations {
 		if alloc.L3Ways == firstAlloc.RangeMaxL3Ways && alloc.MemBandwidth == firstAlloc.RangeMaxMemBandwidth {
@@ -246,6 +246,7 @@ func (g *AllocationPlotGenerator) preparePlotData(
 		RangeStepMemBandwidth: firstAlloc.RangeStepMemBandwidth,
 		RangeOrder:            firstAlloc.RangeOrder,
 		RangeDurationPerAlloc: firstAlloc.RangeDurationPerAlloc,
+		RangeDurationPerAllocSeconds: float64(firstAlloc.RangeDurationPerAlloc) / 1000.0,
 		RangeIsolateOthers:    firstAlloc.RangeIsolateOthers,
 		XLabel:                "L3 Cache Ways",
 		YLabel:                ylabel,
@@ -270,6 +271,8 @@ func (g *AllocationPlotGenerator) getMetricValue(alloc database.AllocationData, 
 		val = alloc.AvgCacheMissRate * 100.0 // Scale from 0-1 to 0-100
 	case "stalled_cycles":
 		val = alloc.AvgStalledCycles
+	case "stalls_l3_miss_percent":
+		val = alloc.AvgStallsL3MissPercent
 	case "l3_occupancy":
 		val = float64(alloc.AvgL3Occupancy)
 	case "mem_bandwidth_used":

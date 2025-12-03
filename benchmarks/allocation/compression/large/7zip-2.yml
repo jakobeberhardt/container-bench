@@ -1,6 +1,6 @@
 benchmark:
-  name: PostgreSQL
-  description: Adds and removes allocations
+  name: 7zip Probe Level 2/Large
+  description: Probes a 7zip container with compression level 2 and large file size
   max_t: 381  # 2 minutes max
   pid_sync_interval: 100  
   log_level: info
@@ -34,11 +34,11 @@ benchmark:
       username: ${DOCKER_REGISTRY_USERNAME}
       password: ${DOCKER_REGISTRY_PASSWORD}
 
-victim:
+7z:
   index: 0
-  image: registry.jakob-eberhardt.de/rdt4nn/postgres:latest
-  port: 5432:5432
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
   core: 0
+  command: "while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=2 -mmt=1  dummy.7z /data/*.bin; done"
   data:
     frequency: 100
     perf: true

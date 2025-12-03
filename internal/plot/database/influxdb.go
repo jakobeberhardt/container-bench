@@ -519,6 +519,7 @@ type AllocationData struct {
 	IPCEfficiency          float64
 	AvgCacheMissRate       float64
 	AvgStalledCycles       float64
+	AvgStallsL3MissPercent float64
 	AvgL3Occupancy         uint64
 	AvgMemBandwidthUsed    uint64
 	ProbeAborted           bool
@@ -626,6 +627,9 @@ func (c *PlotDBClient) QueryAllocationData(ctx context.Context, benchmarkID int,
 		}
 		if v, ok := record.ValueByKey("avg_stalled_cycles").(float64); ok {
 			alloc.AvgStalledCycles = v
+		}
+		if v, ok := record.ValueByKey("avg_stalls_l3_miss_percent").(float64); ok {
+			alloc.AvgStallsL3MissPercent = v
 		}
 		if v, ok := record.ValueByKey("avg_l3_occupancy").(uint64); ok {
 			alloc.AvgL3Occupancy = v

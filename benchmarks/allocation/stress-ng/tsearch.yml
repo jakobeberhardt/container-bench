@@ -1,7 +1,7 @@
 benchmark:
-  name: PostgreSQL
-  description: Adds and removes allocations
-  max_t: 381  # 2 minutes max
+  name: tsearch stress-ng allocation
+  description: Finds Allocation for tsearch
+  max_t: 370
   pid_sync_interval: 100  
   log_level: info
   scheduler:
@@ -10,7 +10,7 @@ benchmark:
     log_level: info
     allocator:
       implementation: default
-      warmup_t: 20
+      warmup_t: 5
       duration: 360
       step_size_l3: 1
       step_size_mb: 10 
@@ -20,7 +20,7 @@ benchmark:
       max_mem_bandwidth: 100  
       order: asc            
       isolate_others: true   
-      force_reallocation: true  
+      force_reallocation: true
   data:
     db:
       host: ${INFLUXDB_HOST}
@@ -34,13 +34,13 @@ benchmark:
       username: ${DOCKER_REGISTRY_USERNAME}
       password: ${DOCKER_REGISTRY_PASSWORD}
 
-victim:
+tsearch:
   index: 0
-  image: registry.jakob-eberhardt.de/rdt4nn/postgres:latest
-  port: 5432:5432
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
   core: 0
+  command: "stress-ng --tsearch 1 --timeout 0"
   data:
     frequency: 100
     perf: true
     docker: true
-    rdt: true
+    rdt: true  
