@@ -1,0 +1,95 @@
+benchmark:
+  name: Allocation Matrix3D Timeline
+  description: Staggered matrix-3d workload with overlapping execution
+  max_t: 120
+  log_level: info
+  scheduler:
+    implementation: default
+    rdt: true
+    log_level: warn
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+# Timeline (each segment = 10s, total 120s):
+# c0 ------______  (0-60s run, 60-120s idle)
+# c1 _-------____  (10-80s run, 0-10s + 80-120s idle)
+# c2 __--------__  (20-100s run, 0-20s + 100-120s idle)
+# c3 ___--------_  (30-110s run, 0-30s + 110-120s idle)
+# c4 ____--------  (40-120s run, 0-40s idle)
+# c5 _____-------  (50-120s run, 0-50s idle)
+
+c0:
+  index: 0
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 0
+  command: "stress-ng --matrix-3d 1 --matrix-3d-size 75 --timeout 60 && sleep 60"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+c1:
+  index: 1
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 1
+  command: "sleep 10 && stress-ng --matrix-3d 1 --matrix-3d-size 75 --timeout 70 && sleep 40"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+c2:
+  index: 2
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 2
+  command: "sleep 20 && stress-ng --matrix-3d 1 --matrix-3d-size 75 --timeout 80 && sleep 20"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+c3:
+  index: 3
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 3
+  command: "sleep 30 && stress-ng --matrix-3d 1 --matrix-3d-size 75 --timeout 80 && sleep 10"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+c4:
+  index: 4
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 4
+  command: "sleep 40 && stress-ng --matrix-3d 1 --matrix-3d-size 75 --timeout 80"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+c5:
+  index: 5
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 5
+  command: "sleep 50 && stress-ng --matrix-3d 1 --matrix-3d-size 75 --timeout 70"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true

@@ -1,7 +1,7 @@
 benchmark:
   name: matrix-3d 75 stress-ng allocation
   description: Finds Allocation for matrix-3d 75 x 75 x 75
-  max_t: 380
+  max_t: 60
   pid_sync_interval: 100  
   log_level: info
   scheduler:
