@@ -1,8 +1,8 @@
 benchmark:
-  name: 7zip Probe Level 7/Large
-  description: Probes a 7zip container with compression level 7 (maximum) and large file size
-  max_t: 385
-  pid_sync_interval: 100  
+  name: Hadoop Sort Benchmark - Medium
+  description: Hadoop TeraSort benchmark with medium dataset size
+  max_t: 200
+  pid_sync_interval: 100
   log_level: info
   scheduler:
     implementation: probe_allocation
@@ -10,16 +10,16 @@ benchmark:
     log_level: info
     allocator:
       implementation: default
-      warmup_t: 20
-      duration: 360
+      warmup_t: 50
+      duration: 120
       step_size_l3: 1
-      step_size_mb: 10 
-      min_l3_ways: 1  
-      max_l3_ways: 12       
-      min_mem_bandwidth: 10 
-      max_mem_bandwidth: 100  
-      order: asc            
-      isolate_others: true   
+      step_size_mb: 10
+      min_l3_ways: 1
+      max_l3_ways: 12
+      min_mem_bandwidth: 10
+      max_mem_bandwidth: 100
+      order: asc
+      isolate_others: true
       force_reallocation: true
   data:
     db:
@@ -34,11 +34,18 @@ benchmark:
       username: ${DOCKER_REGISTRY_USERNAME}
       password: ${DOCKER_REGISTRY_PASSWORD}
 
-7z:
+hadoop:
   index: 0
-  image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+  image: registry.jakob-eberhardt.de/rdt4nn/hadoop:latest
+  port: 9870:9870
   core: 0
-  command: "while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=7 -mmt=1  dummy.7z /data/*.bin; done"
+  privileged: true
+  environment:
+    BENCHMARK_TYPE: sort
+    DATA_SIZE: 26GB
+    MAPS_COUNT: 2
+    ITERATIONS: -1
+    WARMUP_TIME: 5
   data:
     frequency: 100
     perf: true

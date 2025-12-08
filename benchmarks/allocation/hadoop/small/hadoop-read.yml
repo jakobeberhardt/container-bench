@@ -1,0 +1,54 @@
+benchmark:
+  name: Hadoop Probe Read/Small
+  description: Probes a Hadoop container with small data set performing read operations
+  max_t: 75
+  log_level: info
+  scheduler:
+    implementation: probe
+    rdt: false
+    log_level: error
+    prober:
+      implementation: default
+      abortable: false
+      isolated: true
+      default_t: 60
+      warmup_t: 10
+      cooldown_t: 0
+      default_probe_cores: 1
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+hadoop:
+  index: 0
+  image: apache/hadoop:latest
+  port: 9870:9870
+  core: 0
+  data:
+    frequency: 100
+    perf:
+      instructions: true
+      cycles: true
+    docker: false
+    rdt: false
+
+load:
+  index: 1
+  image: apache/hadoop:latest
+  core: 16-19
+  command: "sleep 15 && hadoop jar /opt/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-examples-*.jar teragen -Dmapreduce.job.maps=8 1000000 /test-data && while :; do hadoop fs -rm -r /output; hadoop jar /opt/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-examples-*.jar terasort -Dmapreduce.job.reduces=8 /test-data /output; done"
+  data:
+    frequency: 100
+    perf: false
+    docker:
+      cpu_usage_percent: true
+    rdt: false

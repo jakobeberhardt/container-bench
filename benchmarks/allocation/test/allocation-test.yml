@@ -1,0 +1,120 @@
+benchmark:
+  name: Allocation Test
+  description: Runs containers
+  max_t: 120
+  log_level: info
+  scheduler:
+    implementation: default
+    rdt: true
+    log_level: warn
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+# c0:
+#   index: 0
+#   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+#   core: 0
+#   command: "stress-ng --matrix-3d 1 --timeout 0"
+#   data:
+#     frequency: 100
+#     perf: true
+#     docker: true
+#     rdt: true
+
+7z:
+  index: 0
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+  core: 0
+  command: "while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=1 -mmt=1  dummy.7z /data/*.bin; done"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+7z-1:
+  index: 1
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+  core: 1
+  command: "sleep 15 && while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=1 -mmt=1  dummy.7z /data/*.bin; done"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+7z-2:
+  index: 2
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+  core: 2
+  command: "sleep 30 && while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=1 -mmt=1  dummy.7z /data/*.bin; done"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+7z-3:
+  index: 3
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+  core: 3
+  command: "sleep 45 && while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=1 -mmt=1  dummy.7z /data/*.bin; done"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+7z-4:
+  index: 4
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+  core: 4
+  command: "sleep 60 && while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=1 -mmt=1  dummy.7z /data/*.bin; done"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+7z-5:
+  index: 5
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+  core: 5
+  command: "sleep 75 && while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=1 -mmt=1  dummy.7z /data/*.bin; done"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+7z-6:
+  index: 6
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+  core: 6
+  command: "sleep 90 && while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=1 -mmt=1  dummy.7z /data/*.bin; done"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+7z-7:
+  index: 7
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+  core: 7
+  command: "sleep 105 && while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=1 -mmt=1  dummy.7z /data/*.bin; done"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
