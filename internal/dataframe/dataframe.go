@@ -54,6 +54,7 @@ type PerfMetrics struct {
 	StalledCyclesPercent *float64 `json:"stalled_cycles_percent,omitempty"`
 	StallsL3MissPercent  *float64 `json:"stalls_l3_miss_percent,omitempty"`
 	TheoreticalIPC       *float64 `json:"theoretical_ipc,omitempty"`
+	IPCEfficancy         *float64 `json:"ipc_efficancy,omitempty"`
 }
 
 type DockerMetrics struct {

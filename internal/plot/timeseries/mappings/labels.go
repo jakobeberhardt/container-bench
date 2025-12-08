@@ -205,6 +205,13 @@ var FieldMappings = map[string]FieldMapping{
 		Max:        "auto",
 		NullValue:  0,
 	},
+	"perf_ipc_efficancy": {
+		Label:      "IPC Efficiency (\\%)",
+		ShortLabel: "IPC Eff.",
+		Min:        0.0,
+		Max:        100.0,
+		NullValue:  0,
+	},
 	"perf_resource_stalls_sb": {
 		Label:      "Resource Stalls (SB)",
 		ShortLabel: "Res Stalls SB",

@@ -314,6 +314,11 @@ func (pc *PerfCollector) Collect() *dataframe.PerfMetrics {
 		metrics.StallsL3MissPercent = &stallsL3Percent
 	}
 
+	if metrics.InstructionsPerCycle != nil && metrics.TheoreticalIPC != nil && *metrics.TheoreticalIPC > 0 {
+		ipcEfficiency := (*metrics.InstructionsPerCycle / *metrics.TheoreticalIPC) * 100.0
+		metrics.IPCEfficancy = &ipcEfficiency
+	}
+
 	return metrics
 }
 
