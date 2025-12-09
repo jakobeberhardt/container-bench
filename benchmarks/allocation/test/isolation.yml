@@ -1,0 +1,90 @@
+benchmark:
+  name: Isolate Unbound Matrix3D
+  description: I
+  max_t: 60
+  log_level: info
+  scheduler:
+    implementation: default
+    rdt: true
+    log_level: warn
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+
+prefetch:
+  index: 0
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  # core: 0
+  command: "stress-ng --prefetch 1 --timeout 0"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+c1:
+  index: 1
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  # core: 1
+  command: "stress-ng --tsearch 1 --timeout 0"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+# c2:
+#   index: 2
+#   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+#   core: 2
+#   command: "stress-ng --tsearch 1 --timeout 0"
+#   data:
+#     frequency: 100
+#     perf: true
+#     docker: true
+#     rdt: true
+
+# c3:
+#   index: 3
+#   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+#   core: 3
+#   command: "stress-ng --tsearch 1 --timeout 0"
+#   data:
+#     frequency: 100
+#     perf: true
+#     docker: true
+#     rdt: true
+
+# c4:
+#   index: 4
+#   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+#   core: 4
+#   command: "stress-ng --tsearch 1 --timeout 0"
+#   data:
+#     frequency: 100
+#     perf: true
+#     docker: true
+#     rdt: true
+
+# c5:
+#   index: 5
+#   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+#   core: 5
+#   command: "stress-ng --tsearch 1 --timeout 0"
+#   data:
+#     frequency: 100
+#     perf: true
+#     docker: true
+#     rdt: true
+
+    

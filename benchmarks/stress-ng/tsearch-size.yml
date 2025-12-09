@@ -1,0 +1,200 @@
+benchmark:
+  name: Tree Search
+  description: Runs stress-ng workers which run search operations on a tree data structure
+  max_t: 105
+  log_level: info
+  scheduler:
+    implementation: default
+    rdt: false
+    log_level: warn
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+# 32768
+
+
+c0:
+  index: 0
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 0
+  command: "stress-ng --tsearch 1 --timeout 15"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+c1:
+  index: 1
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 1
+  command: "sleep 15 && stress-ng --tsearch 1 --tsearch-size 65536 --timeout 15" 
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+c2:
+  index: 2
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 2
+  command: "sleep 30 && stress-ng --tsearch 1 --tsearch-size 131072 --timeout 15"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+c3:
+  index: 3
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 3
+  command: "sleep 45 && stress-ng --tsearch 1 --tsearch-size 262144 --timeout 15"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+c4:
+  index: 4
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 4
+  command: "sleep 60 && stress-ng --tsearch 1 --tsearch-size 524288 --timeout 15"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+c5:
+  index: 5
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 5
+  command: "sleep 75 && stress-ng --tsearch 1 --tsearch-size 1048576 --timeout 15"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+c6:
+  index: 6
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 6
+  command: "sleep 90 && stress-ng --tsearch 1 --tsearch-size 2097152 --timeout 0"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+# c7:
+#   index: 7
+#   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+#   core: 7
+#   command: "sleep 105 && stress-ng --tsearch 1 --timeout 0"
+#   data:
+#     frequency: 100
+#     perf: true
+#     docker: true
+#     rdt: true
+
+# c8:
+#   index: 8
+#   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+#   core: 8
+#   command: "sleep 120 && stress-ng --tsearch 1 --timeout 0"
+#   data:
+#     frequency: 100
+#     perf: true
+#     docker: true
+#     rdt: true
+
+# c9:
+#   index: 9
+#   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+#   core: 9
+#   command: "sleep 135 && stress-ng --tsearch 1 --timeout 0"
+#   data:
+#     frequency: 100
+#     perf: true
+#     docker: true
+#     rdt: true
+
+# c10:
+#   index: 10
+#   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+#   core: 10
+#   command: "sleep 150 && stress-ng --tsearch 1 --timeout 0"
+#   data:
+#     frequency: 100
+#     perf: true
+#     docker: true
+#     rdt: true
+
+# c11:
+#   index: 11
+#   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+#   core: 11
+#   command: "sleep 165 && stress-ng --tsearch 1 --timeout 0"
+#   data:
+#     frequency: 100
+#     perf: true
+#     docker: true
+#     rdt: true
+
+# c12:
+#   index: 12
+#   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+#   core: 12
+#   command: "sleep 180 && stress-ng --tsearch 1 --timeout 0"
+#   data:
+#     frequency: 100
+#     perf: true
+#     docker: true
+#     rdt: true
+
+# c13:
+#   index: 13
+#   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+#   core: 13
+#   command: "sleep 195 && stress-ng --tsearch 1 --timeout 0"
+#   data:
+#     frequency: 100
+#     perf: true
+#     docker: true
+#     rdt: true
+
+# c14:
+#   index: 14
+#   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+#   core: 14
+#   command: "sleep 210 && stress-ng --tsearch 1 --timeout 0"
+#   data:
+#     frequency: 100
+#     perf: true
+#     docker: true
+#     rdt: true
+
+# c15:
+#   index: 15
+#   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+#   core: 15
+#   command: "sleep 225 && stress-ng --tsearch 1 --timeout 0"
+#   data:
+#     frequency: 100
+#     perf: true
+#     docker: true
+#     rdt: true
