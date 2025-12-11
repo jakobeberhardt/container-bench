@@ -7,13 +7,13 @@ const GroupWrapperTemplate = `% Generated on {{.GeneratedDate}}
 
 \begin{figure}[htbp]
     \centering
-    \pgfplotslegendfromname{allocation-legend-{{.LabelID}}}
+    \pgfplotslegendfromname{allocation-legend-{{.LabelID}}} % chktex 8
     
     \vspace{0.5em}
     
 {{range .Subfigures}}    \begin{subfigure}{\linewidth}
         \centering
-        \resizebox{\linewidth}{!}{\input{{"{"}}\currfiledir {{.PlotFileName}}{{"}"}} }
+        \resizebox{\linewidth}{!}{\input{{"{"}}\currfiledir/{{.PlotFileName}}{{"}"}} }
         \caption{{"{"}}{{.Caption}}{{"}"}}
     \end{subfigure}
     
