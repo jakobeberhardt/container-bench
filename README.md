@@ -100,6 +100,9 @@ container0:
   port: 8080:8080 # incase you need a port 
   image: nginx:alpine
   core: 0  # CPU core affinity, for multi-core e.g. '0,1,2' or 0-15
+  start_t: 0       # Optional: start container at t=start_t seconds (default: 0)
+  stop_t: 30       # Optional: stop container at t=stop_t seconds (default: max_t)
+  expected_t: 25   # Optional: error if (stop-start) < expected_t
   command: "stress-ng --cpu 1 --timeout 25s" # Command which will be executed upon start. Can also be empty
   environment:
     FOO: hello

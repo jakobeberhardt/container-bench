@@ -135,6 +135,11 @@ func (ps *ProbeScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) er
 	if ps.nextProbeIndex < len(ps.containers) {
 		containerInfo := ps.containers[ps.nextProbeIndex]
 
+		// Wait until the container is actually running
+		if containerInfo.PID == 0 {
+			return nil
+		}
+
 		// Only probe containers with index 0
 		if containerInfo.Index != 0 {
 			ps.schedulerLogger.WithFields(logrus.Fields{
@@ -248,4 +253,26 @@ func (ps *ProbeScheduler) SetProbe(prober *probe.Probe) {
 
 func (ps *ProbeScheduler) SetBenchmarkID(benchmarkID int) {
 	// Probe scheduler doesn't use benchmark ID
+}
+
+func (ps *ProbeScheduler) OnContainerStart(info ContainerInfo) error {
+	for i := range ps.containers {
+		if ps.containers[i].Index == info.Index {
+			ps.containers[i].PID = info.PID
+			ps.containers[i].ContainerID = info.ContainerID
+			return nil
+		}
+	}
+	ps.containers = append(ps.containers, info)
+	return nil
+}
+
+func (ps *ProbeScheduler) OnContainerStop(containerIndex int) error {
+	for i := range ps.containers {
+		if ps.containers[i].Index == containerIndex {
+			ps.containers[i].PID = 0
+			return nil
+		}
+	}
+	return nil
 }

@@ -33,6 +33,11 @@ type Scheduler interface {
 	SetBenchmarkID(benchmarkID int)
 }
 
+type ContainerLifecycleListener interface {
+	OnContainerStart(info ContainerInfo) error
+	OnContainerStop(containerIndex int) error
+}
+
 type DefaultScheduler struct {
 	name            string
 	version         string
@@ -118,4 +123,26 @@ func (ds *DefaultScheduler) SetProbe(prober *probe.Probe) {
 
 func (ds *DefaultScheduler) SetBenchmarkID(benchmarkID int) {
 	// Default scheduler doesn't use benchmark ID
+}
+
+func (ds *DefaultScheduler) OnContainerStart(info ContainerInfo) error {
+	for i := range ds.containers {
+		if ds.containers[i].Index == info.Index {
+			ds.containers[i].PID = info.PID
+			ds.containers[i].ContainerID = info.ContainerID
+			return nil
+		}
+	}
+	ds.containers = append(ds.containers, info)
+	return nil
+}
+
+func (ds *DefaultScheduler) OnContainerStop(containerIndex int) error {
+	for i := range ds.containers {
+		if ds.containers[i].Index == containerIndex {
+			ds.containers[i].PID = 0
+			return nil
+		}
+	}
+	return nil
 }

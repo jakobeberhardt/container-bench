@@ -1,5 +1,5 @@
 benchmark:
-  name: Baseline
+  name: Trace
   description: Test which starts a baseline, a victim and multiple neighbors
   max_t: 60
   log_level: info
@@ -24,7 +24,7 @@ baseline:
   index: 0
   image: nginx:alpine
   core: 0
-  command: "sleep 2 && while :; do dd if=/dev/zero of=/dev/null bs=1M count=100 2>/dev/null; done"
+  command: "while :; do dd if=/dev/zero of=/dev/null bs=1M count=100 2>/dev/null; done"
   data:
     frequency: 100
     perf: true
@@ -35,7 +35,10 @@ victim:
   index: 1
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 1
-  command: "sleep 2 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
+  start_t: 15
+  stop_t: 40
+  expected_t: 15
+  command: "/neighbor --duration 3600 --buffer-size 12MB --pattern random"
   data:
     frequency: 100
     perf: true
@@ -46,7 +49,9 @@ first:
   index: 2
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 2
-  command: "sleep 20 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
+  start_t: 30
+  stop_t: 40
+  command: "/neighbor --duration 3600 --buffer-size 12MB --pattern random"
   data:
     frequency: 100
     perf: true
@@ -57,6 +62,8 @@ second:
   index: 3
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 3
+  stop_t: 15
+  expected_t: 
   command: "sleep 30 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
   data:
     frequency: 100

@@ -88,11 +88,35 @@ type ContainerConfig struct {
 	Port        string            `yaml:"port,omitempty"`
 	Core        string            `yaml:"core"`
 	CPUCores    []int             `yaml:"-"`
+	StartT      *int              `yaml:"start_t,omitempty"`
+	StopT       *int              `yaml:"stop_t,omitempty"`
+	ExpectedT   *int              `yaml:"expected_t,omitempty"`
 	Command     string            `yaml:"command,omitempty"`
 	Privileged  bool              `yaml:"privileged,omitempty"`
 	Environment map[string]string `yaml:"environment,omitempty"`
 	Volumes     []string          `yaml:"volumes,omitempty"`
 	Data        CollectorConfig   `yaml:"data"`
+}
+
+func (c *ContainerConfig) GetStartSeconds() int {
+	if c.StartT == nil {
+		return 0
+	}
+	return *c.StartT
+}
+
+func (c *ContainerConfig) GetStopSeconds(maxT int) int {
+	if c.StopT == nil {
+		return maxT
+	}
+	return *c.StopT
+}
+
+func (c *ContainerConfig) GetExpectedSeconds() (int, bool) {
+	if c.ExpectedT == nil {
+		return 0, false
+	}
+	return *c.ExpectedT, true
 }
 
 type CollectorConfig struct {

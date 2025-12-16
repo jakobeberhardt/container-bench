@@ -157,6 +157,30 @@ func validateConfig(config *BenchmarkConfig) error {
 			return fmt.Errorf("container %s: image is required", name)
 		}
 
+		startT := container.GetStartSeconds()
+		stopT := container.GetStopSeconds(config.Benchmark.MaxT)
+
+		if startT < 0 {
+			return fmt.Errorf("container %s: start_t must be >= 0", name)
+		}
+		if stopT <= 0 {
+			return fmt.Errorf("container %s: stop_t must be > 0", name)
+		}
+		if stopT > config.Benchmark.MaxT {
+			return fmt.Errorf("container %s: stop_t (%d) must be <= max_t (%d)", name, stopT, config.Benchmark.MaxT)
+		}
+		if startT >= stopT {
+			return fmt.Errorf("container %s: start_t (%d) must be < stop_t (%d)", name, startT, stopT)
+		}
+		if expectedT, ok := container.GetExpectedSeconds(); ok {
+			if expectedT < 0 {
+				return fmt.Errorf("container %s: expected_t must be >= 0", name)
+			}
+			if expectedT > (stopT - startT) {
+				return fmt.Errorf("container %s: expected_t (%d) must be <= (stop_t-start_t) (%d)", name, expectedT, stopT-startT)
+			}
+		}
+
 		if container.Data.Frequency <= 0 {
 			return fmt.Errorf("container %s: frequency must be greater than 0", name)
 		}

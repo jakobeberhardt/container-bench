@@ -32,6 +32,7 @@ type AllocationScheduler struct {
 	allocationStarted time.Time
 	sweepStarted      bool
 	maxL3Ways         int
+	currentClassName  string
 }
 
 type Accounts struct {
@@ -64,6 +65,7 @@ func (as *AllocationScheduler) Initialize(accountant *accounting.RDTAccountant, 
 	// Initialize sweep parameters
 	as.currentL3Ways = 1  // Start with 1 way
 	as.currentMemBW = 1.0 // Start with 1% memory bandwidth
+	as.currentClassName = ""
 
 	for i, _ := range containers {
 		as.accounting.accounts[i] = Account{
@@ -122,6 +124,7 @@ func (as *AllocationScheduler) ProcessDataFrames(dataframes *dataframe.DataFrame
 	}
 
 	className := "sweep-allocation"
+	as.currentClassName = className
 
 	// Start sweep or advance to next allocation
 	if !as.sweepStarted {
@@ -193,6 +196,39 @@ func (as *AllocationScheduler) ProcessDataFrames(dataframes *dataframe.DataFrame
 		"mem_bw":  as.currentMemBW,
 	}).Info("Advanced to next allocation")
 
+	return nil
+}
+
+func (as *AllocationScheduler) OnContainerStart(info ContainerInfo) error {
+	for i := range as.containers {
+		if as.containers[i].Index == info.Index {
+			as.containers[i].PID = info.PID
+			as.containers[i].ContainerID = info.ContainerID
+			goto ASSIGN
+		}
+	}
+	as.containers = append(as.containers, info)
+
+ASSIGN:
+	if as.rdtAccountant != nil && as.classCreated && as.currentClassName != "" && info.PID != 0 {
+		if err := as.rdtAccountant.MoveContainer(info.PID, as.currentClassName); err != nil {
+			as.schedulerLogger.WithError(err).WithFields(logrus.Fields{
+				"container_index": info.Index,
+				"pid":             info.PID,
+				"class":           as.currentClassName,
+			}).Warn("Failed to assign late-starting container to active RDT class")
+		}
+	}
+	return nil
+}
+
+func (as *AllocationScheduler) OnContainerStop(containerIndex int) error {
+	for i := range as.containers {
+		if as.containers[i].Index == containerIndex {
+			as.containers[i].PID = 0
+			return nil
+		}
+	}
 	return nil
 }
 

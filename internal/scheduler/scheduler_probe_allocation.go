@@ -251,6 +251,10 @@ func (as *ProbeAllocationScheduler) ProcessDataFrames(dataframes *dataframe.Data
 		as.probeComplete = true
 		return nil
 	}
+	if as.containers[0].PID == 0 {
+		// Target container not running yet
+		return nil
+	}
 
 	// Build target container info from scheduler's ContainerInfo
 	targetContainer := proberesources.ContainerInfo{
@@ -379,6 +383,28 @@ func (as *ProbeAllocationScheduler) SetProbe(prober *probe.Probe) {
 func (as *ProbeAllocationScheduler) SetBenchmarkID(benchmarkID int) {
 	as.benchmarkID = benchmarkID
 	as.schedulerLogger.WithField("benchmark_id", benchmarkID).Debug("Benchmark ID set")
+}
+
+func (as *ProbeAllocationScheduler) OnContainerStart(info ContainerInfo) error {
+	for i := range as.containers {
+		if as.containers[i].Index == info.Index {
+			as.containers[i].PID = info.PID
+			as.containers[i].ContainerID = info.ContainerID
+			return nil
+		}
+	}
+	as.containers = append(as.containers, info)
+	return nil
+}
+
+func (as *ProbeAllocationScheduler) OnContainerStop(containerIndex int) error {
+	for i := range as.containers {
+		if as.containers[i].Index == containerIndex {
+			as.containers[i].PID = 0
+			return nil
+		}
+	}
+	return nil
 }
 
 // GetAllocationProbeResults returns allocation probe results if available

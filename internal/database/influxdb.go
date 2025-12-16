@@ -25,6 +25,7 @@ type DatabaseClient interface {
 	GetLastBenchmarkID() (int, error)
 	WriteBenchmarkMetrics(benchmarkID int, benchmarkConfig *config.BenchmarkConfig, metrics *datahandeling.BenchmarkMetrics, startTime, endTime time.Time) error
 	WriteMetadata(metadata *BenchmarkMetadata) error
+	WriteContainerTimingMetadata(containerMetadata []*ContainerTimingMetadata) error
 	WriteProbeResults(probeResults []*probe.ProbeResult) error
 	WriteAllocationProbeResults(allocationProbeResults []*resources.AllocationProbeResult) error
 	Close()
@@ -77,6 +78,20 @@ type BenchmarkMetadata struct {
 	PerfEnabled        bool `json:"perf_enabled"`
 	DockerStatsEnabled bool `json:"docker_stats_enabled"`
 	RDTEnabled         bool `json:"rdt_enabled"`
+}
+
+// contains per-container timing metadata for a benchmark run
+type ContainerTimingMetadata struct {
+	BenchmarkID      int
+	ContainerIndex   int
+	ContainerName    string
+	StartTSeconds    int
+	StopTSeconds     int
+	ExpectedTSeconds *int
+	ExitTSeconds     *int
+	ActualTSeconds   int
+	DeltaTSeconds    *int
+	JobAborted       bool
 }
 
 // contains host system information
@@ -434,6 +449,54 @@ func (idb *InfluxDBClient) WriteMetadata(metadata *BenchmarkMetadata) error {
 	return idb.retryWithBackoff(operation, "write_metadata")
 }
 
+func (idb *InfluxDBClient) WriteContainerTimingMetadata(containerMetadata []*ContainerTimingMetadata) error {
+	logger := logging.GetLogger()
+
+	if len(containerMetadata) == 0 {
+		logger.Info("No container timing metadata to write")
+		return nil
+	}
+
+	logger.WithField("container_count", len(containerMetadata)).Info("Writing container timing metadata to InfluxDB")
+
+	operation := func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		for _, m := range containerMetadata {
+			tags := map[string]string{
+				"benchmark_id":    fmt.Sprintf("%d", m.BenchmarkID),
+				"container_index": fmt.Sprintf("%d", m.ContainerIndex),
+				"container_name":  m.ContainerName,
+			}
+
+			fields := map[string]interface{}{
+				"start_t":     m.StartTSeconds,
+				"stop_t":      m.StopTSeconds,
+				"actual_t":    m.ActualTSeconds,
+				"job_aborted": m.JobAborted,
+			}
+			if m.ExpectedTSeconds != nil {
+				fields["expected_t"] = *m.ExpectedTSeconds
+			}
+			if m.ExitTSeconds != nil {
+				fields["exit_t"] = *m.ExitTSeconds
+			}
+			if m.DeltaTSeconds != nil {
+				fields["delta_t"] = *m.DeltaTSeconds
+			}
+
+			point := influxdb2.NewPoint("benchmark_container_meta", tags, fields, time.Now())
+			if err := idb.writeAPI.WritePoint(ctx, point); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	return idb.retryWithBackoff(operation, "write_container_timing_metadata")
+}
+
 // WriteProbeResults writes probe results to the benchmark_probes table
 func (idb *InfluxDBClient) WriteProbeResults(probeResults []*probe.ProbeResult) error {
 	logger := logging.GetLogger()
@@ -649,6 +712,69 @@ func (idb *InfluxDBClient) WriteAllocationProbeResults(allocationProbeResults []
 		"total_allocations":      totalAllocations,
 	}).Info("Allocation probe results written successfully")
 	return nil
+}
+
+func CollectContainerTimingMetadata(benchmarkID int, cfg *config.BenchmarkConfig, benchmarkStart time.Time, exitTimes map[int]time.Time, aborted map[int]bool) []*ContainerTimingMetadata {
+	containers := cfg.GetContainersSorted()
+	results := make([]*ContainerTimingMetadata, 0, len(containers))
+
+	for _, c := range containers {
+		startT := c.GetStartSeconds()
+		stopT := c.GetStopSeconds(cfg.Benchmark.MaxT)
+		jobAborted := false
+		if aborted != nil {
+			jobAborted = aborted[c.Index]
+		}
+
+		expectedSec, hasExpected := c.GetExpectedSeconds()
+		var expectedPtr *int
+		if hasExpected {
+			expectedPtr = &expectedSec
+		}
+
+		var exitPtr *int
+		if exitTimes != nil {
+			if t, ok := exitTimes[c.Index]; ok {
+				exitSec := int(t.Sub(benchmarkStart).Seconds())
+				if exitSec < 0 {
+					exitSec = 0
+				}
+				if !jobAborted && exitSec < stopT {
+					exitPtr = &exitSec
+				}
+			}
+		}
+
+		endSec := stopT
+		if exitPtr != nil && *exitPtr < endSec {
+			endSec = *exitPtr
+		}
+		actualSec := endSec - startT
+		if actualSec < 0 {
+			actualSec = 0
+		}
+
+		var deltaPtr *int
+		if hasExpected {
+			delta := actualSec - expectedSec
+			deltaPtr = &delta
+		}
+
+		results = append(results, &ContainerTimingMetadata{
+			BenchmarkID:      benchmarkID,
+			ContainerIndex:   c.Index,
+			ContainerName:    c.Name,
+			StartTSeconds:    startT,
+			StopTSeconds:     stopT,
+			ExpectedTSeconds: expectedPtr,
+			ExitTSeconds:     exitPtr,
+			ActualTSeconds:   actualSec,
+			DeltaTSeconds:    deltaPtr,
+			JobAborted:       jobAborted,
+		})
+	}
+
+	return results
 }
 
 func CollectBenchmarkMetadata(benchmarkID int, config *config.BenchmarkConfig, configContent string, dataframes *dataframe.DataFrames, startTime, endTime time.Time, driverVersion string) (*BenchmarkMetadata, error) {
