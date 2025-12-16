@@ -21,7 +21,6 @@ benchmark:
       password: ${DOCKER_REGISTRY_PASSWORD}
 
 baseline:
-  index: 0
   image: nginx:alpine
   core: 0
   command: "while :; do dd if=/dev/zero of=/dev/null bs=1M count=100 2>/dev/null; done"
@@ -32,13 +31,11 @@ baseline:
     rdt: true
 
 victim:
-  index: 1
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 1
   start_t: 15
-  stop_t: 40
   expected_t: 15
-  command: "/neighbor --duration 3600 --buffer-size 12MB --pattern random"
+  command: "/neighbor --duration 15 --buffer-size 12MB --pattern random"
   data:
     frequency: 100
     perf: true
@@ -46,12 +43,12 @@ victim:
     rdt: true
 
 first:
-  index: 2
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 2
   start_t: 30
-  stop_t: 40
-  command: "/neighbor --duration 3600 --buffer-size 12MB --pattern random"
+  expected_t: 10
+  command: "sleep 5"
+  #command: "/neighbor --duration 25 --buffer-size 12MB --pattern random"
   data:
     frequency: 100
     perf: true
@@ -59,23 +56,41 @@ first:
     rdt: true
 
 second:
-  index: 3
-  image: registry.jakob-eberhardt.de/neighbor:default  
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
   core: 3
-  stop_t: 15
-  expected_t: 
-  command: "sleep 30 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
+  start_t: 35
+  expected_t: 10
+  command: "stress-ng --matrix-3d 1 --timeout 15"
   data:
     frequency: 100
     perf: true
     docker: true
     rdt: true
 
-third:
-  index: 4
-  image: registry.jakob-eberhardt.de/neighbor:default  
+matrix:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
   core: 4
-  command: "sleep 40 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
+  start_t: 20
+  expected_t: 28
+  command: "stress-ng --matrix-3d 1 --matrix-3d-ops 20000"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+hadoop:
+  image: registry.jakob-eberhardt.de/rdt4nn/hadoop:latest
+  port: 9870:9870
+  core: 5
+  privileged: true
+  expected_t: 48
+  environment:
+    BENCHMARK_TYPE: wordcount
+    DATA_SIZE: 1GB
+    MAPS_COUNT: 1
+    ITERATIONS: 0
+    WARMUP_TIME: 5
   data:
     frequency: 100
     perf: true

@@ -86,11 +86,12 @@ type ContainerBench struct {
 	startTime     time.Time
 	endTime       time.Time
 
-	containerStartTimes map[int]time.Time
-	containerStopTimes  map[int]time.Time
-	containerExitTimes  map[int]time.Time
-	containerAborted    map[int]bool
-	timingsMu           sync.Mutex
+	containerStartTimes        map[int]time.Time
+	containerCommandStartTimes map[int]time.Time
+	containerStopTimes         map[int]time.Time
+	containerExitTimes         map[int]time.Time
+	containerAborted           map[int]bool
+	timingsMu                  sync.Mutex
 
 	// Container tracking for clean orchestration
 	containerIDs  map[int]string
@@ -375,14 +376,15 @@ func runBenchmark(configFile string) error {
 
 	// Load configuration first to determine RDT requirements
 	bench := &ContainerBench{
-		dataframes:          dataframe.NewDataFrames(),
-		containerIDs:        make(map[int]string),
-		containerPIDs:       make(map[int]int),
-		collectors:          make(map[int]*collectors.ContainerCollector),
-		containerStartTimes: make(map[int]time.Time),
-		containerStopTimes:  make(map[int]time.Time),
-		containerExitTimes:  make(map[int]time.Time),
-		containerAborted:    make(map[int]bool),
+		dataframes:                 dataframe.NewDataFrames(),
+		containerIDs:               make(map[int]string),
+		containerPIDs:              make(map[int]int),
+		collectors:                 make(map[int]*collectors.ContainerCollector),
+		containerStartTimes:        make(map[int]time.Time),
+		containerCommandStartTimes: make(map[int]time.Time),
+		containerStopTimes:         make(map[int]time.Time),
+		containerExitTimes:         make(map[int]time.Time),
+		containerAborted:           make(map[int]bool),
 	}
 
 	var err error
@@ -1095,7 +1097,13 @@ func (cb *ContainerBench) startContainer(ctx context.Context, containerConfig co
 
 	pid := info.State.Pid
 	cb.containerPIDs[containerConfig.Index] = pid
-	cb.containerStartTimes[containerConfig.Index] = time.Now()
+	now := time.Now()
+	cb.containerStartTimes[containerConfig.Index] = now
+	cb.timingsMu.Lock()
+	if _, exists := cb.containerCommandStartTimes[containerConfig.Index]; !exists {
+		cb.containerCommandStartTimes[containerConfig.Index] = now
+	}
+	cb.timingsMu.Unlock()
 
 	// Notify scheduler about the container start (optional)
 	if listener, ok := cb.scheduler.(scheduler.ContainerLifecycleListener); ok {
@@ -1120,6 +1128,13 @@ type containerExitEvent struct {
 	exitedAt  time.Time
 	status    int64
 	waitError error
+}
+
+type containerExecEvent struct {
+	index      int
+	finishedAt time.Time
+	exitCode   int
+	err        error
 }
 
 func (cb *ContainerBench) startExitWatcher(ctx context.Context, containerConfig config.ContainerConfig, exitEvents chan<- containerExitEvent) {
@@ -1147,10 +1162,54 @@ func (cb *ContainerBench) startExitWatcher(ctx context.Context, containerConfig 
 	}(containerConfig.Index, containerID)
 }
 
+func (cb *ContainerBench) startExecWatcher(ctx context.Context, containerIndex int, containerExecID string, execEvents chan<- containerExecEvent) {
+	if containerExecID == "" {
+		return
+	}
+
+	go func() {
+		ticker := time.NewTicker(200 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				inspect, err := cb.dockerClient.ContainerExecInspect(ctx, containerExecID)
+				if err != nil {
+					execEvents <- containerExecEvent{index: containerIndex, finishedAt: time.Now(), err: err}
+					return
+				}
+				if !inspect.Running {
+					execEvents <- containerExecEvent{index: containerIndex, finishedAt: time.Now(), exitCode: inspect.ExitCode, err: nil}
+					return
+				}
+			}
+		}
+	}()
+}
+
 func (cb *ContainerBench) stopContainer(ctx context.Context, containerConfig config.ContainerConfig, aborted bool) error {
 	logger := logging.GetLogger()
 	containerID := cb.containerIDs[containerConfig.Index]
 	stopTimeout := 2
+	stopRequestedAt := time.Now()
+
+	cb.containerStopTimes[containerConfig.Index] = stopRequestedAt
+	cb.timingsMu.Lock()
+	if _, exists := cb.containerExitTimes[containerConfig.Index]; !exists {
+		cb.containerExitTimes[containerConfig.Index] = stopRequestedAt
+	}
+	if aborted {
+		cb.containerAborted[containerConfig.Index] = true
+	} else {
+		// Don't overwrite an existing aborted=true with false.
+		if _, exists := cb.containerAborted[containerConfig.Index]; !exists {
+			cb.containerAborted[containerConfig.Index] = false
+		}
+	}
+	cb.timingsMu.Unlock()
 
 	if err := cb.dockerClient.ContainerStop(ctx, containerID, container.StopOptions{Timeout: &stopTimeout}); err != nil {
 		logger.WithFields(logrus.Fields{
@@ -1161,10 +1220,7 @@ func (cb *ContainerBench) stopContainer(ctx context.Context, containerConfig con
 	}
 
 	cb.containerPIDs[containerConfig.Index] = 0
-	cb.containerStopTimes[containerConfig.Index] = time.Now()
-	cb.timingsMu.Lock()
-	cb.containerAborted[containerConfig.Index] = aborted
-	cb.timingsMu.Unlock()
+	// Note: stop/exit timestamps were recorded at stop request time
 
 	// Notify scheduler about the container stop (optional)
 	if listener, ok := cb.scheduler.(scheduler.ContainerLifecycleListener); ok {
@@ -1231,9 +1287,9 @@ func (cb *ContainerBench) stopCollectorForContainer(containerIndex int) {
 	delete(cb.collectors, containerIndex)
 }
 
-func (cb *ContainerBench) executeContainerCommand(ctx context.Context, containerConfig config.ContainerConfig) error {
+func (cb *ContainerBench) executeContainerCommand(ctx context.Context, containerConfig config.ContainerConfig) (string, error) {
 	if containerConfig.Command == "" {
-		return nil
+		return "", nil
 	}
 
 	logger := logging.GetLogger()
@@ -1254,12 +1310,16 @@ func (cb *ContainerBench) executeContainerCommand(ctx context.Context, container
 
 	execResp, err := cb.dockerClient.ContainerExecCreate(ctx, containerID, execConfig)
 	if err != nil {
-		return fmt.Errorf("failed to create exec for container %d: %w", containerConfig.Index, err)
+		return "", fmt.Errorf("failed to create exec for container %d: %w", containerConfig.Index, err)
 	}
 
 	if err := cb.dockerClient.ContainerExecStart(ctx, execResp.ID, types.ExecStartCheck{Detach: true}); err != nil {
-		return fmt.Errorf("failed to start exec for container %d: %w", containerConfig.Index, err)
+		return "", fmt.Errorf("failed to start exec for container %d: %w", containerConfig.Index, err)
 	}
+
+	cb.timingsMu.Lock()
+	cb.containerCommandStartTimes[containerConfig.Index] = time.Now()
+	cb.timingsMu.Unlock()
 
 	// Sync RDT PIDs for this container after docker exec
 	if collector := cb.collectors[containerConfig.Index]; collector != nil {
@@ -1268,7 +1328,7 @@ func (cb *ContainerBench) executeContainerCommand(ctx context.Context, container
 		}
 	}
 
-	return nil
+	return execResp.ID, nil
 }
 
 // Start all collectors
@@ -1364,7 +1424,23 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 		if st == nil || !st.hasExpected {
 			return nil
 		}
-		startT, okStart := cb.containerStartTimes[containerIndex]
+		cb.timingsMu.Lock()
+		wasAborted := cb.containerAborted[containerIndex]
+		cb.timingsMu.Unlock()
+		if !wasAborted {
+			// expected_t is only enforced for aborted jobs (max_t)
+			return nil
+		}
+		var startT time.Time
+		var okStart bool
+		if st.cfg.Command != "" {
+			cb.timingsMu.Lock()
+			startT, okStart = cb.containerCommandStartTimes[containerIndex]
+			cb.timingsMu.Unlock()
+		} else {
+			startT = cb.startTime.Add(time.Duration(st.startSec) * time.Second)
+			okStart = true
+		}
 		stopT, okStop := cb.containerStopTimes[containerIndex]
 		cb.timingsMu.Lock()
 		exitT, okExit := cb.containerExitTimes[containerIndex]
@@ -1380,24 +1456,36 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 		}
 		actual := int(endT.Sub(startT).Seconds())
 		if actual < st.expectedSec {
-			return fmt.Errorf("container %d ran %ds, expected at least %ds", containerIndex, actual, st.expectedSec)
+			logger.WithFields(logrus.Fields{
+				"index":        containerIndex,
+				"actual_sec":   actual,
+				"expected_sec": st.expectedSec,
+			}).Warn("Container aborted before expected runtime")
+		} else {
+			logger.WithFields(logrus.Fields{
+				"index":        containerIndex,
+				"actual_sec":   actual,
+				"expected_sec": st.expectedSec,
+			}).Warn("Container aborted (max_t)")
 		}
 		return nil
 	}
 
 	exitEvents := make(chan containerExitEvent, len(containers)*2)
+	execEvents := make(chan containerExecEvent, len(containers)*2)
 
 	handleExit := func(ev containerExitEvent) error {
-		st := states[ev.index]
-		if st == nil || st.stopped {
-			return nil
-		}
 		if ev.waitError == nil {
 			cb.timingsMu.Lock()
 			if _, exists := cb.containerExitTimes[ev.index]; !exists {
 				cb.containerExitTimes[ev.index] = ev.exitedAt
 			}
 			cb.timingsMu.Unlock()
+		}
+
+		st := states[ev.index]
+		if st == nil || st.stopped {
+			return nil
 		}
 
 		cb.stopCollectorForContainer(ev.index)
@@ -1407,6 +1495,27 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 			_ = listener.OnContainerStop(ev.index)
 		}
 
+		st.stopped = true
+		return checkExpected(ev.index)
+	}
+
+	handleExecFinished := func(ev containerExecEvent) error {
+		st := states[ev.index]
+		if st == nil || st.stopped || !st.started {
+			return nil
+		}
+
+		cb.timingsMu.Lock()
+		if _, exists := cb.containerExitTimes[ev.index]; !exists {
+			cb.containerExitTimes[ev.index] = ev.finishedAt
+		}
+		cb.timingsMu.Unlock()
+
+		// Exec command finished; stop the container (images typically keep running)
+		cb.stopCollectorForContainer(ev.index)
+		if err := cb.stopContainer(ctx, st.cfg, false); err != nil {
+			return err
+		}
 		st.stopped = true
 		return checkExpected(ev.index)
 	}
@@ -1426,8 +1535,12 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 				if err := cb.startCollectorForContainer(ctx, st.cfg, pid); err != nil {
 					return err
 				}
-				if err := cb.executeContainerCommand(ctx, st.cfg); err != nil {
+				execID, err := cb.executeContainerCommand(ctx, st.cfg)
+				if err != nil {
 					return err
+				}
+				if execID != "" {
+					cb.startExecWatcher(timeoutCtx, st.cfg.Index, execID, execEvents)
 				}
 				st.commandStarted = true
 				if !st.exitWatch {
@@ -1437,7 +1550,8 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 			}
 			if st.started && !st.stopped && elapsedSec >= st.stopSec {
 				cb.stopCollectorForContainer(idx)
-				if err := cb.stopContainer(ctx, st.cfg, false); err != nil {
+				aborted := cb.config.Benchmark.MaxT > 0 && st.stopSec == cb.config.Benchmark.MaxT && elapsedSec >= cb.config.Benchmark.MaxT
+				if err := cb.stopContainer(ctx, st.cfg, aborted); err != nil {
 					return err
 				}
 				st.stopped = true
@@ -1460,6 +1574,11 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 		select {
 		case ev := <-exitEvents:
 			if err := handleExit(ev); err != nil {
+				cb.endTime = time.Now()
+				return err
+			}
+		case ev := <-execEvents:
+			if err := handleExecFinished(ev); err != nil {
 				cb.endTime = time.Now()
 				return err
 			}
@@ -1555,13 +1674,17 @@ func (cb *ContainerBench) writeDatabaseData() error {
 	for k, v := range cb.containerExitTimes {
 		exitTimes[k] = v
 	}
+	startTimes := make(map[int]time.Time, len(cb.containerCommandStartTimes))
+	for k, v := range cb.containerCommandStartTimes {
+		startTimes[k] = v
+	}
 	aborted := make(map[int]bool, len(cb.containerAborted))
 	for k, v := range cb.containerAborted {
 		aborted[k] = v
 	}
 	cb.timingsMu.Unlock()
 
-	containerMeta := database.CollectContainerTimingMetadata(cb.benchmarkID, cb.config, cb.startTime, exitTimes, aborted)
+	containerMeta := database.CollectContainerTimingMetadata(cb.benchmarkID, cb.config, cb.startTime, startTimes, exitTimes, aborted)
 	if err := cb.dbClient.WriteContainerTimingMetadata(containerMeta); err != nil {
 		logger.WithError(err).Error("Failed to export container timing metadata")
 		return fmt.Errorf("failed to export container timing metadata: %w", err)

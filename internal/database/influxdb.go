@@ -714,12 +714,21 @@ func (idb *InfluxDBClient) WriteAllocationProbeResults(allocationProbeResults []
 	return nil
 }
 
-func CollectContainerTimingMetadata(benchmarkID int, cfg *config.BenchmarkConfig, benchmarkStart time.Time, exitTimes map[int]time.Time, aborted map[int]bool) []*ContainerTimingMetadata {
+func CollectContainerTimingMetadata(benchmarkID int, cfg *config.BenchmarkConfig, benchmarkStart time.Time, startTimes map[int]time.Time, exitTimes map[int]time.Time, aborted map[int]bool) []*ContainerTimingMetadata {
 	containers := cfg.GetContainersSorted()
 	results := make([]*ContainerTimingMetadata, 0, len(containers))
 
 	for _, c := range containers {
 		startT := c.GetStartSeconds()
+		if c.Command != "" && startTimes != nil {
+			if t, ok := startTimes[c.Index]; ok {
+				startSec := int(t.Sub(benchmarkStart).Seconds())
+				if startSec < 0 {
+					startSec = 0
+				}
+				startT = startSec
+			}
+		}
 		stopT := c.GetStopSeconds(cfg.Benchmark.MaxT)
 		jobAborted := false
 		if aborted != nil {
@@ -727,10 +736,12 @@ func CollectContainerTimingMetadata(benchmarkID int, cfg *config.BenchmarkConfig
 		}
 
 		expectedSec, hasExpected := c.GetExpectedSeconds()
-		var expectedPtr *int
-		if hasExpected {
-			expectedPtr = &expectedSec
+		explicitExpected := hasExpected
+		if !hasExpected {
+			expectedSec = cfg.Benchmark.MaxT
+			hasExpected = true
 		}
+		expectedPtr := &expectedSec
 
 		var exitPtr *int
 		if exitTimes != nil {
@@ -739,14 +750,12 @@ func CollectContainerTimingMetadata(benchmarkID int, cfg *config.BenchmarkConfig
 				if exitSec < 0 {
 					exitSec = 0
 				}
-				if !jobAborted && exitSec < stopT {
-					exitPtr = &exitSec
-				}
+				exitPtr = &exitSec
 			}
 		}
 
 		endSec := stopT
-		if exitPtr != nil && *exitPtr < endSec {
+		if exitPtr != nil {
 			endSec = *exitPtr
 		}
 		actualSec := endSec - startT
@@ -754,16 +763,16 @@ func CollectContainerTimingMetadata(benchmarkID int, cfg *config.BenchmarkConfig
 			actualSec = 0
 		}
 
-		var deltaPtr *int
-		if hasExpected {
-			delta := actualSec - expectedSec
-			deltaPtr = &delta
+		delta := actualSec - expectedSec
+		if jobAborted && explicitExpected {
+			delta = 100
 		}
+		deltaPtr := &delta
 
 		results = append(results, &ContainerTimingMetadata{
 			BenchmarkID:      benchmarkID,
 			ContainerIndex:   c.Index,
-			ContainerName:    c.Name,
+			ContainerName:    c.GetContainerName(benchmarkID),
 			StartTSeconds:    startT,
 			StopTSeconds:     stopT,
 			ExpectedTSeconds: expectedPtr,

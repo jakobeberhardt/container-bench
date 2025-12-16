@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -37,6 +38,26 @@ func LoadConfigWithContent(filepath string) (*BenchmarkConfig, string, error) {
 		return nil, "", err
 	}
 
+	// Derive container key order from YAML, so indices are assigned deterministically
+	orderedKeys := getContainerKeysInYAMLOrder(expanded)
+	if len(orderedKeys) == 0 {
+		orderedKeys = make([]string, 0, len(config.Containers))
+		for k := range config.Containers {
+			orderedKeys = append(orderedKeys, k)
+		}
+		sort.Strings(orderedKeys)
+	}
+
+	// Auto-assign indices 0..N-1 (ignore any explicit index mapping)
+	for i, keyName := range orderedKeys {
+		container, ok := config.Containers[keyName]
+		if !ok {
+			continue
+		}
+		container.Index = i
+		config.Containers[keyName] = container
+	}
+
 	// Set KeyName field for each container based on the YAML key
 	// and parse CPU cores
 	for keyName, container := range config.Containers {
@@ -60,6 +81,34 @@ func LoadConfigWithContent(filepath string) (*BenchmarkConfig, string, error) {
 	}
 
 	return &config, originalContent, nil
+}
+
+func getContainerKeysInYAMLOrder(expandedYAML string) []string {
+	var root yaml.Node
+	if err := yaml.Unmarshal([]byte(expandedYAML), &root); err != nil {
+		return nil
+	}
+	if len(root.Content) == 0 {
+		return nil
+	}
+	m := root.Content[0]
+	if m == nil || m.Kind != yaml.MappingNode {
+		return nil
+	}
+
+	keys := make([]string, 0)
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		k := m.Content[i]
+		if k == nil {
+			continue
+		}
+		key := k.Value
+		if key == "" || key == "benchmark" {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	return keys
 }
 
 func expandEnvVars(content string) string {
@@ -195,7 +244,7 @@ func validateConfig(config *BenchmarkConfig) error {
 		}
 
 		if indices[container.Index] {
-			return fmt.Errorf("container %s: index %d is already used", name, container.Index)
+			return fmt.Errorf("container %s: internal index %d is already used", name, container.Index)
 		}
 		indices[container.Index] = true
 	}
