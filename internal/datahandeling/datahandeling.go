@@ -59,6 +59,7 @@ type MetricStep struct {
 	DockerCPUUsageUser       *uint64  `json:"docker_cpu_usage_user,omitempty"`
 	DockerCPUUsagePercent    *float64 `json:"docker_cpu_usage_percent,omitempty"`
 	DockerCPUThrottling      *uint64  `json:"docker_cpu_throttling,omitempty"`
+	DockerAssignedCoresCSV   *string  `json:"docker_assigned_cores_csv,omitempty"`
 	DockerMemoryUsage        *uint64  `json:"docker_memory_usage,omitempty"`
 	DockerMemoryLimit        *uint64  `json:"docker_memory_limit,omitempty"`
 	DockerMemoryCache        *uint64  `json:"docker_memory_cache,omitempty"`
@@ -226,6 +227,7 @@ func (h *DefaultDataHandler) processDockerMetrics(docker *dataframe.DockerMetric
 	step.DockerCPUUsageUser = docker.CPUUsageUser
 	step.DockerCPUUsagePercent = docker.CPUUsagePercent
 	step.DockerCPUThrottling = docker.CPUThrottling
+	step.DockerAssignedCoresCSV = docker.AssignedCoresCSV
 	step.DockerMemoryUsage = docker.MemoryUsage
 	step.DockerMemoryLimit = docker.MemoryLimit
 	step.DockerMemoryCache = docker.MemoryCache

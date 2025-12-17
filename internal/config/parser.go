@@ -63,9 +63,14 @@ func LoadConfigWithContent(filepath string) (*BenchmarkConfig, string, error) {
 	for keyName, container := range config.Containers {
 		container.KeyName = keyName
 
+		// Default num_cores to 1 when not set (only used when Core is empty)
+		if container.NumCores <= 0 {
+			container.NumCores = 1
+		}
+
 		// Parse CPU cores from the Core string
 		if container.Core != "" {
-			cpus, err := parseCPUSpec(container.Core)
+			cpus, err := ParseCPUSpec(container.Core)
 			if err != nil {
 				logger.WithField("container", keyName).WithField("core_spec", container.Core).WithError(err).Error("Failed to parse CPU specification")
 				return nil, "", fmt.Errorf("container %s: invalid CPU specification '%s': %w", keyName, container.Core, err)
@@ -123,7 +128,7 @@ func expandEnvVars(content string) string {
 }
 
 // CPU specification strings like "0", "0,2,4", or "0-3"
-func parseCPUSpec(spec string) ([]int, error) {
+func ParseCPUSpec(spec string) ([]int, error) {
 	var cpus []int
 	seen := make(map[int]bool)
 
@@ -180,6 +185,19 @@ func parseCPUSpec(spec string) ([]int, error) {
 	return cpus, nil
 }
 
+func FormatCPUSpec(cpus []int) string {
+	if len(cpus) == 0 {
+		return ""
+	}
+	vals := append([]int(nil), cpus...)
+	sort.Ints(vals)
+	parts := make([]string, 0, len(vals))
+	for _, cpu := range vals {
+		parts = append(parts, strconv.Itoa(cpu))
+	}
+	return strings.Join(parts, ",")
+}
+
 func validateConfig(config *BenchmarkConfig) error {
 	if config.Benchmark.Name == "" {
 		return fmt.Errorf("benchmark name is required")
@@ -232,6 +250,13 @@ func validateConfig(config *BenchmarkConfig) error {
 
 		if container.Data.Frequency <= 0 {
 			return fmt.Errorf("container %s: frequency must be greater than 0", name)
+		}
+
+		// Validate CPU request: either explicit Core or requested NumCores
+		if container.Core == "" {
+			if container.NumCores <= 0 {
+				return fmt.Errorf("container %s: num_cores must be >= 1", name)
+			}
 		}
 
 		// Check if at least one collector is enabled

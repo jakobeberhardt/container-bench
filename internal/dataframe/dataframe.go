@@ -73,6 +73,10 @@ type DockerMetrics struct {
 	NetworkTxBytes     *uint64  `json:"network_tx_bytes,omitempty"`
 	DiskReadBytes      *uint64  `json:"disk_read_bytes,omitempty"`
 	DiskWriteBytes     *uint64  `json:"disk_write_bytes,omitempty"`
+
+	// Scheduler-assigned CPU affinity metadata
+	AssignedCores    map[int]bool `json:"assigned_cores,omitempty"`
+	AssignedCoresCSV *string      `json:"assigned_cores_csv,omitempty"`
 }
 
 type RDTMetrics struct {

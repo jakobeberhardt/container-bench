@@ -958,6 +958,9 @@ func (idb *InfluxDBClient) createFields(step *dataframe.SamplingStep, stepNumber
 
 	// Add Docker metrics
 	if step.Docker != nil {
+		if step.Docker.AssignedCoresCSV != nil {
+			fields["docker_assigned_cores"] = *step.Docker.AssignedCoresCSV
+		}
 		if step.Docker.CPUUsageTotal != nil {
 			fields["docker_cpu_usage_total"] = *step.Docker.CPUUsageTotal
 		}
@@ -1138,6 +1141,11 @@ func (idb *InfluxDBClient) createFieldsFromMetricStep(step *datahandeling.Metric
 	}
 	if step.PerfBusCycles != nil {
 		fields["perf_bus_cycles"] = *step.PerfBusCycles
+	}
+
+	// Add Docker affinity metadata
+	if step.DockerAssignedCoresCSV != nil {
+		fields["docker_assigned_cores"] = *step.DockerAssignedCoresCSV
 	}
 
 	// Add stall counters

@@ -86,7 +86,8 @@ type ContainerConfig struct {
 	KeyName     string            `yaml:"-"`
 	Image       string            `yaml:"image"`
 	Port        string            `yaml:"port,omitempty"`
-	Core        string            `yaml:"core"`
+	Core        string            `yaml:"core,omitempty"`
+	NumCores    int               `yaml:"num_cores,omitempty"`
 	CPUCores    []int             `yaml:"-"`
 	StartT      *int              `yaml:"start_t,omitempty"`
 	StopT       *int              `yaml:"stop_t,omitempty"`
@@ -96,6 +97,13 @@ type ContainerConfig struct {
 	Environment map[string]string `yaml:"environment,omitempty"`
 	Volumes     []string          `yaml:"volumes,omitempty"`
 	Data        CollectorConfig   `yaml:"data"`
+}
+
+func (c *ContainerConfig) GetRequestedNumCores() int {
+	if c.NumCores <= 0 {
+		return 1
+	}
+	return c.NumCores
 }
 
 func (c *ContainerConfig) GetStartSeconds() int {
@@ -157,6 +165,7 @@ type PerfConfig struct {
 
 type DockerMetricsConfig struct {
 	Enabled            bool `yaml:"-"`
+	AssignedCores      bool `yaml:"assigned_cores,omitempty"`
 	CPUUsageTotal      bool `yaml:"cpu_usage_total,omitempty"`
 	CPUUsageKernel     bool `yaml:"cpu_usage_kernel,omitempty"`
 	CPUUsageUser       bool `yaml:"cpu_usage_user,omitempty"`
@@ -442,6 +451,7 @@ func (cc *CollectorConfig) GetDockerConfig() *DockerMetricsConfig {
 		// All metrics enabled
 		return &DockerMetricsConfig{
 			Enabled:            true,
+			AssignedCores:      true,
 			CPUUsageTotal:      true,
 			CPUUsageKernel:     true,
 			CPUUsageUser:       true,
@@ -463,6 +473,12 @@ func (cc *CollectorConfig) GetDockerConfig() *DockerMetricsConfig {
 	// Handle map case
 	if dockerMap, ok := cc.Docker.(map[string]interface{}); ok {
 		config := &DockerMetricsConfig{Enabled: true}
+
+		if v, exists := dockerMap["assigned_cores"]; exists {
+			if b, ok := v.(bool); ok {
+				config.AssignedCores = b
+			}
+		}
 
 		if v, exists := dockerMap["cpu_usage_total"]; exists {
 			if b, ok := v.(bool); ok {

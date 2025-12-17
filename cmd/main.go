@@ -18,6 +18,7 @@ import (
 	"container-bench/internal/allocation"
 	"container-bench/internal/collectors"
 	"container-bench/internal/config"
+	"container-bench/internal/cpuallocator"
 	"container-bench/internal/database"
 	"container-bench/internal/dataframe"
 	"container-bench/internal/datahandeling"
@@ -86,6 +87,10 @@ type ContainerBench struct {
 	startTime     time.Time
 	endTime       time.Time
 
+	// Runtime container configs (stable pointers, updated with scheduler assignments)
+	containersSorted  []*config.ContainerConfig
+	containersByIndex map[int]*config.ContainerConfig
+
 	containerStartTimes        map[int]time.Time
 	containerCommandStartTimes map[int]time.Time
 	containerStopTimes         map[int]time.Time
@@ -108,6 +113,16 @@ func (cb *ContainerBench) cleanup() {
 	}
 }
 
+func (cb *ContainerBench) syncRuntimeContainerConfig(containerConfig *config.ContainerConfig) {
+	if cb == nil || cb.config == nil || containerConfig == nil {
+		return
+	}
+	if containerConfig.KeyName == "" {
+		return
+	}
+	cb.config.Containers[containerConfig.KeyName] = *containerConfig
+}
+
 func (cb *ContainerBench) cleanupContainers(ctx context.Context) {
 	logger := logging.GetLogger()
 	logger.Info("Stopping and removing all containers")
@@ -122,7 +137,7 @@ func (cb *ContainerBench) cleanupContainers(ctx context.Context) {
 					"index":        idx,
 					"container_id": id[:12],
 				}).Debug("Force removing container")
-				cb.stopAndRemoveContainer(ctx, id)
+				cb.stopAndRemoveContainer(ctx, idx, id)
 			}(containerIndex, containerID)
 		}
 	}
@@ -131,9 +146,14 @@ func (cb *ContainerBench) cleanupContainers(ctx context.Context) {
 	logger.Info("All containers stopped and removed")
 }
 
-func (cb *ContainerBench) stopAndRemoveContainer(ctx context.Context, containerID string) {
+func (cb *ContainerBench) stopAndRemoveContainer(ctx context.Context, containerIndex int, containerID string) {
 	logger := logging.GetLogger()
 	logger.WithField("container_id", containerID[:12]).Debug("Force removing container")
+
+	// Notify scheduler so any CPU reservations are released.
+	if listener, ok := cb.scheduler.(scheduler.ContainerLifecycleListener); ok {
+		_ = listener.OnContainerStop(containerIndex)
+	}
 
 	removeOptions := types.ContainerRemoveOptions{
 		Force:         true,
@@ -394,6 +414,16 @@ func runBenchmark(configFile string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
+	// Build stable runtime container configs (so scheduler assignments are visible everywhere)
+	bench.containersByIndex = make(map[int]*config.ContainerConfig)
+	containersSorted := bench.config.GetContainersSorted()
+	bench.containersSorted = make([]*config.ContainerConfig, 0, len(containersSorted))
+	for _, c := range containersSorted {
+		cfg := c
+		bench.containersSorted = append(bench.containersSorted, &cfg)
+		bench.containersByIndex[cfg.Index] = &cfg
+	}
+
 	// Set log level from configuration
 	if err := logging.SetLogLevel(bench.config.Benchmark.LogLevel); err != nil {
 		logger.WithField("log_level", bench.config.Benchmark.LogLevel).WithError(err).Warn("Invalid log level in config, using INFO")
@@ -505,6 +535,13 @@ func runBenchmark(configFile string) error {
 	// Set host config for scheduler
 	bench.scheduler.SetHostConfig(bench.hostConfig)
 
+	// Inject CPU allocator (physical cores only)
+	cpuAlloc, err := cpuallocator.NewPhysicalCoreAllocator(bench.hostConfig, logger)
+	if err != nil {
+		return fmt.Errorf("failed to initialize CPU allocator: %w", err)
+	}
+	bench.scheduler.SetCPUAllocator(cpuAlloc)
+
 	// Set benchmark ID for scheduler
 	bench.scheduler.SetBenchmarkID(bench.benchmarkID)
 
@@ -601,7 +638,7 @@ func (cb *ContainerBench) executeBenchmark() error {
 	}
 
 	// Pre-populate container PID map with 0 (not running yet)
-	for _, containerConfig := range cb.config.GetContainersSorted() {
+	for _, containerConfig := range cb.containersSorted {
 		if _, ok := cb.containerPIDs[containerConfig.Index]; !ok {
 			cb.containerPIDs[containerConfig.Index] = 0
 		}
@@ -655,7 +692,7 @@ func (cb *ContainerBench) cleanupInOrder(ctx context.Context) error {
 // Pull all container images
 func (cb *ContainerBench) pullImages(ctx context.Context) error {
 	logger := logging.GetLogger()
-	containers := cb.config.GetContainersSorted()
+	containers := cb.containersSorted
 	registryConfig := cb.config.GetRegistryConfig()
 
 	// Deduplicate images
@@ -808,7 +845,7 @@ func (cb *ContainerBench) createNetwork(ctx context.Context) error {
 // Create all containers (but don't start them)
 func (cb *ContainerBench) createContainers(ctx context.Context) error {
 	logger := logging.GetLogger()
-	containers := cb.config.GetContainersSorted()
+	containers := cb.containersSorted
 
 	for _, containerConfig := range containers {
 		logger.WithFields(logrus.Fields{
@@ -867,8 +904,8 @@ func (cb *ContainerBench) createContainers(ctx context.Context) error {
 			config.ExposedPorts[port] = struct{}{}
 		}
 
-		// Set CPU affinity
-		hostConfig.CpusetCpus = containerConfig.Core
+		// CPU affinity is assigned by the scheduler at start time.
+		hostConfig.CpusetCpus = ""
 
 		// Set privileged mode if specified
 		if containerConfig.Privileged {
@@ -922,7 +959,7 @@ func (cb *ContainerBench) cleanupNetwork(ctx context.Context) {
 // Start all containers and get their PIDs
 func (cb *ContainerBench) startContainers(ctx context.Context) error {
 	logger := logging.GetLogger()
-	containers := cb.config.GetContainersSorted()
+	containers := cb.containersSorted
 
 	for _, containerConfig := range containers {
 		containerID := cb.containerIDs[containerConfig.Index]
@@ -961,7 +998,7 @@ func (cb *ContainerBench) startContainers(ctx context.Context) error {
 // Execute commands in running containers (after collectors/scheduler are started)
 func (cb *ContainerBench) executeContainerCommands(ctx context.Context) error {
 	logger := logging.GetLogger()
-	containers := cb.config.GetContainersSorted()
+	containers := cb.containersSorted
 
 	for _, containerConfig := range containers {
 		// Skip containers without a command
@@ -1018,10 +1055,9 @@ func (cb *ContainerBench) initializeSchedulerWithPIDs() error {
 	logger := logging.GetLogger()
 
 	// Create container info list with PIDs
-	containers := cb.config.GetContainersSorted()
-	containerInfos := make([]scheduler.ContainerInfo, 0, len(containers))
+	containerInfos := make([]scheduler.ContainerInfo, 0, len(cb.containersSorted))
 
-	for _, containerConfig := range containers {
+	for _, containerConfig := range cb.containersSorted {
 		pid := cb.containerPIDs[containerConfig.Index] // defaults to 0 (not running)
 
 		containerID, exists := cb.containerIDs[containerConfig.Index]
@@ -1031,7 +1067,7 @@ func (cb *ContainerBench) initializeSchedulerWithPIDs() error {
 
 		containerInfos = append(containerInfos, scheduler.ContainerInfo{
 			Index:       containerConfig.Index,
-			Config:      &containerConfig,
+			Config:      containerConfig,
 			PID:         pid,
 			ContainerID: containerID,
 		})
@@ -1074,9 +1110,26 @@ func (cb *ContainerBench) initializeSchedulerWithPIDs() error {
 	return nil
 }
 
-func (cb *ContainerBench) startContainer(ctx context.Context, containerConfig config.ContainerConfig) (int, error) {
+func (cb *ContainerBench) startContainer(ctx context.Context, containerConfig *config.ContainerConfig) (int, error) {
 	logger := logging.GetLogger()
+	if containerConfig == nil {
+		return 0, fmt.Errorf("containerConfig is nil")
+	}
 	containerID := cb.containerIDs[containerConfig.Index]
+
+	// Ensure CPU affinity is assigned by the scheduler before starting the container.
+	if _, err := cb.scheduler.AssignCPUCores(containerConfig.Index); err != nil {
+		return 0, fmt.Errorf("failed to assign CPU cores for container %d: %w", containerConfig.Index, err)
+	}
+	cb.syncRuntimeContainerConfig(containerConfig)
+	if containerConfig.Core != "" {
+		_, err := cb.dockerClient.ContainerUpdate(ctx, containerID, container.UpdateConfig{
+			Resources: container.Resources{CpusetCpus: containerConfig.Core},
+		})
+		if err != nil {
+			return 0, fmt.Errorf("failed to apply cpuset for container %d: %w", containerConfig.Index, err)
+		}
+	}
 
 	if err := cb.dockerClient.ContainerStart(ctx, containerID, container.StartOptions{}); err != nil {
 		logger.WithFields(logrus.Fields{
@@ -1109,7 +1162,7 @@ func (cb *ContainerBench) startContainer(ctx context.Context, containerConfig co
 	if listener, ok := cb.scheduler.(scheduler.ContainerLifecycleListener); ok {
 		_ = listener.OnContainerStart(scheduler.ContainerInfo{
 			Index:       containerConfig.Index,
-			Config:      &containerConfig,
+			Config:      containerConfig,
 			PID:         pid,
 			ContainerID: containerID,
 		})
@@ -1137,7 +1190,10 @@ type containerExecEvent struct {
 	err        error
 }
 
-func (cb *ContainerBench) startExitWatcher(ctx context.Context, containerConfig config.ContainerConfig, exitEvents chan<- containerExitEvent) {
+func (cb *ContainerBench) startExitWatcher(ctx context.Context, containerConfig *config.ContainerConfig, exitEvents chan<- containerExitEvent) {
+	if containerConfig == nil {
+		return
+	}
 	containerID := cb.containerIDs[containerConfig.Index]
 	if containerID == "" {
 		return
@@ -1190,8 +1246,11 @@ func (cb *ContainerBench) startExecWatcher(ctx context.Context, containerIndex i
 	}()
 }
 
-func (cb *ContainerBench) stopContainer(ctx context.Context, containerConfig config.ContainerConfig, aborted bool) error {
+func (cb *ContainerBench) stopContainer(ctx context.Context, containerConfig *config.ContainerConfig, aborted bool) error {
 	logger := logging.GetLogger()
+	if containerConfig == nil {
+		return fmt.Errorf("containerConfig is nil")
+	}
 	containerID := cb.containerIDs[containerConfig.Index]
 	stopTimeout := 2
 	stopRequestedAt := time.Now()
@@ -1231,8 +1290,11 @@ func (cb *ContainerBench) stopContainer(ctx context.Context, containerConfig con
 	return nil
 }
 
-func (cb *ContainerBench) startCollectorForContainer(ctx context.Context, containerConfig config.ContainerConfig, pid int) error {
+func (cb *ContainerBench) startCollectorForContainer(ctx context.Context, containerConfig *config.ContainerConfig, pid int) error {
 	logger := logging.GetLogger()
+	if containerConfig == nil {
+		return fmt.Errorf("containerConfig is nil")
+	}
 	containerID := cb.containerIDs[containerConfig.Index]
 
 	containerDF := cb.dataframes.AddContainer(containerConfig.Index)
@@ -1287,7 +1349,10 @@ func (cb *ContainerBench) stopCollectorForContainer(containerIndex int) {
 	delete(cb.collectors, containerIndex)
 }
 
-func (cb *ContainerBench) executeContainerCommand(ctx context.Context, containerConfig config.ContainerConfig) (string, error) {
+func (cb *ContainerBench) executeContainerCommand(ctx context.Context, containerConfig *config.ContainerConfig) (string, error) {
+	if containerConfig == nil {
+		return "", fmt.Errorf("containerConfig is nil")
+	}
 	if containerConfig.Command == "" {
 		return "", nil
 	}
@@ -1333,7 +1398,7 @@ func (cb *ContainerBench) executeContainerCommand(ctx context.Context, container
 
 // Start all collectors
 func (cb *ContainerBench) startCollectors(ctx context.Context) error {
-	containers := cb.config.GetContainersSorted()
+	containers := cb.containersSorted
 	for _, containerConfig := range containers {
 		pid := cb.containerPIDs[containerConfig.Index]
 		if pid == 0 {
@@ -1377,7 +1442,7 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 	logger := logging.GetLogger()
 
 	type runtimeState struct {
-		cfg            config.ContainerConfig
+		cfg            *config.ContainerConfig
 		startSec       int
 		stopSec        int
 		expectedSec    int
@@ -1388,7 +1453,7 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 		exitWatch      bool
 	}
 
-	containers := cb.config.GetContainersSorted()
+	containers := cb.containersSorted
 	states := make(map[int]*runtimeState, len(containers))
 	for _, c := range containers {
 		startSec := c.GetStartSeconds()

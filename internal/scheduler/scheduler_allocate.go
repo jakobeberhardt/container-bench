@@ -3,6 +3,7 @@ package scheduler
 import (
 	"container-bench/internal/accounting"
 	"container-bench/internal/config"
+	"container-bench/internal/cpuallocator"
 	"container-bench/internal/dataframe"
 	"container-bench/internal/host"
 	"container-bench/internal/logging"
@@ -33,6 +34,8 @@ type AllocationScheduler struct {
 	sweepStarted      bool
 	maxL3Ways         int
 	currentClassName  string
+
+	cpuAllocator cpuallocator.Allocator
 }
 
 type Accounts struct {
@@ -223,6 +226,9 @@ ASSIGN:
 }
 
 func (as *AllocationScheduler) OnContainerStop(containerIndex int) error {
+	if as.cpuAllocator != nil {
+		as.cpuAllocator.Release(containerIndex)
+	}
 	for i := range as.containers {
 		if as.containers[i].Index == containerIndex {
 			as.containers[i].PID = 0
@@ -332,6 +338,28 @@ func (as *AllocationScheduler) SetLogLevel(level string) error {
 
 func (as *AllocationScheduler) SetHostConfig(hostConfig *host.HostConfig) {
 	as.hostConfig = hostConfig
+}
+
+func (as *AllocationScheduler) SetCPUAllocator(allocator cpuallocator.Allocator) {
+	as.cpuAllocator = allocator
+}
+
+func (as *AllocationScheduler) AssignCPUCores(containerIndex int) ([]int, error) {
+	if as.cpuAllocator == nil {
+		return nil, nil
+	}
+	var cfg *config.ContainerConfig
+	for i := range as.containers {
+		if as.containers[i].Index == containerIndex {
+			cfg = as.containers[i].Config
+			break
+		}
+	}
+	if cfg == nil {
+		return nil, nil
+	}
+
+	return as.cpuAllocator.EnsureAssigned(containerIndex, cfg)
 }
 
 func (as *AllocationScheduler) SetProbe(prober *probe.Probe) {

@@ -3,6 +3,7 @@ package scheduler
 import (
 	"container-bench/internal/accounting"
 	"container-bench/internal/config"
+	"container-bench/internal/cpuallocator"
 	"container-bench/internal/dataframe"
 	"container-bench/internal/host"
 	"container-bench/internal/logging"
@@ -31,6 +32,8 @@ type ProbeAllocationScheduler struct {
 	probeStarted  bool
 	probeComplete bool
 	probeResults  []*proberesources.AllocationProbeResult
+
+	cpuAllocator cpuallocator.Allocator
 }
 
 func NewProbeAllocationScheduler() *ProbeAllocationScheduler {
@@ -375,6 +378,28 @@ func (as *ProbeAllocationScheduler) SetHostConfig(hostConfig *host.HostConfig) {
 	as.hostConfig = hostConfig
 }
 
+func (as *ProbeAllocationScheduler) SetCPUAllocator(allocator cpuallocator.Allocator) {
+	as.cpuAllocator = allocator
+}
+
+func (as *ProbeAllocationScheduler) AssignCPUCores(containerIndex int) ([]int, error) {
+	if as.cpuAllocator == nil {
+		return nil, nil
+	}
+	var cfg *config.ContainerConfig
+	for i := range as.containers {
+		if as.containers[i].Index == containerIndex {
+			cfg = as.containers[i].Config
+			break
+		}
+	}
+	if cfg == nil {
+		return nil, nil
+	}
+
+	return as.cpuAllocator.EnsureAssigned(containerIndex, cfg)
+}
+
 func (as *ProbeAllocationScheduler) SetProbe(prober *probe.Probe) {
 	as.prober = prober
 	as.schedulerLogger.Debug("Probe injected into scheduler")
@@ -398,6 +423,9 @@ func (as *ProbeAllocationScheduler) OnContainerStart(info ContainerInfo) error {
 }
 
 func (as *ProbeAllocationScheduler) OnContainerStop(containerIndex int) error {
+	if as.cpuAllocator != nil {
+		as.cpuAllocator.Release(containerIndex)
+	}
 	for i := range as.containers {
 		if as.containers[i].Index == containerIndex {
 			as.containers[i].PID = 0

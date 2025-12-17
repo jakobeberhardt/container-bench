@@ -12,6 +12,7 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
+	"github.com/sirupsen/logrus"
 )
 
 type DockerCollector struct {
@@ -47,31 +48,90 @@ func NewDockerCollector(containerID string, containerIndex int, dockerConfig *co
 func (dc *DockerCollector) Collect() *dataframe.DockerMetrics {
 	logger := logging.GetLogger()
 
-	// Use one-shot
-	// TODO: Use the actual context
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	stats, err := dc.client.ContainerStatsOneShot(ctx, dc.containerID)
-	if err != nil {
-		logger.WithField("container_id", dc.containerID[:12]).WithError(err).Warn("Failed to collect Docker stats")
+	collectAll := dc.config == nil
+	needInspect := collectAll || (dc.config != nil && dc.config.AssignedCores)
+	needStats := collectAll || dc.wantsAnyDockerStats()
+
+	var metrics *dataframe.DockerMetrics
+	if needStats {
+		stats, err := dc.client.ContainerStatsOneShot(ctx, dc.containerID)
+		if err != nil {
+			logger.WithField("container_id", dc.containerID[:12]).WithError(err).Warn("Failed to collect Docker stats")
+			// If only stats were requested, return nil. If cpuset is also requested, we still try inspect below
+			if !needInspect {
+				return nil
+			}
+		} else {
+			defer stats.Body.Close()
+
+			var dockerStats types.StatsJSON
+			decoder := json.NewDecoder(stats.Body)
+			if err := decoder.Decode(&dockerStats); err != nil {
+				logger.WithField("container_id", dc.containerID[:12]).WithError(err).Warn("Failed to decode Docker stats")
+				if !needInspect {
+					return nil
+				}
+			} else {
+				currentTime := time.Now()
+				metrics = dc.parseDockerStats(&dockerStats, currentTime)
+			}
+		}
+	}
+
+	if metrics == nil {
+		metrics = &dataframe.DockerMetrics{}
+	}
+
+	if needInspect {
+		inspect, err := dc.client.ContainerInspect(ctx, dc.containerID)
+		if err != nil {
+			logger.WithField("container_id", dc.containerID[:12]).WithError(err).Warn("Failed to inspect container for cpuset")
+			return metrics
+		}
+		cpuset := ""
+		if inspect.HostConfig != nil {
+			cpuset = inspect.HostConfig.CpusetCpus
+		}
+		if cpuset != "" {
+			metrics.AssignedCoresCSV = &cpuset
+			cpus, err := config.ParseCPUSpec(cpuset)
+			if err != nil {
+				logger.WithFields(logrus.Fields{
+					"container_id": dc.containerID[:12],
+					"cpuset":       cpuset,
+				}).WithError(err).Warn("Failed to parse cpuset")
+			} else {
+				assigned := make(map[int]bool, len(cpus))
+				for _, cpu := range cpus {
+					assigned[cpu] = true
+				}
+				metrics.AssignedCores = assigned
+			}
+		}
+	}
+
+	// If we ended up with no fields populated, return nil to match existing collector behavior.
+	if metrics.AssignedCoresCSV == nil && metrics.CPUUsageTotal == nil && metrics.CPUUsageKernel == nil && metrics.CPUUsageUser == nil &&
+		metrics.CPUUsagePercent == nil && metrics.CPUThrottling == nil && metrics.MemoryUsage == nil && metrics.MemoryLimit == nil &&
+		metrics.MemoryCache == nil && metrics.MemoryRSS == nil && metrics.MemorySwap == nil && metrics.MemoryUsagePercent == nil &&
+		metrics.NetworkRxBytes == nil && metrics.NetworkTxBytes == nil && metrics.DiskReadBytes == nil && metrics.DiskWriteBytes == nil {
 		return nil
 	}
-	defer stats.Body.Close()
-
-	// Decode the stats
-	var dockerStats types.StatsJSON
-	decoder := json.NewDecoder(stats.Body)
-	if err := decoder.Decode(&dockerStats); err != nil {
-		logger.WithField("container_id", dc.containerID[:12]).WithError(err).Warn("Failed to decode Docker stats")
-		return nil
-	}
-
-	// Parse and return metrics
-	currentTime := time.Now()
-	metrics := dc.parseDockerStats(&dockerStats, currentTime)
 
 	return metrics
+}
+
+func (dc *DockerCollector) wantsAnyDockerStats() bool {
+	if dc.config == nil {
+		return true
+	}
+	return dc.config.CPUUsageTotal || dc.config.CPUUsageKernel || dc.config.CPUUsageUser || dc.config.CPUUsagePercent ||
+		dc.config.CPUThrottling || dc.config.MemoryUsage || dc.config.MemoryLimit || dc.config.MemoryCache ||
+		dc.config.MemoryRSS || dc.config.MemorySwap || dc.config.MemoryUsagePercent ||
+		dc.config.NetworkRxBytes || dc.config.NetworkTxBytes || dc.config.DiskReadBytes || dc.config.DiskWriteBytes
 }
 
 func (dc *DockerCollector) parseDockerStats(dockerStats *types.StatsJSON, currentTime time.Time) *dataframe.DockerMetrics {
@@ -80,7 +140,7 @@ func (dc *DockerCollector) parseDockerStats(dockerStats *types.StatsJSON, curren
 
 	metrics := &dataframe.DockerMetrics{}
 
-	// If no config, collect all metrics (backward compatibility)
+	// If no config, collect all metrics
 	collectAll := dc.config == nil
 
 	// CPU metrics

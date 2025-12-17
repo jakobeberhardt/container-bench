@@ -3,6 +3,7 @@ package scheduler
 import (
 	"container-bench/internal/accounting"
 	"container-bench/internal/config"
+	"container-bench/internal/cpuallocator"
 	"container-bench/internal/dataframe"
 	"container-bench/internal/host"
 	"container-bench/internal/logging"
@@ -27,6 +28,9 @@ type Scheduler interface {
 	SetLogLevel(level string) error
 
 	SetHostConfig(hostConfig *host.HostConfig)
+	SetCPUAllocator(allocator cpuallocator.Allocator)
+
+	AssignCPUCores(containerIndex int) ([]int, error)
 
 	SetProbe(prober *probe.Probe)
 
@@ -47,6 +51,7 @@ type DefaultScheduler struct {
 	rdtAccountant   *accounting.RDTAccountant
 	prober          *probe.Probe
 	config          *config.SchedulerConfig
+	cpuAllocator    cpuallocator.Allocator
 }
 
 func NewDefaultScheduler() *DefaultScheduler {
@@ -80,14 +85,14 @@ func (ds *DefaultScheduler) ProcessDataFrames(dataframes *dataframe.DataFrames) 
 			ds.schedulerLogger.WithFields(logrus.Fields{
 				"container":       containerIndex,
 				"cache_miss_rate": *latest.Perf.CacheMissRate,
-			}).Info("Cache miss rate")
+			}).Debug("Cache miss rate")
 		}
 
 		if latest.Docker != nil && latest.Docker.CPUUsagePercent != nil {
 			ds.schedulerLogger.WithFields(logrus.Fields{
 				"container":   containerIndex,
 				"cpu_percent": *latest.Docker.CPUUsagePercent,
-			}).Info("CPU usage")
+			}).Debug("CPU usage")
 		}
 	}
 
@@ -116,6 +121,30 @@ func (ds *DefaultScheduler) SetHostConfig(hostConfig *host.HostConfig) {
 	ds.hostConfig = hostConfig
 }
 
+func (ds *DefaultScheduler) SetCPUAllocator(allocator cpuallocator.Allocator) {
+	ds.cpuAllocator = allocator
+}
+
+func (ds *DefaultScheduler) AssignCPUCores(containerIndex int) ([]int, error) {
+	if ds.cpuAllocator == nil {
+		return nil, nil
+	}
+
+	// Find config
+	var cfg *config.ContainerConfig
+	for i := range ds.containers {
+		if ds.containers[i].Index == containerIndex {
+			cfg = ds.containers[i].Config
+			break
+		}
+	}
+	if cfg == nil {
+		return nil, nil
+	}
+
+	return ds.cpuAllocator.EnsureAssigned(containerIndex, cfg)
+}
+
 func (ds *DefaultScheduler) SetProbe(prober *probe.Probe) {
 	ds.prober = prober
 	ds.schedulerLogger.Debug("Probe injected into default scheduler")
@@ -138,6 +167,9 @@ func (ds *DefaultScheduler) OnContainerStart(info ContainerInfo) error {
 }
 
 func (ds *DefaultScheduler) OnContainerStop(containerIndex int) error {
+	if ds.cpuAllocator != nil {
+		ds.cpuAllocator.Release(containerIndex)
+	}
 	for i := range ds.containers {
 		if ds.containers[i].Index == containerIndex {
 			ds.containers[i].PID = 0

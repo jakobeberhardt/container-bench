@@ -6,7 +6,7 @@ benchmark:
   scheduler:
     implementation: default
     rdt: false
-    log_level: warn
+    log_level: info
   data:
     db:
       host: ${INFLUXDB_HOST}
@@ -22,8 +22,9 @@ benchmark:
 
 baseline:
   image: nginx:alpine
-  core: 0
+  #core: 0
   command: "while :; do dd if=/dev/zero of=/dev/null bs=1M count=100 2>/dev/null; done"
+  num_cores: 4
   data:
     frequency: 100
     perf: true
@@ -32,8 +33,8 @@ baseline:
 
 victim:
   image: registry.jakob-eberhardt.de/neighbor:default  
-  core: 1
-  start_t: 15
+  # core: 1
+  start_t: 20
   expected_t: 15
   command: "/neighbor --duration 15 --buffer-size 12MB --pattern random"
   data:
@@ -44,7 +45,7 @@ victim:
 
 first:
   image: registry.jakob-eberhardt.de/neighbor:default  
-  core: 2
+  # core: 2
   start_t: 30
   expected_t: 10
   command: "sleep 5"
@@ -57,7 +58,7 @@ first:
 
 second:
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-  core: 3
+  # core: 3
   start_t: 35
   expected_t: 10
   command: "stress-ng --matrix-3d 1 --timeout 15"
@@ -69,7 +70,7 @@ second:
 
 matrix:
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-  core: 4
+  # core: 4
   start_t: 20
   expected_t: 28
   command: "stress-ng --matrix-3d 1 --matrix-3d-ops 20000"
@@ -82,7 +83,7 @@ matrix:
 hadoop:
   image: registry.jakob-eberhardt.de/rdt4nn/hadoop:latest
   port: 9870:9870
-  core: 5
+  # core: 5
   privileged: true
   expected_t: 48
   environment:

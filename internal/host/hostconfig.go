@@ -5,6 +5,7 @@ import (
 	"math/bits"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -57,6 +58,86 @@ type CoreInfo struct {
 	PhysicalID int   // Physical package/socket ID
 	CoreID     int   // Core ID within the socket
 	Siblings   []int // Hyperthread sibling logical CPU IDs
+}
+
+// PhysicalCPUsInOrder returns a deterministic list of logical CPU IDs representing
+// one thread per physical core, ordered by socket (physical package) then core ID.
+//
+// It selects the smallest logical CPU ID among each core's sibling set, ensuring
+// we avoid hyperthread siblings.
+func (hc *HostConfig) PhysicalCPUsInOrder() ([]int, error) {
+	if hc == nil {
+		return nil, fmt.Errorf("host config is nil")
+	}
+	if len(hc.Topology.CoreMap) == 0 {
+		return nil, fmt.Errorf("CPU topology core map is empty")
+	}
+
+	type coreKey struct {
+		socket int
+		core   int
+	}
+
+	selected := make(map[coreKey]int)
+	for logicalID, info := range hc.Topology.CoreMap {
+		k := coreKey{socket: info.PhysicalID, core: info.CoreID}
+		// pick the smallest logical ID for each physical core
+		if cur, ok := selected[k]; !ok || logicalID < cur {
+			selected[k] = logicalID
+		}
+	}
+
+	keys := make([]coreKey, 0, len(selected))
+	for k := range selected {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].socket != keys[j].socket {
+			return keys[i].socket < keys[j].socket
+		}
+		return keys[i].core < keys[j].core
+	})
+
+	result := make([]int, 0, len(keys))
+	for _, k := range keys {
+		result = append(result, selected[k])
+	}
+	return result, nil
+}
+
+// IsPhysicalCPU returns true if the given logical CPU ID is the selected representative
+// for its physical core (i.e., not a hyperthread sibling).
+func (hc *HostConfig) IsPhysicalCPU(cpuID int) bool {
+	if hc == nil {
+		return false
+	}
+	info, ok := hc.Topology.CoreMap[cpuID]
+	if !ok {
+		return false
+	}
+	min := cpuID
+	for _, sib := range info.Siblings {
+		if sib < min {
+			min = sib
+		}
+	}
+	return cpuID == min
+}
+
+// ValidatePhysicalCPUs ensures all CPU IDs exist and refer to physical cores (not HT siblings).
+func (hc *HostConfig) ValidatePhysicalCPUs(cpuIDs []int) error {
+	if hc == nil {
+		return fmt.Errorf("host config is nil")
+	}
+	for _, cpuID := range cpuIDs {
+		if _, ok := hc.Topology.CoreMap[cpuID]; !ok {
+			return fmt.Errorf("cpu %d not present in topology", cpuID)
+		}
+		if !hc.IsPhysicalCPU(cpuID) {
+			return fmt.Errorf("cpu %d is not a physical core (appears to be an HT sibling)", cpuID)
+		}
+	}
+	return nil
 }
 
 // CacheConfig contains cache configuration for L1/L2 caches

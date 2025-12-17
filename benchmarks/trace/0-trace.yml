@@ -1,0 +1,229 @@
+benchmark:
+  name: Trace Zero
+  description: Implements a trace with jobs arriving at a normal distribution
+  max_t: 135
+  log_level: info
+  scheduler:
+    implementation: default
+    rdt: false
+    log_level: info
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+matrix-1:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 0
+  expected_t: 42
+  command: "stress-ng --matrix-3d 1 --matrix-3d-ops 30000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+matrix-2:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 5
+  expected_t: 42
+  command: "stress-ng --matrix-3d 1 --matrix-3d-ops 30000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+matrix-3:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 10
+  expected_t: 42
+  command: "stress-ng --matrix-3d 1 --matrix-3d-ops 30000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+matrix-4:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 15
+  expected_t: 42
+  command: "stress-ng --matrix-3d 1 --matrix-3d-ops 30000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+matrix-5:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 20
+  expected_t: 42
+  command: "stress-ng --matrix-3d 1 --matrix-3d-ops 30000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+matrix-6:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 25
+  expected_t: 42
+  command: "stress-ng --matrix-3d 1 --matrix-3d-ops 30000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+matrix-7:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 30
+  expected_t: 42
+  command: "stress-ng --matrix-3d 1 --matrix-3d-ops 30000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+matrix-8:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 35
+  expected_t: 42
+  command: "stress-ng --matrix-3d 1 --matrix-3d-ops 30000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+matrix-9:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 40
+  expected_t: 42
+  command: "stress-ng --matrix-3d 1 --matrix-3d-ops 30000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+matrix-10:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 45
+  expected_t: 42
+  command: "stress-ng --matrix-3d 1 --matrix-3d-ops 30000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+matrix-11:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 50
+  expected_t: 42
+  command: "stress-ng --matrix-3d 1 --matrix-3d-ops 30000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+matrix-12:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 55
+  expected_t: 42
+  command: "stress-ng --matrix-3d 1 --matrix-3d-ops 30000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+matrix-13:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 60
+  expected_t: 42
+  command: "stress-ng --matrix-3d 1 --matrix-3d-ops 30000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+matrix-14:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 65
+  expected_t: 42
+  command: "stress-ng --matrix-3d 1 --matrix-3d-ops 30000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+matrix-15:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 70
+  expected_t: 42
+  command: "stress-ng --matrix-3d 1 --matrix-3d-ops 30000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+matrix-16:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 75
+  expected_t: 42
+  command: "stress-ng --matrix-3d 1 --matrix-3d-ops 30000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+matrix-17:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 80
+  expected_t: 42
+  command: "stress-ng --matrix-3d 1 --matrix-3d-ops 30000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+matrix-18:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 85
+  expected_t: 42
+  command: "stress-ng --matrix-3d 1 --matrix-3d-ops 30000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+matrix-19:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 90
+  expected_t: 42
+  command: "stress-ng --matrix-3d 1 --matrix-3d-ops 30000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
