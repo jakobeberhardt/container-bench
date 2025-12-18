@@ -44,7 +44,10 @@ type SchedulerConfig struct {
 	BreakCondition             float64 `yaml:"break_condition,omitempty"`               // stop probing when avg IPC efficiency >= this
 	BreakImprovement           float64 `yaml:"break_improvement,omitempty"`             // stop when relative improvement below this
 	Reallocate                 bool    `yaml:"reallocate,omitempty"`                    // opportunistic reallocation when jobs finish
-	SkipAllocationAfterProbing bool    `yaml:"skip_allocation_after_probing,omitempty"` // if true, never keep allocations after probing
+	SkipAllocationAfterProbing *bool   `yaml:"skip_allocation_after_probing,omitempty"` // if true, never keep allocations after probing (default: true)
+	AllocateUnbound            bool    `yaml:"allocate_unbound,omitempty"`              // keep allocation for unbound containers even if skip_allocation_after_probing is true
+	WarmupT                   int     `yaml:"warmup_t,omitempty"`                      // seconds after container start before it can be probed (default: 5)
+	CooldownT                 int     `yaml:"cooldown_t,omitempty"`                    // minimum seconds between probes (default: 2)
 
 	Prober    *ProberConfig    `yaml:"prober,omitempty"`
 	Allocator *AllocatorConfig `yaml:"allocator,omitempty"`

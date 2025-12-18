@@ -38,6 +38,8 @@ type containerProfile struct {
 	index       int
 	pid         int
 	containerID string
+	containerKey string
+	startedAt    time.Time
 
 	evaluated bool
 	unbound   bool
@@ -107,6 +109,10 @@ type InterferenceAwareScheduler struct {
 	sockets        int
 
 	probing *activeProbe
+	lastProbeFinished time.Time
+
+	probeQueue  []int
+	probeQueued map[int]bool
 }
 
 func NewInterferenceAwareScheduler() *InterferenceAwareScheduler {
@@ -115,7 +121,43 @@ func NewInterferenceAwareScheduler() *InterferenceAwareScheduler {
 		version:         "0.1.0",
 		schedulerLogger: logging.GetSchedulerLogger(),
 		profiles:        make(map[int]*containerProfile),
+		probeQueued:     make(map[int]bool),
 	}
+}
+
+func (s *InterferenceAwareScheduler) enqueueProbeLocked(containerIndex int) {
+	if s.probeQueued == nil {
+		s.probeQueued = make(map[int]bool)
+	}
+	if s.probeQueued[containerIndex] {
+		return
+	}
+	s.probeQueued[containerIndex] = true
+	s.probeQueue = append(s.probeQueue, containerIndex)
+}
+
+func (s *InterferenceAwareScheduler) peekProbeHeadLocked() (int, bool) {
+	for len(s.probeQueue) > 0 {
+		idx := s.probeQueue[0]
+		p := s.profiles[idx]
+		if p == nil || p.pid == 0 || p.evaluated {
+			// Drop finished/unknown/already evaluated.
+			s.probeQueue = s.probeQueue[1:]
+			delete(s.probeQueued, idx)
+			continue
+		}
+		return idx, true
+	}
+	return -1, false
+}
+
+func (s *InterferenceAwareScheduler) popProbeHeadLocked() {
+	if len(s.probeQueue) == 0 {
+		return
+	}
+	idx := s.probeQueue[0]
+	s.probeQueue = s.probeQueue[1:]
+	delete(s.probeQueued, idx)
 }
 
 func (s *InterferenceAwareScheduler) Initialize(accountant *accounting.RDTAccountant, containers []ContainerInfo, schedulerConfig *config.SchedulerConfig) error {
@@ -125,6 +167,15 @@ func (s *InterferenceAwareScheduler) Initialize(accountant *accounting.RDTAccoun
 	s.rdtAccountant = accountant
 	s.containers = containers
 	s.config = schedulerConfig
+
+	s.probeQueue = nil
+	if s.probeQueued == nil {
+		s.probeQueued = make(map[int]bool)
+	} else {
+		for k := range s.probeQueued {
+			delete(s.probeQueued, k)
+		}
+	}
 
 	if s.hostConfig != nil {
 		s.totalWays = s.hostConfig.L3Cache.WaysPerCache
@@ -142,14 +193,26 @@ func (s *InterferenceAwareScheduler) Initialize(accountant *accounting.RDTAccoun
 	}
 
 	for _, c := range containers {
+		containerKey := ""
+		if c.Config != nil {
+			containerKey = c.Config.KeyName
+			if containerKey == "" {
+				containerKey = c.Config.Name
+			}
+		}
 		p := &containerProfile{
 			index:       c.Index,
 			pid:         c.PID,
 			containerID: c.ContainerID,
+			containerKey: containerKey,
+			startedAt:   time.Now(),
 			socket:      -1,
-			className:   s.containerClassName(c.Index),
+			className:   s.containerClassName(c.Index, containerKey),
 		}
 		s.profiles[c.Index] = p
+		if c.PID != 0 {
+			s.enqueueProbeLocked(c.Index)
+		}
 	}
 
 	// Create benchmark pool class (and move running containers into it).
@@ -179,32 +242,54 @@ func (s *InterferenceAwareScheduler) ProcessDataFrames(dfs *dataframe.DataFrames
 		return nil
 	}
 
+	warmupSeconds := 5
+	cooldownSeconds := 2
+	if s.config != nil {
+		if s.config.WarmupT > 0 {
+			warmupSeconds = s.config.WarmupT
+		}
+		if s.config.CooldownT > 0 {
+			cooldownSeconds = s.config.CooldownT
+		}
+	}
+	if cooldownSeconds > 0 && !s.lastProbeFinished.IsZero() {
+		if time.Since(s.lastProbeFinished) < time.Duration(cooldownSeconds)*time.Second {
+			return nil
+		}
+	}
+
 	// Advance active probe.
 	if s.probing != nil {
 		return s.stepProbeLocked(dfs)
 	}
 
-	// Pick next container to probe (running and not evaluated).
-	nextIdx := -1
-	for _, c := range s.containers {
-		p := s.profiles[c.Index]
-		if p == nil {
-			continue
-		}
-		if p.pid == 0 {
-			continue
-		}
-		if p.evaluated {
-			continue
-		}
-		nextIdx = c.Index
-		break
+	// FIFO: only probe the head of the queue.
+	headIdx, ok := s.peekProbeHeadLocked()
+	if !ok {
+		return nil
 	}
-	if nextIdx == -1 {
+	p := s.profiles[headIdx]
+	if p == nil {
+		// Shouldn't happen due to peekProbeHeadLocked, but be safe.
+		s.popProbeHeadLocked()
+		return nil
+	}
+	if p.startedAt.IsZero() {
+		p.startedAt = time.Now()
+	}
+	if warmupSeconds > 0 && time.Since(p.startedAt) < time.Duration(warmupSeconds)*time.Second {
+		// Head-of-line warmup; don't probe others yet.
 		return nil
 	}
 
-	return s.startProbeLocked(dfs, nextIdx)
+	// Pop now so we don't re-enter if startProbeLocked fails early; failures will re-enqueue on next tick if still not evaluated.
+	s.popProbeHeadLocked()
+	if err := s.startProbeLocked(dfs, headIdx); err != nil {
+		// Retry later.
+		s.enqueueProbeLocked(headIdx)
+		return err
+	}
+	return nil
 }
 
 func (s *InterferenceAwareScheduler) Shutdown() error {
@@ -265,6 +350,14 @@ func (s *InterferenceAwareScheduler) OnContainerStart(info ContainerInfo) error 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	containerKey := ""
+	if info.Config != nil {
+		containerKey = info.Config.KeyName
+		if containerKey == "" {
+			containerKey = info.Config.Name
+		}
+	}
+
 	for i := range s.containers {
 		if s.containers[i].Index == info.Index {
 			s.containers[i].PID = info.PID
@@ -274,15 +367,36 @@ func (s *InterferenceAwareScheduler) OnContainerStart(info ContainerInfo) error 
 	}
 	p := s.profiles[info.Index]
 	if p == nil {
-		p = &containerProfile{index: info.Index, className: s.containerClassName(info.Index)}
+		p = &containerProfile{index: info.Index}
 		s.profiles[info.Index] = p
 	}
 	p.pid = info.PID
 	p.containerID = info.ContainerID
+	p.containerKey = containerKey
+	p.startedAt = time.Now()
+
+	desiredClass := s.containerClassName(info.Index, containerKey)
+	if p.className != "" && p.className != desiredClass && s.rdtAccountant != nil {
+		_ = s.rdtAccountant.DeleteClass(p.className)
+		p.l3Mask = 0
+		p.memAlloc = 0
+	}
+	p.className = desiredClass
+
+	// Re-probe on restart.
+	p.evaluated = false
+	p.unbound = false
+	p.demandWays = 0
+	p.demandMem = 0
 
 	// Best-effort: place new container into benchmark pool immediately.
 	if s.rdtAccountant != nil && info.PID != 0 {
 		_ = s.moveContainerCgroupLocked(info.Index, s.benchmarkClass)
+	}
+
+	// Enqueue for probing.
+	if info.PID != 0 {
+		s.enqueueProbeLocked(info.Index)
 	}
 
 	return nil
@@ -291,6 +405,11 @@ func (s *InterferenceAwareScheduler) OnContainerStart(info ContainerInfo) error 
 func (s *InterferenceAwareScheduler) OnContainerStop(containerIndex int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Prevent stale queue entries from blocking head-of-line.
+	if s.probeQueued != nil {
+		delete(s.probeQueued, containerIndex)
+	}
 
 	if s.cpuAllocator != nil {
 		s.cpuAllocator.Release(containerIndex)
@@ -324,9 +443,37 @@ func (s *InterferenceAwareScheduler) benchmarkClassName() string {
 	return "bench-benchmark"
 }
 
-func (s *InterferenceAwareScheduler) containerClassName(containerIndex int) string {
+func sanitizeResctrlNamePart(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteByte('-')
+	}
+	out := strings.Trim(b.String(), "-")
+	if len(out) > 32 {
+		out = out[:32]
+	}
+	return out
+}
+
+func (s *InterferenceAwareScheduler) containerClassName(containerIndex int, containerKey string) string {
+	key := sanitizeResctrlNamePart(containerKey)
 	if s.benchmarkID > 0 {
+		if key != "" {
+			return fmt.Sprintf("bench-%d-c%d-%s", s.benchmarkID, containerIndex, key)
+		}
 		return fmt.Sprintf("bench-%d-c%d", s.benchmarkID, containerIndex)
+	}
+	if key != "" {
+		return fmt.Sprintf("bench-c%d-%s", containerIndex, key)
 	}
 	return fmt.Sprintf("bench-c%d", containerIndex)
 }
@@ -442,9 +589,17 @@ func (s *InterferenceAwareScheduler) startProbeLocked(dfs *dataframe.DataFrames,
 		return fmt.Errorf("no probe candidates")
 	}
 
-	// Probe order: try all sockets (if available) to derive least-interference placement.
+	// Probe order: start on current socket (if known), then try the others.
 	socketOrder := make([]int, 0, s.sockets)
+	startSock := 0
+	if p.socket >= 0 && p.socket < s.sockets {
+		startSock = p.socket
+	}
+	socketOrder = append(socketOrder, startSock)
 	for sock := 0; sock < s.sockets; sock++ {
+		if sock == startSock {
+			continue
+		}
 		socketOrder = append(socketOrder, sock)
 	}
 	if len(socketOrder) == 0 {
@@ -468,15 +623,35 @@ func (s *InterferenceAwareScheduler) startProbeLocked(dfs *dataframe.DataFrames,
 		bestEff:        -1,
 		startedAt:      time.Now(),
 	}
+	ap := s.probing
 
-	// Start probing on first socket.
-	if err := s.startProbeOnSocketLocked(dfs, containerIndex, socketOrder[0]); err != nil {
-		s.schedulerLogger.WithError(err).WithFields(logrus.Fields{"container": containerIndex, "socket": socketOrder[0]}).Warn("Failed to start probing on socket")
+	// Start probing on the first socket we can actually move to.
+	startedOn := -1
+	for ap.socketPos < len(socketOrder) {
+		sock := socketOrder[ap.socketPos]
+		if err := s.startProbeOnSocketLocked(dfs, containerIndex, sock); err != nil {
+			s.schedulerLogger.WithError(err).WithFields(logrus.Fields{"container": containerIndex, "socket": sock}).Warn("Failed to start probing on socket")
+			ap.socketResults[sock] = nil
+			ap.socketPos++
+			continue
+		}
+		startedOn = sock
+		break
+	}
+	if startedOn == -1 {
+		s.schedulerLogger.WithFields(logrus.Fields{"container": containerIndex}).Warn("No probe socket available; marking container unbound")
+		p := s.profiles[containerIndex]
+		if p != nil {
+			p.evaluated = true
+			p.unbound = true
+		}
+		s.probing = nil
+		return nil
 	}
 
 	s.schedulerLogger.WithFields(logrus.Fields{
 		"container":     containerIndex,
-		"socket":        socketOrder[0],
+		"socket":        startedOn,
 		"candidates":    len(candidates),
 		"candidate_dur": candDur.Seconds(),
 		"break_cond":    breakCond,
@@ -495,14 +670,26 @@ func (s *InterferenceAwareScheduler) stepProbeLocked(dfs *dataframe.DataFrames) 
 	}
 
 	cfg := s.config
+	breakCondEnabled := true
+	breakImprovementEnabled := true
 	breakCond := 0.9
 	breakImprovement := 0.1
 	if cfg != nil {
-		if cfg.BreakCondition > 0 {
+		if cfg.BreakCondition < 0 {
+			breakCondEnabled = false
+		} else if cfg.BreakCondition > 0 {
 			breakCond = cfg.BreakCondition
+			if breakCond > 1 && breakCond <= 100 {
+				breakCond = breakCond / 100
+			}
 		}
-		if cfg.BreakImprovement > 0 {
+		if cfg.BreakImprovement < 0 {
+			breakImprovementEnabled = false
+		} else if cfg.BreakImprovement > 0 {
 			breakImprovement = cfg.BreakImprovement
+			if breakImprovement > 1 && breakImprovement <= 100 {
+				breakImprovement = breakImprovement / 100
+			}
 		}
 	}
 
@@ -526,18 +713,21 @@ func (s *InterferenceAwareScheduler) stepProbeLocked(dfs *dataframe.DataFrames) 
 	}
 
 	// Stop conditions (per-socket).
-	if ap.bestEff >= breakCond {
+	if breakCondEnabled && ap.bestEff >= breakCond {
 		ap.stopEarly = true
 		ap.stopReason = "break_condition"
 		return s.finishSocketProbeLocked(dfs)
 	}
-	if ap.bestIdx != -1 && ap.prevBestEff > 0 {
+	if breakImprovementEnabled && ap.bestIdx != -1 && ap.prevBestEff > 0 {
 		rel := (ap.bestEff - ap.prevBestEff) / ap.prevBestEff
 		if rel >= 0 && rel < breakImprovement {
 			ap.stopEarly = true
 			ap.stopReason = "break_improvement"
 			return s.finishSocketProbeLocked(dfs)
 		}
+	}
+	if breakImprovementEnabled && ap.bestIdx != -1 && ap.prevBestEff > 0 {
+		rel := (ap.bestEff - ap.prevBestEff) / ap.prevBestEff
 		if rel >= 0 && rel < defaultDiminishingReturnThreshold {
 			ap.stopEarly = true
 			ap.stopReason = "diminishing_returns"
@@ -586,7 +776,7 @@ func (s *InterferenceAwareScheduler) startProbeOnSocketLocked(dfs *dataframe.Dat
 	_ = s.resetContainerToBenchmarkLocked(containerIndex)
 	if s.cpuAllocator != nil {
 		if _, err := s.cpuAllocator.Move(containerIndex, p.containerID, socket); err != nil {
-			s.schedulerLogger.WithError(err).WithFields(logrus.Fields{"container": containerIndex, "socket": socket}).Warn("Failed to move container to probe socket")
+			return fmt.Errorf("failed to move container %d to probe socket %d: %w", containerIndex, socket, err)
 		}
 	}
 	p.socket = socket
@@ -648,8 +838,15 @@ func (s *InterferenceAwareScheduler) finishSocketProbeLocked(dfs *dataframe.Data
 	_ = s.resetContainerToBenchmarkLocked(containerIndex)
 
 	ap.socketPos++
-	if ap.socketPos < len(ap.socketOrder) {
-		return s.startProbeOnSocketLocked(dfs, containerIndex, ap.socketOrder[ap.socketPos])
+	for ap.socketPos < len(ap.socketOrder) {
+		sock := ap.socketOrder[ap.socketPos]
+		if err := s.startProbeOnSocketLocked(dfs, containerIndex, sock); err != nil {
+			s.schedulerLogger.WithError(err).WithFields(logrus.Fields{"container": containerIndex, "socket": sock}).Warn("Failed to start probing on socket")
+			ap.socketResults[sock] = nil
+			ap.socketPos++
+			continue
+		}
+		return nil
 	}
 
 	return s.finalizeProbeLocked()
@@ -670,7 +867,8 @@ func (s *InterferenceAwareScheduler) finalizeProbeLocked() error {
 	cfg := s.config
 	maxL3 := 4
 	maxMem := 30.0
-	skipAlloc := false
+	skipAlloc := true
+	allocateUnbound := false
 	if cfg != nil {
 		if cfg.MaxL3 > 0 {
 			maxL3 = cfg.MaxL3
@@ -678,7 +876,10 @@ func (s *InterferenceAwareScheduler) finalizeProbeLocked() error {
 		if cfg.MaxMem > 0 {
 			maxMem = cfg.MaxMem
 		}
-		skipAlloc = cfg.SkipAllocationAfterProbing
+		if cfg.SkipAllocationAfterProbing != nil {
+			skipAlloc = *cfg.SkipAllocationAfterProbing
+		}
+		allocateUnbound = cfg.AllocateUnbound
 	}
 
 	// Choose best socket based on best efficiency; tie-break on lower demand.
@@ -736,9 +937,11 @@ func (s *InterferenceAwareScheduler) finalizeProbeLocked() error {
 	p.socket = bestSocket
 	_ = s.moveContainerCgroupLocked(containerIndex, s.benchmarkClass)
 
-	// Allocation retention policy: only keep if unbound, not skipped, and headroom remains for future probing.
+	// Allocation retention policy:
+	// - default: skip allocation after probing
+	// - if allocate_unbound: keep allocations for unbound containers (still requiring headroom)
 	keep := false
-	if p.unbound && !skipAlloc {
+	if p.unbound && (!skipAlloc || allocateUnbound) {
 		keep = s.wouldLeaveProbeHeadroomLocked(bestSocket, p.demandWays, p.demandMem, maxL3, maxMem)
 	}
 	if keep {
@@ -758,11 +961,110 @@ func (s *InterferenceAwareScheduler) finalizeProbeLocked() error {
 		"unbound":     p.unbound,
 		"kept_alloc":  keep,
 		"skip_alloc":  skipAlloc,
+		"alloc_unbound": allocateUnbound,
 		"stop_reason": bestReason,
 		"sockets":     len(ap.socketResults),
 	}).Info("Finished interference-aware probing")
 
+	_ = s.rebalanceDemandLocked()
+
+	s.lastProbeFinished = time.Now()
 	s.probing = nil
+	return nil
+}
+
+func (s *InterferenceAwareScheduler) rebalanceDemandLocked() error {
+	if s.sockets <= 1 {
+		return nil
+	}
+	if s.cpuAllocator == nil {
+		return nil
+	}
+
+	type item struct {
+		idx  int
+		ways int
+		mem  float64
+	}
+
+	items := make([]item, 0, len(s.profiles))
+	for idx, p := range s.profiles {
+		if p == nil || p.pid == 0 || !p.evaluated {
+			continue
+		}
+		// Only move containers that are currently in benchmark (no kept allocations).
+		if p.l3Mask != 0 || p.memAlloc != 0 {
+			continue
+		}
+		ways := p.demandWays
+		mem := p.demandMem
+		if ways <= 0 {
+			ways = 1
+		}
+		if mem < 0 {
+			mem = 0
+		}
+		items = append(items, item{idx: idx, ways: ways, mem: mem})
+	}
+	if len(items) == 0 {
+		return nil
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].ways != items[j].ways {
+			return items[i].ways > items[j].ways
+		}
+		return items[i].mem > items[j].mem
+	})
+
+	loadWays := make([]int, s.sockets)
+	loadMem := make([]float64, s.sockets)
+	capWays := s.totalWays
+	if capWays <= 0 {
+		capWays = 12
+	}
+	capMem := 100.0
+
+	chooseSocket := func(it item) int {
+		bestSock := 0
+		bestScore := 1e9
+		for sock := 0; sock < s.sockets; sock++ {
+			pw := float64(loadWays[sock]+it.ways) / float64(capWays)
+			pm := (loadMem[sock] + it.mem) / capMem
+			score := pw
+			if pm > score {
+				score = pm
+			}
+			if score < bestScore {
+				bestScore = score
+				bestSock = sock
+			}
+		}
+		return bestSock
+	}
+
+	for _, it := range items {
+		sock := chooseSocket(it)
+		p := s.profiles[it.idx]
+		if p == nil {
+			continue
+		}
+		loadWays[sock] += it.ways
+		loadMem[sock] += it.mem
+
+		if p.containerID == "" {
+			continue
+		}
+		if p.socket == sock {
+			continue
+		}
+		if _, err := s.cpuAllocator.Move(it.idx, p.containerID, sock); err != nil {
+			continue
+		}
+		p.socket = sock
+		_ = s.moveContainerCgroupLocked(it.idx, s.benchmarkClass)
+	}
+
 	return nil
 }
 
@@ -785,14 +1087,22 @@ func (s *InterferenceAwareScheduler) setContainerAllocationLocked(containerIndex
 
 	// If container already has an allocation, reclaim it to benchmark first.
 	if p.l3Mask != 0 || p.memAlloc > 0 {
+		prevSocket := p.socket
+		if prevSocket < 0 {
+			prevSocket = socket
+		}
+		if prevSocket >= s.sockets {
+			prevSocket = 0
+		}
+
 		// Clear container class allocation.
 		_ = s.rdtAccountant.UpdateClass(p.className, nil, nil)
 
 		// Reclaim into pool.
-		s.benchmarkMask[socket] |= p.l3Mask
-		s.benchmarkMem[socket] += p.memAlloc
-		if s.benchmarkMem[socket] > 100 {
-			s.benchmarkMem[socket] = 100
+		s.benchmarkMask[prevSocket] |= p.l3Mask
+		s.benchmarkMem[prevSocket] += p.memAlloc
+		if s.benchmarkMem[prevSocket] > 100 {
+			s.benchmarkMem[prevSocket] = 100
 		}
 		if err := s.updateBenchmarkClassLocked(); err != nil {
 			return err
