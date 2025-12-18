@@ -51,24 +51,24 @@ second:
     docker: true
     rdt: true
 
-# third:
-#   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-#   command: "stress-ng --matrix-3d 1 --timeout 0 "
-#   start_t: 10
-#   data:
-#     frequency: 100
-#     perf: true
-#     docker: true
-#     rdt: true
+third:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --matrix-3d 1 --timeout 0 "
+  start_t: 10
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
 
 
-# four:
-#   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-#   command: "stress-ng --matrix-3d 1 --timeout 0 "
-#   start_t: 30
-#   #num_cores: 7
-#   data:
-#     frequency: 100
-#     perf: true
-#     docker: true
-#     rdt: true
+four:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --matrix-3d 1 --timeout 0 "
+  start_t: 30
+  #num_cores: 7
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true

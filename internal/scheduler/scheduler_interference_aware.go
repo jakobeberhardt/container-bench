@@ -35,9 +35,9 @@ type interferenceCandidate struct {
 }
 
 type containerProfile struct {
-	index       int
-	pid         int
-	containerID string
+	index        int
+	pid          int
+	containerID  string
 	containerKey string
 	startedAt    time.Time
 
@@ -56,6 +56,7 @@ type containerProfile struct {
 
 type activeProbe struct {
 	containerIndex int
+	originalSocket int
 	socket         int
 	socketOrder    []int
 	socketPos      int
@@ -108,7 +109,7 @@ type InterferenceAwareScheduler struct {
 	totalWays      int
 	sockets        int
 
-	probing *activeProbe
+	probing           *activeProbe
 	lastProbeFinished time.Time
 
 	probeQueue  []int
@@ -201,13 +202,13 @@ func (s *InterferenceAwareScheduler) Initialize(accountant *accounting.RDTAccoun
 			}
 		}
 		p := &containerProfile{
-			index:       c.Index,
-			pid:         c.PID,
-			containerID: c.ContainerID,
+			index:        c.Index,
+			pid:          c.PID,
+			containerID:  c.ContainerID,
 			containerKey: containerKey,
-			startedAt:   time.Now(),
-			socket:      -1,
-			className:   s.containerClassName(c.Index, containerKey),
+			startedAt:    time.Now(),
+			socket:       -1,
+			className:    s.containerClassName(c.Index, containerKey),
 		}
 		s.profiles[c.Index] = p
 		if c.PID != 0 {
@@ -394,6 +395,18 @@ func (s *InterferenceAwareScheduler) OnContainerStart(info ContainerInfo) error 
 		_ = s.moveContainerCgroupLocked(info.Index, s.benchmarkClass)
 	}
 
+	// Interference-aware admission: place new container on the least-loaded socket.
+	if s.cpuAllocator != nil && p.containerID != "" {
+		if bestSock, ok := s.pickBestSocketForContainerLocked(info.Index); ok {
+			if p.socket != bestSock {
+				if _, err := s.cpuAllocator.Move(info.Index, p.containerID, bestSock); err == nil {
+					p.socket = bestSock
+					_ = s.moveContainerCgroupLocked(info.Index, s.benchmarkClass)
+				}
+			}
+		}
+	}
+
 	// Enqueue for probing.
 	if info.PID != 0 {
 		s.enqueueProbeLocked(info.Index)
@@ -429,7 +442,7 @@ func (s *InterferenceAwareScheduler) OnContainerStop(containerIndex int) error {
 	if s.rdtAccountant != nil {
 		_ = s.releaseContainerAllocationLocked(containerIndex)
 		if s.config != nil && s.config.Reallocate {
-			_ = s.reallocateLocked()
+			_ = s.rebalanceDemandLocked()
 		}
 	}
 
@@ -476,6 +489,115 @@ func (s *InterferenceAwareScheduler) containerClassName(containerIndex int, cont
 		return fmt.Sprintf("bench-c%d-%s", containerIndex, key)
 	}
 	return fmt.Sprintf("bench-c%d", containerIndex)
+}
+
+func (s *InterferenceAwareScheduler) probeMaxFromConfigLocked() (int, float64) {
+	maxL3 := 4
+	maxMem := 30.0
+	if s.config != nil {
+		if s.config.MaxL3 > 0 {
+			maxL3 = s.config.MaxL3
+		}
+		if s.config.MaxMem > 0 {
+			maxMem = s.config.MaxMem
+		}
+	}
+	return maxL3, maxMem
+}
+
+func (s *InterferenceAwareScheduler) estimatedDemandForIndexLocked(containerIndex int) (int, float64, bool) {
+	p := s.profiles[containerIndex]
+	if p == nil || p.pid == 0 {
+		return 0, 0, false
+	}
+	if p.evaluated {
+		ways := p.demandWays
+		mem := p.demandMem
+		if ways <= 0 {
+			ways = 1
+		}
+		if mem < 0 {
+			mem = 0
+		}
+		return ways, mem, true
+	}
+	maxL3, maxMem := s.probeMaxFromConfigLocked()
+	return maxL3, maxMem, true
+}
+
+func socketInterferenceScore(loadWays int, loadMem float64, capWays int) float64 {
+	if capWays <= 0 {
+		capWays = 12
+	}
+	pw := float64(loadWays) / float64(capWays)
+	pm := loadMem / 100.0
+	if pm > pw {
+		return pm
+	}
+	return pw
+}
+
+func (s *InterferenceAwareScheduler) socketLoadExcludingLocked(socket int, excludeIndex int) (int, float64) {
+	ways := 0
+	mem := 0.0
+	for idx := range s.profiles {
+		if idx == excludeIndex {
+			continue
+		}
+		p := s.profiles[idx]
+		if p == nil || p.pid == 0 {
+			continue
+		}
+		if p.socket != socket {
+			continue
+		}
+		dw, dm, ok := s.estimatedDemandForIndexLocked(idx)
+		if !ok {
+			continue
+		}
+		ways += dw
+		mem += dm
+	}
+	return ways, mem
+}
+
+func (s *InterferenceAwareScheduler) pickBestSocketForContainerLocked(containerIndex int) (int, bool) {
+	if s.sockets <= 0 {
+		s.sockets = 1
+	}
+	dw, dm, ok := s.estimatedDemandForIndexLocked(containerIndex)
+	if !ok {
+		return 0, false
+	}
+	bestSock := 0
+	bestScore := 1e9
+	for sock := 0; sock < s.sockets; sock++ {
+		lw, lm := s.socketLoadExcludingLocked(sock, containerIndex)
+		score := socketInterferenceScore(lw+dw, lm+dm, s.totalWays)
+		if score < bestScore {
+			bestScore = score
+			bestSock = sock
+		}
+	}
+	return bestSock, true
+}
+
+func (s *InterferenceAwareScheduler) currentSocketForContainerLocked(containerIndex int) int {
+	// Prefer scheduler-tracked socket.
+	if p := s.profiles[containerIndex]; p != nil {
+		if p.socket >= 0 && p.socket < s.sockets {
+			return p.socket
+		}
+	}
+	// Fallback: infer from current CPU assignment.
+	if s.cpuAllocator != nil && s.hostConfig != nil {
+		if cpuIDs, ok := s.cpuAllocator.Get(containerIndex); ok {
+			if sock, err := s.hostConfig.SocketOfPhysicalCPUs(cpuIDs); err == nil {
+				return sock
+			}
+		}
+	}
+	return 0
 }
 
 func (s *InterferenceAwareScheduler) ensureBenchmarkClassLocked() error {
@@ -589,30 +711,24 @@ func (s *InterferenceAwareScheduler) startProbeLocked(dfs *dataframe.DataFrames,
 		return fmt.Errorf("no probe candidates")
 	}
 
-	// Probe order: start on current socket (if known), then try the others.
-	socketOrder := make([]int, 0, s.sockets)
-	startSock := 0
-	if p.socket >= 0 && p.socket < s.sockets {
-		startSock = p.socket
-	}
-	socketOrder = append(socketOrder, startSock)
-	for sock := 0; sock < s.sockets; sock++ {
-		if sock == startSock {
-			continue
-		}
-		socketOrder = append(socketOrder, sock)
-	}
-	if len(socketOrder) == 0 {
-		socketOrder = []int{0}
-	}
+	// Probe is about finding resource demand; it does not depend on socket.
+	// Stay on the container's current/admitted socket for the entire probe.
+	startSock := s.currentSocketForContainerLocked(containerIndex)
+	socketOrder := []int{startSock}
 
 	candDur := time.Duration(float64(time.Second) * (budgetSeconds / float64(len(candidates))))
 	if candDur < time.Duration(defaultMinCandidateDurationMillis)*time.Millisecond {
 		candDur = time.Duration(defaultMinCandidateDurationMillis) * time.Millisecond
 	}
 
+	origSock := startSock
+	if origSock < 0 || origSock >= s.sockets {
+		origSock = 0
+	}
+
 	s.probing = &activeProbe{
 		containerIndex: containerIndex,
+		originalSocket: origSock,
 		socketOrder:    socketOrder,
 		socketPos:      0,
 		socketResults:  make(map[int]*probeSocketResult),
@@ -763,6 +879,9 @@ func (s *InterferenceAwareScheduler) startProbeOnSocketLocked(dfs *dataframe.Dat
 		return fmt.Errorf("unknown container %d", containerIndex)
 	}
 
+	// Ensure we probe on the container's current socket (no CPU moves during probing).
+	socket = s.currentSocketForContainerLocked(containerIndex)
+
 	// Reset candidate tracking for this socket.
 	ap.socket = socket
 	ap.candidateIdx = 0
@@ -774,12 +893,7 @@ func (s *InterferenceAwareScheduler) startProbeOnSocketLocked(dfs *dataframe.Dat
 
 	// Ensure container starts from benchmark pool on this socket.
 	_ = s.resetContainerToBenchmarkLocked(containerIndex)
-	if s.cpuAllocator != nil {
-		if _, err := s.cpuAllocator.Move(containerIndex, p.containerID, socket); err != nil {
-			return fmt.Errorf("failed to move container %d to probe socket %d: %w", containerIndex, socket, err)
-		}
-	}
-	p.socket = socket
+	// Keep p.socket intact; probing must not change placement.
 
 	ap.startedAt = time.Now()
 	ap.startStep = latestStepNumber(dfs, containerIndex)
@@ -929,12 +1043,39 @@ func (s *InterferenceAwareScheduler) finalizeProbeLocked() error {
 
 	// Ensure container is in benchmark pool before final decision.
 	_ = s.resetContainerToBenchmarkLocked(containerIndex)
-	if s.cpuAllocator != nil && p.containerID != "" {
-		if _, err := s.cpuAllocator.Move(containerIndex, p.containerID, bestSocket); err != nil {
-			s.schedulerLogger.WithError(err).WithFields(logrus.Fields{"container": containerIndex, "socket": bestSocket}).Warn("Failed to move container to chosen socket")
+
+	// Only move sockets if it reduces estimated interference.
+	// NOTE: p.socket is mutated during probing as we hop sockets; use the original socket captured at probe start.
+	currentSocket := ap.originalSocket
+	if currentSocket < 0 || currentSocket >= s.sockets {
+		currentSocket = 0
+	}
+	shouldMove := false
+	if s.sockets > 1 && bestSocket != currentSocket {
+		lwCur, lmCur := s.socketLoadExcludingLocked(currentSocket, containerIndex)
+		lwBest, lmBest := s.socketLoadExcludingLocked(bestSocket, containerIndex)
+		curScore := socketInterferenceScore(lwCur+p.demandWays, lmCur+p.demandMem, s.totalWays)
+		bestScore := socketInterferenceScore(lwBest+p.demandWays, lmBest+p.demandMem, s.totalWays)
+		if bestScore+0.01 < curScore {
+			shouldMove = true
 		}
 	}
-	p.socket = bestSocket
+
+	if s.cpuAllocator != nil && p.containerID != "" {
+		target := currentSocket
+		if shouldMove {
+			target = bestSocket
+		}
+		if target != p.socket {
+			if _, err := s.cpuAllocator.Move(containerIndex, p.containerID, target); err != nil {
+				s.schedulerLogger.WithError(err).WithFields(logrus.Fields{"container": containerIndex, "from_socket": p.socket, "to_socket": target}).Warn("Failed to move container socket")
+			} else {
+				p.socket = target
+			}
+		}
+	} else {
+		p.socket = currentSocket
+	}
 	_ = s.moveContainerCgroupLocked(containerIndex, s.benchmarkClass)
 
 	// Allocation retention policy:
@@ -953,20 +1094,22 @@ func (s *InterferenceAwareScheduler) finalizeProbeLocked() error {
 	}
 
 	s.schedulerLogger.WithFields(logrus.Fields{
-		"container":   containerIndex,
-		"socket":      bestSocket,
-		"ways":        p.demandWays,
-		"mem":         p.demandMem,
-		"best_eff":    bestEff,
-		"unbound":     p.unbound,
-		"kept_alloc":  keep,
-		"skip_alloc":  skipAlloc,
+		"container":     containerIndex,
+		"socket":        bestSocket,
+		"ways":          p.demandWays,
+		"mem":           p.demandMem,
+		"best_eff":      bestEff,
+		"unbound":       p.unbound,
+		"kept_alloc":    keep,
+		"skip_alloc":    skipAlloc,
 		"alloc_unbound": allocateUnbound,
-		"stop_reason": bestReason,
-		"sockets":     len(ap.socketResults),
+		"stop_reason":   bestReason,
+		"sockets":       len(ap.socketResults),
 	}).Info("Finished interference-aware probing")
 
-	_ = s.rebalanceDemandLocked()
+	if s.config != nil && s.config.Reallocate {
+		_ = s.rebalanceDemandLocked()
+	}
 
 	s.lastProbeFinished = time.Now()
 	s.probing = nil
@@ -974,42 +1117,73 @@ func (s *InterferenceAwareScheduler) finalizeProbeLocked() error {
 }
 
 func (s *InterferenceAwareScheduler) rebalanceDemandLocked() error {
-	if s.sockets <= 1 {
-		return nil
-	}
-	if s.cpuAllocator == nil {
+	if s.sockets <= 1 || s.cpuAllocator == nil {
 		return nil
 	}
 
+	const eps = 0.02
+
 	type item struct {
-		idx  int
-		ways int
-		mem  float64
+		idx       int
+		curSocket int
+		ways      int
+		mem       float64
 	}
+
+	capWays := s.totalWays
+	if capWays <= 0 {
+		capWays = 12
+	}
+
+	// Base loads include containers we won't move (kept allocations) plus all containers with unknown IDs.
+	baseWays := make([]int, s.sockets)
+	baseMem := make([]float64, s.sockets)
 
 	items := make([]item, 0, len(s.profiles))
 	for idx, p := range s.profiles {
-		if p == nil || p.pid == 0 || !p.evaluated {
+		if p == nil || p.pid == 0 {
 			continue
 		}
-		// Only move containers that are currently in benchmark (no kept allocations).
-		if p.l3Mask != 0 || p.memAlloc != 0 {
+		curSock := p.socket
+		if curSock < 0 || curSock >= s.sockets {
+			curSock = 0
+		}
+		dw, dm, ok := s.estimatedDemandForIndexLocked(idx)
+		if !ok {
 			continue
 		}
-		ways := p.demandWays
-		mem := p.demandMem
-		if ways <= 0 {
-			ways = 1
+
+		movable := (p.l3Mask == 0 && p.memAlloc == 0 && p.containerID != "")
+		if !movable {
+			baseWays[curSock] += dw
+			baseMem[curSock] += dm
+			continue
 		}
-		if mem < 0 {
-			mem = 0
-		}
-		items = append(items, item{idx: idx, ways: ways, mem: mem})
+
+		items = append(items, item{idx: idx, curSocket: curSock, ways: dw, mem: dm})
 	}
 	if len(items) == 0 {
 		return nil
 	}
 
+	// Current objective.
+	curWays := make([]int, s.sockets)
+	curMem := make([]float64, s.sockets)
+	copy(curWays, baseWays)
+	copy(curMem, baseMem)
+	for _, it := range items {
+		curWays[it.curSocket] += it.ways
+		curMem[it.curSocket] += it.mem
+	}
+	currentObj := 0.0
+	for sock := 0; sock < s.sockets; sock++ {
+		s := socketInterferenceScore(curWays[sock], curMem[sock], capWays)
+		if s > currentObj {
+			currentObj = s
+		}
+	}
+
+	// Planned objective (greedy minimize max socket score).
 	sort.Slice(items, func(i, j int) bool {
 		if items[i].ways != items[j].ways {
 			return items[i].ways > items[j].ways
@@ -1017,51 +1191,65 @@ func (s *InterferenceAwareScheduler) rebalanceDemandLocked() error {
 		return items[i].mem > items[j].mem
 	})
 
-	loadWays := make([]int, s.sockets)
-	loadMem := make([]float64, s.sockets)
-	capWays := s.totalWays
-	if capWays <= 0 {
-		capWays = 12
-	}
-	capMem := 100.0
+	plWays := make([]int, s.sockets)
+	plMem := make([]float64, s.sockets)
+	copy(plWays, baseWays)
+	copy(plMem, baseMem)
+	targetSock := make(map[int]int, len(items))
 
-	chooseSocket := func(it item) int {
+	for _, it := range items {
 		bestSock := 0
-		bestScore := 1e9
+		bestObj := 1e9
 		for sock := 0; sock < s.sockets; sock++ {
-			pw := float64(loadWays[sock]+it.ways) / float64(capWays)
-			pm := (loadMem[sock] + it.mem) / capMem
-			score := pw
-			if pm > score {
-				score = pm
+			// Compute objective if we place this item on sock.
+			maxScore := 0.0
+			for sidx := 0; sidx < s.sockets; sidx++ {
+				w := plWays[sidx]
+				m := plMem[sidx]
+				if sidx == sock {
+					w += it.ways
+					m += it.mem
+				}
+				score := socketInterferenceScore(w, m, capWays)
+				if score > maxScore {
+					maxScore = score
+				}
 			}
-			if score < bestScore {
-				bestScore = score
+			if maxScore < bestObj {
+				bestObj = maxScore
 				bestSock = sock
 			}
 		}
-		return bestSock
+		targetSock[it.idx] = bestSock
+		plWays[bestSock] += it.ways
+		plMem[bestSock] += it.mem
+	}
+
+	plannedObj := 0.0
+	for sock := 0; sock < s.sockets; sock++ {
+		s := socketInterferenceScore(plWays[sock], plMem[sock], capWays)
+		if s > plannedObj {
+			plannedObj = s
+		}
+	}
+
+	if plannedObj+eps >= currentObj {
+		return nil
 	}
 
 	for _, it := range items {
-		sock := chooseSocket(it)
 		p := s.profiles[it.idx]
-		if p == nil {
+		if p == nil || p.containerID == "" {
 			continue
 		}
-		loadWays[sock] += it.ways
-		loadMem[sock] += it.mem
-
-		if p.containerID == "" {
+		dst := targetSock[it.idx]
+		if dst == it.curSocket {
 			continue
 		}
-		if p.socket == sock {
+		if _, err := s.cpuAllocator.Move(it.idx, p.containerID, dst); err != nil {
 			continue
 		}
-		if _, err := s.cpuAllocator.Move(it.idx, p.containerID, sock); err != nil {
-			continue
-		}
-		p.socket = sock
+		p.socket = dst
 		_ = s.moveContainerCgroupLocked(it.idx, s.benchmarkClass)
 	}
 

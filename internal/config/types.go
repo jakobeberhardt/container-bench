@@ -46,8 +46,8 @@ type SchedulerConfig struct {
 	Reallocate                 bool    `yaml:"reallocate,omitempty"`                    // opportunistic reallocation when jobs finish
 	SkipAllocationAfterProbing *bool   `yaml:"skip_allocation_after_probing,omitempty"` // if true, never keep allocations after probing (default: true)
 	AllocateUnbound            bool    `yaml:"allocate_unbound,omitempty"`              // keep allocation for unbound containers even if skip_allocation_after_probing is true
-	WarmupT                   int     `yaml:"warmup_t,omitempty"`                      // seconds after container start before it can be probed (default: 5)
-	CooldownT                 int     `yaml:"cooldown_t,omitempty"`                    // minimum seconds between probes (default: 2)
+	WarmupT                    int     `yaml:"warmup_t,omitempty"`                      // seconds after container start before it can be probed (default: 5)
+	CooldownT                  int     `yaml:"cooldown_t,omitempty"`                    // minimum seconds between probes (default: 2)
 
 	Prober    *ProberConfig    `yaml:"prober,omitempty"`
 	Allocator *AllocatorConfig `yaml:"allocator,omitempty"`
