@@ -33,11 +33,21 @@ type RegistryConfig struct {
 }
 
 type SchedulerConfig struct {
-	Implementation string           `yaml:"implementation"`
-	RDT            bool             `yaml:"rdt"`
-	LogLevel       string           `yaml:"log_level,omitempty"`
-	Prober         *ProberConfig    `yaml:"prober,omitempty"`
-	Allocator      *AllocatorConfig `yaml:"allocator,omitempty"`
+	Implementation string `yaml:"implementation"`
+	RDT            bool   `yaml:"rdt"`
+	LogLevel       string `yaml:"log_level,omitempty"`
+
+	// Interference-aware scheduler (implementation: "interference_aware")
+	MaxL3                      int     `yaml:"max_l3,omitempty"`                        // max exclusive cache ways to probe/allocate
+	MaxMem                     float64 `yaml:"max_mem,omitempty"`                       // max memory bandwidth percentage to probe/allocate
+	ProbingT                   float64 `yaml:"probing_t,omitempty"`                     // total probing time budget (seconds)
+	BreakCondition             float64 `yaml:"break_condition,omitempty"`               // stop probing when avg IPC efficiency >= this
+	BreakImprovement           float64 `yaml:"break_improvement,omitempty"`             // stop when relative improvement below this
+	Reallocate                 bool    `yaml:"reallocate,omitempty"`                    // opportunistic reallocation when jobs finish
+	SkipAllocationAfterProbing bool    `yaml:"skip_allocation_after_probing,omitempty"` // if true, never keep allocations after probing
+
+	Prober    *ProberConfig    `yaml:"prober,omitempty"`
+	Allocator *AllocatorConfig `yaml:"allocator,omitempty"`
 }
 
 type AllocatorConfig struct {

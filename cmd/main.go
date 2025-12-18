@@ -455,7 +455,8 @@ func runBenchmark(configFile string) error {
 			break
 		}
 	}
-	if bench.config.Benchmark.Scheduler.RDT {
+	// Some schedulers require RDT even when not explicitly enabled via scheduler.rdt.
+	if bench.config.Benchmark.Scheduler.RDT || bench.config.Benchmark.Scheduler.Implementation == "interference_aware" {
 		rdtNeeded = true
 	}
 
@@ -535,6 +536,9 @@ func runBenchmark(configFile string) error {
 	case "probe_allocation":
 		logger.Info("Using probe allocation scheduler")
 		bench.scheduler = scheduler.NewProbeAllocationScheduler()
+	case "interference_aware":
+		logger.Info("Using interference-aware scheduler")
+		bench.scheduler = scheduler.NewInterferenceAwareScheduler()
 	default:
 		logger.WithField("implementation", schedulerImpl).Warn("Unknown scheduler implementation, using default")
 		bench.scheduler = scheduler.NewDefaultScheduler()
@@ -1093,7 +1097,8 @@ func (cb *ContainerBench) initializeSchedulerWithPIDs() error {
 
 	// Create RDT accountant if supported
 	var rdtAccountant *accounting.RDTAccountant
-	if cb.hostConfig.RDT.Supported && cb.config.Benchmark.Scheduler.RDT {
+	requiresRDT := cb.config.Benchmark.Scheduler.RDT || cb.config.Benchmark.Scheduler.Implementation == "interference_aware"
+	if cb.hostConfig.RDT.Supported && requiresRDT {
 		rdtAllocator := allocation.NewDefaultRDTAllocator()
 		logger.Info("RDT allocator created")
 
@@ -1112,7 +1117,7 @@ func (cb *ContainerBench) initializeSchedulerWithPIDs() error {
 			}
 		}
 	} else {
-		logger.Debug("RDT accountant not created (RDT not supported or not enabled)")
+		logger.Debug("RDT accountant not created (RDT not supported or not required)")
 	}
 
 	// Initialize scheduler with accountant and container information

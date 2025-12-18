@@ -3,6 +3,8 @@ package collectors
 import (
 	"fmt"
 	"io/ioutil"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -556,11 +558,19 @@ func (rc *RDTCollector) detectAndHandleClassMigration() error {
 	// Delete the old monitoring group from the old class
 	if rc.ctrlGroup != nil && rc.monGroupName != "" {
 		if err := rc.ctrlGroup.DeleteMonGroup(rc.monGroupName); err != nil {
-			rc.logger.WithError(err).WithFields(logrus.Fields{
+			msg := strings.ToLower(err.Error())
+			fields := logrus.Fields{
 				"pid":       rc.pid,
 				"old_class": oldClassName,
 				"mon_group": rc.monGroupName,
-			}).Warn("Failed to delete old monitoring group during migration")
+			}
+			// Benign race: old class/mon_group may already be gone if the scheduler deleted
+			// the old class or another sync cycle already cleaned it up.
+			if strings.Contains(msg, "resctrl group not found") || strings.Contains(msg, "no such file") || strings.Contains(msg, "not found") {
+				rc.logger.WithError(err).WithFields(fields).Debug("Old monitoring group already gone during migration")
+			} else {
+				rc.logger.WithError(err).WithFields(fields).Warn("Failed to delete old monitoring group during migration")
+			}
 			// Continue anyway - we'll create the new one
 		} else {
 			rc.logger.WithFields(logrus.Fields{
@@ -628,9 +638,11 @@ func (rc *RDTCollector) Collect() *dataframe.RDTMetrics {
 		// Don't return - try to collect anyway with current monitoring group
 	}
 
-	// Thread-safe read of monGroup after migration check
+	// Thread-safe read of state after migration check
 	rc.mu.RLock()
 	monGroup := rc.monGroup
+	className := rc.className
+	monGroupName := rc.monGroupName
 	rc.mu.RUnlock()
 
 	// Verify monitoring group is valid
@@ -638,9 +650,36 @@ func (rc *RDTCollector) Collect() *dataframe.RDTMetrics {
 		rc.logger.WithField("pid", rc.pid).Trace("No valid monitoring group available for collection")
 		return nil
 	}
+	if className != "" && monGroupName != "" {
+		monDataPath := filepath.Join("/sys/fs/resctrl", className, "mon_groups", monGroupName, "mon_data")
+		if _, err := os.Stat(monDataPath); err != nil {
+			if os.IsNotExist(err) {
+				rc.logger.WithFields(logrus.Fields{
+					"pid":       rc.pid,
+					"class":     className,
+					"mon_group": monGroupName,
+					"mon_data":  monDataPath,
+				}).Debug("mon_data missing; recreating monitoring group")
+				if rerr := rc.recreateMonitoringGroup(); rerr != nil {
+					rc.logger.WithError(rerr).WithField("pid", rc.pid).Debug("Failed to recreate monitoring group")
+				}
+				// Re-read after recreation attempt
+				rc.mu.RLock()
+				monGroup = rc.monGroup
+				rc.mu.RUnlock()
+				if monGroup == nil {
+					return nil
+				}
+			}
+		}
+	}
 
 	// Get monitoring data - may fail if monitoring group was deleted during class update
+	// Hold the lock during GetMonData so the PID-sync ticker can't migrate/delete
+	// the monitoring group concurrently (which can cause transient mon_data ENOENT).
+	rc.mu.RLock()
 	monData := monGroup.GetMonData()
+	rc.mu.RUnlock()
 
 	// If we got no data, check if this is due to monitoring group being deleted
 	// This can happen during RDT class updates in allocation probes
@@ -672,9 +711,9 @@ func (rc *RDTCollector) Collect() *dataframe.RDTMetrics {
 	rc.processL3MonitoringData(&monData, metrics)
 
 	// Add RDT class information
-	className := rc.className
+	className = rc.className
 	metrics.RDTClassName = &className
-	monGroupName := rc.monGroupName
+	monGroupName = rc.monGroupName
 	metrics.MonGroupName = &monGroupName
 
 	rc.calculateDerivedMetrics(metrics)
@@ -682,6 +721,57 @@ func (rc *RDTCollector) Collect() *dataframe.RDTMetrics {
 	rc.getAllocationInfo(metrics)
 
 	return metrics
+}
+
+// recreateMonitoringGroup recreates (or re-attaches to) the monitoring group under the
+// container's current RDT class. This is a best-effort repair for transient races when
+// classes are recreated/deleted while collectors are running.
+func (rc *RDTCollector) recreateMonitoringGroup() error {
+	currentCtrlGroup, currentClassName, err := findRDTClassForPID(rc.pidStr)
+	if err != nil {
+		return err
+	}
+
+	rc.mu.Lock()
+	if rc.isClosing {
+		rc.mu.Unlock()
+		return fmt.Errorf("collector is closing")
+	}
+	monGroupName := rc.monGroupName
+	rc.mu.Unlock()
+
+	if monGroupName == "" {
+		return fmt.Errorf("monitoring group name not set")
+	}
+
+	// Attach to existing mon group if it exists, otherwise create it.
+	if mg, ok := currentCtrlGroup.GetMonGroup(monGroupName); ok {
+		rc.mu.Lock()
+		rc.ctrlGroup = currentCtrlGroup
+		rc.className = currentClassName
+		rc.monGroup = mg
+		rc.mu.Unlock()
+	} else {
+		mg, err := currentCtrlGroup.CreateMonGroup(monGroupName, map[string]string{
+			"container-bench": "true",
+			"pid":             rc.pidStr,
+		})
+		if err != nil {
+			return err
+		}
+		rc.mu.Lock()
+		rc.ctrlGroup = currentCtrlGroup
+		rc.className = currentClassName
+		rc.monGroup = mg
+		rc.mu.Unlock()
+	}
+
+	// Best-effort: re-sync cgroup PIDs into ctrl+mon groups.
+	if err := rc.syncCGroupPIDs(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (rc *RDTCollector) processL3MonitoringData(monData *rdt.MonData, metrics *dataframe.RDTMetrics) {

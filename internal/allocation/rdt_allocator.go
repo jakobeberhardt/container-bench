@@ -3,6 +3,7 @@ package allocation
 import (
 	"fmt"
 	"strconv"
+	"sync"
 
 	"container-bench/internal/logging"
 
@@ -16,6 +17,11 @@ type DefaultRDTAllocator struct {
 	logger         *logrus.Logger
 	initialized    bool
 	managedClasses map[string]rdt.CtrlGroup // Classes created by this allocator
+	managedConfigs map[string]struct {
+		Socket0 *SocketAllocation
+		Socket1 *SocketAllocation
+	}
+	mu sync.Mutex
 }
 
 // NewDefaultRDTAllocator creates a new RDT allocator instance
@@ -23,6 +29,10 @@ func NewDefaultRDTAllocator() *DefaultRDTAllocator {
 	return &DefaultRDTAllocator{
 		logger:         logging.GetSchedulerLogger(),
 		managedClasses: make(map[string]rdt.CtrlGroup),
+		managedConfigs: make(map[string]struct {
+			Socket0 *SocketAllocation
+			Socket1 *SocketAllocation
+		}),
 	}
 }
 
@@ -58,25 +68,21 @@ func (a *DefaultRDTAllocator) CreateRDTClass(className string, socket0, socket1 
 		return fmt.Errorf("RDT allocator not initialized")
 	}
 
-	// Check if we're already managing this class
-	if _, tracked := a.managedClasses[className]; tracked {
-		a.logger.WithField("class_name", className).Debug("RDT class already exists")
-		return nil
-	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
 
-	// Create using CreateAllRDTClasses
-	classes := map[string]struct {
+	// Treat create as upsert: goresctrl SetConfig will create/update.
+	a.managedConfigs[className] = struct {
 		Socket0 *SocketAllocation
 		Socket1 *SocketAllocation
-	}{
-		className: {
-			Socket0: socket0,
-			Socket1: socket1,
-		},
+	}{Socket0: socket0, Socket1: socket1}
+
+	if err := a.applyManagedConfigLocked(false); err != nil {
+		return fmt.Errorf("failed to create RDT class %s: %w", className, err)
 	}
 
-	if err := a.CreateAllRDTClasses(classes); err != nil {
-		return fmt.Errorf("failed to create RDT class %s: %w", className, err)
+	if ctrlGroup, exists := rdt.GetClass(className); exists {
+		a.managedClasses[className] = ctrlGroup
 	}
 
 	a.logger.WithField("class_name", className).Info("RDT class created successfully")
@@ -88,19 +94,21 @@ func (a *DefaultRDTAllocator) UpdateRDTClass(className string, socket0, socket1 
 		return fmt.Errorf("RDT allocator not initialized")
 	}
 
-	// Update using CreateAllRDTClasses (SetConfig handles updates)
-	classes := map[string]struct {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Treat update as upsert as well.
+	a.managedConfigs[className] = struct {
 		Socket0 *SocketAllocation
 		Socket1 *SocketAllocation
-	}{
-		className: {
-			Socket0: socket0,
-			Socket1: socket1,
-		},
+	}{Socket0: socket0, Socket1: socket1}
+
+	if err := a.applyManagedConfigLocked(false); err != nil {
+		return fmt.Errorf("failed to update RDT class %s: %w", className, err)
 	}
 
-	if err := a.CreateAllRDTClasses(classes); err != nil {
-		return fmt.Errorf("failed to update RDT class %s: %w", className, err)
+	if ctrlGroup, exists := rdt.GetClass(className); exists {
+		a.managedClasses[className] = ctrlGroup
 	}
 
 	a.logger.WithField("class_name", className).Info("RDT class updated successfully")
@@ -116,20 +124,53 @@ func (a *DefaultRDTAllocator) CreateAllRDTClasses(classes map[string]struct {
 		return fmt.Errorf("RDT allocator not initialized")
 	}
 
-	a.logger.WithField("total_classes", len(classes)).Info("Creating all RDT classes in single configuration")
+	a.mu.Lock()
+	defer a.mu.Unlock()
 
-	// Create the classes map for the Config structure
+	// Replace the managed config set.
+	a.managedConfigs = make(map[string]struct {
+		Socket0 *SocketAllocation
+		Socket1 *SocketAllocation
+	}, len(classes))
+	for name, cfg := range classes {
+		a.managedConfigs[name] = struct {
+			Socket0 *SocketAllocation
+			Socket1 *SocketAllocation
+		}{Socket0: cfg.Socket0, Socket1: cfg.Socket1}
+	}
+
+	if err := a.applyManagedConfigLocked(false); err != nil {
+		return err
+	}
+
+	// Refresh managed class handles.
+	a.managedClasses = make(map[string]rdt.CtrlGroup)
+	for className := range a.managedConfigs {
+		if ctrlGroup, exists := rdt.GetClass(className); exists {
+			a.managedClasses[className] = ctrlGroup
+		}
+	}
+
+	a.logger.WithField("classes_created", len(classes)).Info("All RDT classes created successfully")
+	return nil
+	/*
+		NOTE: This method historically applied the provided classes directly.
+		It now replaces the allocator's managed class set to avoid partial SetConfig updates.
+	*/
+}
+
+func (a *DefaultRDTAllocator) applyManagedConfigLocked(force bool) error {
+	a.logger.WithField("total_classes", len(a.managedConfigs)).Info("Creating all RDT classes in single configuration")
+
 	configClasses := make(map[string]struct {
 		L2Allocation rdt.CatConfig         `json:"l2Allocation"`
 		L3Allocation rdt.CatConfig         `json:"l3Allocation"`
 		MBAllocation rdt.MbaConfig         `json:"mbAllocation"`
 		Kubernetes   rdt.KubernetesOptions `json:"kubernetes"`
-	})
+	}, len(a.managedConfigs))
 
-	for className, classConfig := range classes {
-		// Build L3 allocation for socket 0 and 1
+	for className, classConfig := range a.managedConfigs {
 		l3Config := rdt.CatConfig{}
-
 		if classConfig.Socket0 != nil {
 			l3Alloc, err := a.resolveL3Allocation(classConfig.Socket0)
 			if err != nil {
@@ -139,7 +180,6 @@ func (a *DefaultRDTAllocator) CreateAllRDTClasses(classes map[string]struct {
 				l3Config["0"] = rdt.CacheIdCatConfig{Unified: l3Alloc}
 			}
 		}
-
 		if classConfig.Socket1 != nil {
 			l3Alloc, err := a.resolveL3Allocation(classConfig.Socket1)
 			if err != nil {
@@ -150,15 +190,12 @@ func (a *DefaultRDTAllocator) CreateAllRDTClasses(classes map[string]struct {
 			}
 		}
 
-		// Build MB allocation for socket 0 and 1
 		mbConfig := rdt.MbaConfig{}
-
 		if classConfig.Socket0 != nil {
 			if mbAlloc := resolveMBAllocation(classConfig.Socket0); mbAlloc != "" {
 				mbConfig["0"] = rdt.CacheIdMbaConfig{mbAlloc}
 			}
 		}
-
 		if classConfig.Socket1 != nil {
 			if mbAlloc := resolveMBAllocation(classConfig.Socket1); mbAlloc != "" {
 				mbConfig["1"] = rdt.CacheIdMbaConfig{mbAlloc}
@@ -176,7 +213,6 @@ func (a *DefaultRDTAllocator) CreateAllRDTClasses(classes map[string]struct {
 		}
 	}
 
-	// Create the complete configuration with all classes
 	config := &rdt.Config{
 		Partitions: map[string]struct {
 			L2Allocation rdt.CatConfig `json:"l2Allocation"`
@@ -189,33 +225,23 @@ func (a *DefaultRDTAllocator) CreateAllRDTClasses(classes map[string]struct {
 				Kubernetes   rdt.KubernetesOptions `json:"kubernetes"`
 			} `json:"classes"`
 		}{
-			"": { // Root partition must have L3 and MB allocation defined
+			"": {
 				L3Allocation: rdt.CatConfig{
-					"0": rdt.CacheIdCatConfig{
-						Unified: rdt.CacheProportion("100%"), // Root partition gets full cache by default
-					},
+					rdt.CacheIdAll: rdt.CacheIdCatConfig{Unified: rdt.CacheProportion("100%")},
 				},
 				MBAllocation: rdt.MbaConfig{
-					"0": rdt.CacheIdMbaConfig{rdt.MbProportion("100%")}, // Root partition gets full bandwidth by default
+					rdt.CacheIdAll: rdt.CacheIdMbaConfig{rdt.MbProportion("100%")},
 				},
 				Classes: configClasses,
 			},
 		},
 	}
 
-	// Apply the configuration for all classes at once
-	if err := rdt.SetConfig(config, false); err != nil {
+	if err := rdt.SetConfig(config, force); err != nil {
 		return fmt.Errorf("failed to create RDT classes: %v", err)
 	}
 
-	// Track all created classes
-	for className := range classes {
-		if ctrlGroup, exists := rdt.GetClass(className); exists {
-			a.managedClasses[className] = ctrlGroup
-		}
-	}
-
-	a.logger.WithField("classes_created", len(classes)).Info("All RDT classes created successfully")
+	a.logger.WithField("classes_created", len(a.managedConfigs)).Info("All RDT classes created successfully")
 	return nil
 }
 
@@ -343,6 +369,9 @@ func (a *DefaultRDTAllocator) DeleteRDTClass(className string) error {
 		return fmt.Errorf("RDT allocator not initialized")
 	}
 
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	// First, move all PIDs from this class to the default class
 	ctrlGroup, exists := rdt.GetClass(className)
 	if !exists {
@@ -373,45 +402,11 @@ func (a *DefaultRDTAllocator) DeleteRDTClass(className string) error {
 		}
 	}
 
-	// Reset RDT configuration to remove the class
-	// This requires rebuilding the config without the target class
-	defaultConfig := &rdt.Config{
-		Partitions: map[string]struct {
-			L2Allocation rdt.CatConfig `json:"l2Allocation"`
-			L3Allocation rdt.CatConfig `json:"l3Allocation"`
-			MBAllocation rdt.MbaConfig `json:"mbAllocation"`
-			Classes      map[string]struct {
-				L2Allocation rdt.CatConfig         `json:"l2Allocation"`
-				L3Allocation rdt.CatConfig         `json:"l3Allocation"`
-				MBAllocation rdt.MbaConfig         `json:"mbAllocation"`
-				Kubernetes   rdt.KubernetesOptions `json:"kubernetes"`
-			} `json:"classes"`
-		}{
-			"": {
-				L3Allocation: rdt.CatConfig{
-					"0": rdt.CacheIdCatConfig{
-						Unified: rdt.CacheProportion("100%"),
-					},
-				},
-				MBAllocation: rdt.MbaConfig{
-					"0": rdt.CacheIdMbaConfig{rdt.MbProportion("100%")},
-				},
-				Classes: make(map[string]struct {
-					L2Allocation rdt.CatConfig         `json:"l2Allocation"`
-					L3Allocation rdt.CatConfig         `json:"l3Allocation"`
-					MBAllocation rdt.MbaConfig         `json:"mbAllocation"`
-					Kubernetes   rdt.KubernetesOptions `json:"kubernetes"`
-				}),
-			},
-		},
-	}
-
-	// Apply the default configuration which removes all custom classes
-	if err := rdt.SetConfig(defaultConfig, true); err != nil {
+	// Remove from managed configs and re-apply config. Use force=true so the deleted class disappears.
+	delete(a.managedConfigs, className)
+	if err := a.applyManagedConfigLocked(true); err != nil {
 		return fmt.Errorf("failed to delete RDT class %s: %w", className, err)
 	}
-
-	// Remove from managed classes
 	delete(a.managedClasses, className)
 
 	a.logger.WithField("class", className).Info("RDT class deleted successfully")
@@ -423,57 +418,42 @@ func (a *DefaultRDTAllocator) Cleanup() error {
 		return nil
 	}
 
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	a.logger.Info("Cleaning up RDT allocations")
 
 	// Get list of class names before deleting (to avoid modifying map during iteration)
-	classNames := make([]string, 0, len(a.managedClasses))
-	for className := range a.managedClasses {
+	classNames := make([]string, 0, len(a.managedConfigs))
+	for className := range a.managedConfigs {
 		classNames = append(classNames, className)
 	}
 
-	// Move all PIDs from managed classes to default and delete classes
+	// Move all PIDs from managed classes to default
 	for _, className := range classNames {
-		a.logger.WithField("class", className).Debug("Deleting RDT class")
-		if err := a.DeleteRDTClass(className); err != nil {
-			a.logger.WithError(err).WithField("class", className).Warn("Failed to delete RDT class during cleanup")
+		ctrlGroup, exists := rdt.GetClass(className)
+		if !exists {
+			continue
+		}
+		pids, err := ctrlGroup.GetPids()
+		if err != nil {
+			continue
+		}
+		for _, pidStr := range pids {
+			pid, err := strconv.Atoi(pidStr)
+			if err != nil {
+				continue
+			}
+			_ = a.RemoveContainerFromClass(pid)
 		}
 	}
 
-	// Reset RDT configuration to default (all resources available, no custom classes)
-	a.logger.Info("Resetting RDT configuration to default")
-
-	defaultConfig := &rdt.Config{
-		Partitions: map[string]struct {
-			L2Allocation rdt.CatConfig `json:"l2Allocation"`
-			L3Allocation rdt.CatConfig `json:"l3Allocation"`
-			MBAllocation rdt.MbaConfig `json:"mbAllocation"`
-			Classes      map[string]struct {
-				L2Allocation rdt.CatConfig         `json:"l2Allocation"`
-				L3Allocation rdt.CatConfig         `json:"l3Allocation"`
-				MBAllocation rdt.MbaConfig         `json:"mbAllocation"`
-				Kubernetes   rdt.KubernetesOptions `json:"kubernetes"`
-			} `json:"classes"`
-		}{
-			"": {
-				L3Allocation: rdt.CatConfig{
-					"0": rdt.CacheIdCatConfig{
-						Unified: rdt.CacheProportion("100%"),
-					},
-				},
-				MBAllocation: rdt.MbaConfig{
-					"0": rdt.CacheIdMbaConfig{rdt.MbProportion("100%")},
-				},
-				Classes: make(map[string]struct {
-					L2Allocation rdt.CatConfig         `json:"l2Allocation"`
-					L3Allocation rdt.CatConfig         `json:"l3Allocation"`
-					MBAllocation rdt.MbaConfig         `json:"mbAllocation"`
-					Kubernetes   rdt.KubernetesOptions `json:"kubernetes"`
-				}),
-			},
-		},
-	}
-
-	if err := rdt.SetConfig(defaultConfig, true); err != nil {
+	// Reset RDT configuration to default (empty custom classes)
+	a.managedConfigs = make(map[string]struct {
+		Socket0 *SocketAllocation
+		Socket1 *SocketAllocation
+	})
+	if err := a.applyManagedConfigLocked(true); err != nil {
 		a.logger.WithError(err).Warn("Failed to reset RDT configuration to default")
 		return fmt.Errorf("failed to reset RDT config: %w", err)
 	}

@@ -1,10 +1,17 @@
 benchmark:
   name: Trace
   description: Test which starts a baseline, a victim and multiple neighbors
-  max_t: 60
+  max_t: 300
   log_level: info
   scheduler:
-    implementation: default
+    implementation: interference_aware
+    max_l3: 3
+    max_mem: 20
+    probing_t: 15
+    break_condition: 90
+    break_improvement: 0.1
+    skip_allocation_after_probing: true
+    reallocate: true
     rdt: false
     log_level: info
   data:

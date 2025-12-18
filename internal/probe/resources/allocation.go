@@ -82,6 +82,14 @@ type AllocationRange struct {
 	ForceReallocation bool    `json:"force_reallocation"`    // Remove existing allocations if needed
 }
 
+// AllocationSpec defines a specific allocation to test (shared helper type).
+// It is intentionally minimal so schedulers can reuse the same search ordering logic
+// without pulling in the full probe execution loop.
+type AllocationSpec struct {
+	L3Ways       int
+	MemBandwidth float64
+}
+
 // BreakCondition defines when to stop probing early
 type BreakCondition func(result *AllocationResult, allResults []AllocationResult) bool
 
@@ -292,19 +300,13 @@ func ProbeAllocation(
 	return result, nil
 }
 
-// allocationSpec defines a specific allocation to test
-type allocationSpec struct {
-	L3Ways       int
-	MemBandwidth float64
-}
-
 // generateAllocationSequence creates the sequence of allocations to test
 // Sequence: Fix L3 ways, vary memory bandwidth from min to max, then change L3 ways and repeat
 // Example with asc order: (2 ways, 20% mem), (2 ways, 30% mem), ..., (2 ways, 100% mem),
 //
 //	(4 ways, 20% mem), (4 ways, 30% mem), ..., (4 ways, 100% mem), ...
-func generateAllocationSequence(allocRange AllocationRange) []allocationSpec {
-	sequence := make([]allocationSpec, 0)
+func generateAllocationSequence(allocRange AllocationRange) []AllocationSpec {
+	sequence := make([]AllocationSpec, 0)
 
 	// Determine iteration order
 	var l3Start, l3End, l3Step int
@@ -350,7 +352,7 @@ func generateAllocationSequence(allocRange AllocationRange) []allocationSpec {
 				break
 			}
 
-			sequence = append(sequence, allocationSpec{
+			sequence = append(sequence, AllocationSpec{
 				L3Ways:       l3,
 				MemBandwidth: mem,
 			})
@@ -368,6 +370,12 @@ func generateAllocationSequence(allocRange AllocationRange) []allocationSpec {
 	return sequence
 }
 
+// GenerateAllocationSequence returns the allocation search sequence for the given range.
+// This mirrors the internal probing order used by `ProbeAllocation`.
+func GenerateAllocationSequence(allocRange AllocationRange) []AllocationSpec {
+	return generateAllocationSequence(allocRange)
+}
+
 // classCreationStatus tracks which classes were created
 type classCreationStatus struct {
 	ProbeCreated     bool
@@ -379,7 +387,7 @@ type classCreationStatus struct {
 func applyAndMeasureAllocation(
 	targetContainer ContainerInfo,
 	otherContainers []ContainerInfo,
-	alloc allocationSpec,
+	alloc AllocationSpec,
 	allocRange AllocationRange,
 	dataframes *dataframe.DataFrames,
 	rdtAccountant *accounting.RDTAccountant,
