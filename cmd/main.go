@@ -104,6 +104,20 @@ type ContainerBench struct {
 	networkID     string
 }
 
+type dockerCpusetApplier struct {
+	client *client.Client
+}
+
+func (d dockerCpusetApplier) UpdateCpuset(ctx context.Context, containerID string, cpuset string) error {
+	if d.client == nil {
+		return fmt.Errorf("docker client is nil")
+	}
+	_, err := d.client.ContainerUpdate(ctx, containerID, container.UpdateConfig{
+		Resources: container.Resources{CpusetCpus: cpuset},
+	})
+	return err
+}
+
 func (cb *ContainerBench) cleanup() {
 
 	for _, collector := range cb.collectors {
@@ -488,8 +502,8 @@ func runBenchmark(configFile string) error {
 	}
 	defer bench.dbClient.Close()
 
-	// Initialize data handler
-	bench.dataHandler = datahandeling.NewDefaultDataHandler()
+	// Initialize data handler (needs host topology for derived metrics)
+	bench.dataHandler = datahandeling.NewDefaultDataHandler(bench.hostConfig)
 
 	// Get next benchmark ID
 	lastID, err := bench.dbClient.GetLastBenchmarkID()
@@ -509,6 +523,9 @@ func runBenchmark(configFile string) error {
 	case "default":
 		logger.Info("Using default scheduler")
 		bench.scheduler = scheduler.NewDefaultScheduler()
+	case "least_loaded":
+		logger.Info("Using least-loaded scheduler")
+		bench.scheduler = scheduler.NewLeastLoadedScheduler()
 	case "probe":
 		logger.Info("Using probe scheduler")
 		bench.scheduler = scheduler.NewProbeScheduler()
@@ -535,8 +552,9 @@ func runBenchmark(configFile string) error {
 	// Set host config for scheduler
 	bench.scheduler.SetHostConfig(bench.hostConfig)
 
-	// Inject CPU allocator (physical cores only)
-	cpuAlloc, err := cpuallocator.NewPhysicalCoreAllocator(bench.hostConfig, logger)
+	// Inject CPU allocator (physical cores only) with live cpuset updates via Docker
+	cpusetApplier := dockerCpusetApplier{client: bench.dockerClient}
+	cpuAlloc, err := cpuallocator.NewPhysicalCoreAllocator(bench.hostConfig, cpusetApplier, logger)
 	if err != nil {
 		return fmt.Errorf("failed to initialize CPU allocator: %w", err)
 	}

@@ -1,15 +1,30 @@
 package datahandeling
 
 import (
+	"sort"
 	"time"
 
 	"container-bench/internal/config"
 	"container-bench/internal/dataframe"
+	"container-bench/internal/host"
 )
 
 // processed metrics ready for database storage
 type BenchmarkMetrics struct {
 	ContainerMetrics []ContainerMetrics `json:"container_metrics"`
+
+	// Benchmark-level core allocation time series (across all containers)
+	CoreAllocationSteps []CoreAllocationStep `json:"core_allocation_steps,omitempty"`
+}
+
+// CoreAllocationStep contains the total number of allocated physical cores per socket
+// across all containers for a given sampling timestamp.
+type CoreAllocationStep struct {
+	StepNumber               int       `json:"step_number"`
+	Timestamp                time.Time `json:"timestamp"`
+	RelativeTime             int64     `json:"relative_time"`
+	CoresAllocatedSocketZero int       `json:"cores_allocated_socket_zero"`
+	CoresAllocatedSocketOne  int       `json:"cores_allocated_socket_one"`
 }
 
 // ContainerMetrics holds all metrics for a single container across all sampling steps
@@ -98,10 +113,12 @@ type DataHandler interface {
 	ProcessDataFrames(benchmarkID int, benchmarkConfig *config.BenchmarkConfig, dataframes *dataframe.DataFrames, startTime, endTime time.Time) (*BenchmarkMetrics, error)
 }
 
-type DefaultDataHandler struct{}
+type DefaultDataHandler struct {
+	hostConfig *host.HostConfig
+}
 
-func NewDefaultDataHandler() *DefaultDataHandler {
-	return &DefaultDataHandler{}
+func NewDefaultDataHandler(hostConfig *host.HostConfig) *DefaultDataHandler {
+	return &DefaultDataHandler{hostConfig: hostConfig}
 }
 
 // ProcessDataFrames converts raw dataframes to processed benchmark metrics
@@ -133,6 +150,7 @@ func (h *DefaultDataHandler) ProcessDataFrames(benchmarkID int, benchmarkConfig 
 
 	// Second pass: process all container data using the actual profiling start time
 	var containerMetrics []ContainerMetrics
+	coreAllocByStep := make(map[int]*CoreAllocationStep)
 
 	for containerIndex, containerDF := range containers {
 		containerConfig := h.getContainerConfig(benchmarkConfig, containerIndex)
@@ -166,6 +184,7 @@ func (h *DefaultDataHandler) ProcessDataFrames(benchmarkID int, benchmarkConfig 
 
 			if step.Docker != nil {
 				h.processDockerMetrics(step.Docker, &metricStep)
+				h.accumulateCoreAllocation(coreAllocByStep, stepNumber, step.Timestamp, relativeTime, step.Docker)
 			}
 
 			if step.RDT != nil {
@@ -184,9 +203,77 @@ func (h *DefaultDataHandler) ProcessDataFrames(benchmarkID int, benchmarkConfig 
 		})
 	}
 
+	coreAllocationSteps := h.finalizeCoreAllocation(coreAllocByStep)
+
 	return &BenchmarkMetrics{
-		ContainerMetrics: containerMetrics,
+		ContainerMetrics:    containerMetrics,
+		CoreAllocationSteps: coreAllocationSteps,
 	}, nil
+}
+
+func (h *DefaultDataHandler) accumulateCoreAllocation(coreAllocByStep map[int]*CoreAllocationStep, stepNumber int, ts time.Time, relativeTime int64, docker *dataframe.DockerMetrics) {
+	if docker == nil || docker.AssignedCoresCSV == nil || *docker.AssignedCoresCSV == "" {
+		return
+	}
+	if h.hostConfig == nil {
+		return
+	}
+
+	cpus, err := config.ParseCPUSpec(*docker.AssignedCoresCSV)
+	if err != nil {
+		return
+	}
+
+	step, ok := coreAllocByStep[stepNumber]
+	if !ok {
+		step = &CoreAllocationStep{StepNumber: stepNumber, Timestamp: ts, RelativeTime: relativeTime}
+		coreAllocByStep[stepNumber] = step
+	} else {
+		// Keep a stable timestamp/relative time per step even if container samples are skewed.
+		if ts.Before(step.Timestamp) {
+			step.Timestamp = ts
+		}
+		if relativeTime < step.RelativeTime {
+			step.RelativeTime = relativeTime
+		}
+	}
+
+	for _, cpuID := range cpus {
+		info, ok := h.hostConfig.Topology.CoreMap[cpuID]
+		if !ok {
+			continue
+		}
+		// count physical cores only
+		if !h.hostConfig.IsPhysicalCPU(cpuID) {
+			continue
+		}
+		switch info.PhysicalID {
+		case 0:
+			step.CoresAllocatedSocketZero++
+		case 1:
+			step.CoresAllocatedSocketOne++
+		}
+	}
+}
+
+func (h *DefaultDataHandler) finalizeCoreAllocation(coreAllocByStep map[int]*CoreAllocationStep) []CoreAllocationStep {
+	if len(coreAllocByStep) == 0 {
+		return nil
+	}
+	keys := make([]int, 0, len(coreAllocByStep))
+	for k := range coreAllocByStep {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+	out := make([]CoreAllocationStep, 0, len(keys))
+	for _, k := range keys {
+		step := coreAllocByStep[k]
+		if step == nil {
+			continue
+		}
+		out = append(out, *step)
+	}
+	return out
 }
 
 // copy perf metrics and calculates derived values

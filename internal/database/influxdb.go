@@ -345,6 +345,24 @@ func (idb *InfluxDBClient) WriteBenchmarkMetrics(benchmarkID int, benchmarkConfi
 		}
 	}
 
+	// Add benchmark-level core allocation time series points
+	for _, step := range metrics.CoreAllocationSteps {
+		point := influxdb2.NewPoint("benchmark_core_allocation",
+			map[string]string{
+				"benchmark_id":       fmt.Sprintf("%d", benchmarkID),
+				"benchmark_started":  startTime.Format(time.RFC3339),
+				"benchmark_finished": endTime.Format(time.RFC3339),
+			},
+			map[string]interface{}{
+				"step_number":              step.StepNumber,
+				"relative_time":            step.RelativeTime,
+				"coresAllocatedSocketZero": step.CoresAllocatedSocketZero,
+				"coresAllocatedSocketOne":  step.CoresAllocatedSocketOne,
+			},
+			step.Timestamp)
+		points = append(points, point)
+	}
+
 	logger.WithField("total_points", len(points)).Info("Writing benchmark metrics to InfluxDB")
 
 	// Write points in batches if there are many

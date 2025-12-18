@@ -140,6 +140,50 @@ func (hc *HostConfig) ValidatePhysicalCPUs(cpuIDs []int) error {
 	return nil
 }
 
+// PhysicalCPUsBySocket returns physical (non-HT) logical CPU IDs grouped by socket.
+// Ordering is deterministic: within each socket, CPUs are ordered by core ID.
+func (hc *HostConfig) PhysicalCPUsBySocket() (map[int][]int, error) {
+	if hc == nil {
+		return nil, fmt.Errorf("host config is nil")
+	}
+	order, err := hc.PhysicalCPUsInOrder()
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int][]int)
+	for _, cpuID := range order {
+		info, ok := hc.Topology.CoreMap[cpuID]
+		if !ok {
+			return nil, fmt.Errorf("cpu %d not present in topology", cpuID)
+		}
+		out[info.PhysicalID] = append(out[info.PhysicalID], cpuID)
+	}
+	return out, nil
+}
+
+// SocketOfPhysicalCPUs returns the socket ID for a set of physical CPUs.
+// It fails if the set spans multiple sockets, contains unknown CPUs, or contains HT siblings.
+func (hc *HostConfig) SocketOfPhysicalCPUs(cpuIDs []int) (int, error) {
+	if hc == nil {
+		return 0, fmt.Errorf("host config is nil")
+	}
+	if len(cpuIDs) == 0 {
+		return 0, fmt.Errorf("cpu set is empty")
+	}
+	if err := hc.ValidatePhysicalCPUs(cpuIDs); err != nil {
+		return 0, err
+	}
+	firstInfo := hc.Topology.CoreMap[cpuIDs[0]]
+	socket := firstInfo.PhysicalID
+	for _, cpuID := range cpuIDs[1:] {
+		info := hc.Topology.CoreMap[cpuID]
+		if info.PhysicalID != socket {
+			return 0, fmt.Errorf("cpu set spans multiple sockets: %d and %d", socket, info.PhysicalID)
+		}
+	}
+	return socket, nil
+}
+
 // CacheConfig contains cache configuration for L1/L2 caches
 type CacheConfig struct {
 	SizeBytes int64

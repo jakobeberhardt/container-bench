@@ -1,6 +1,7 @@
 package cpuallocator
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"sync"
@@ -37,19 +38,35 @@ type Allocator interface {
 
 	// Snapshot returns a copy of all current assignments
 	Snapshot() map[int][]int
+
+	// Move reassigns the container's current CPU allocation to physical cores on targetSocket.
+	// It live-updates the running container's CpusetCpus via the injected cpuset applier.
+	Move(containerIndex int, containerID string, targetSocket int) ([]int, error)
+
+	// Swap exchanges CPU allocations across sockets between two containers.
+	// If both containers are on the same socket, it moves the first container to a different socket.
+	// The swap fails if the destination socket(s) cannot accommodate the required number of cores.
+	Swap(aIndex int, aContainerID string, bIndex int, bContainerID string) error
+}
+
+// CpusetApplier applies a cpuset to a running container
+// Implementations are expected to update the container CPU set
+type CpusetApplier interface {
+	UpdateCpuset(ctx context.Context, containerID string, cpuset string) error
 }
 
 type PhysicalCoreAllocator struct {
 	host       *host.HostConfig
 	order      []int
 	logger     logrus.FieldLogger
+	cpuset     CpusetApplier
 	mu         sync.Mutex
 	assigned   map[int][]int // containerIndex -> cpuIDs
 	reservedBy map[int]int   // cpuID -> containerIndex
 	cfgByIndex map[int]*config.ContainerConfig
 }
 
-func NewPhysicalCoreAllocator(hostConfig *host.HostConfig, logger logrus.FieldLogger) (*PhysicalCoreAllocator, error) {
+func NewPhysicalCoreAllocator(hostConfig *host.HostConfig, cpusetApplier CpusetApplier, logger logrus.FieldLogger) (*PhysicalCoreAllocator, error) {
 	if hostConfig == nil {
 		return nil, fmt.Errorf("host config is nil")
 	}
@@ -64,10 +81,290 @@ func NewPhysicalCoreAllocator(hostConfig *host.HostConfig, logger logrus.FieldLo
 		host:       hostConfig,
 		order:      order,
 		logger:     logger,
+		cpuset:     cpusetApplier,
 		assigned:   make(map[int][]int),
 		reservedBy: make(map[int]int),
 		cfgByIndex: make(map[int]*config.ContainerConfig),
 	}, nil
+}
+
+func (a *PhysicalCoreAllocator) Move(containerIndex int, containerID string, targetSocket int) ([]int, error) {
+	return a.movePlanned(containerIndex, containerID, targetSocket)
+}
+
+func (a *PhysicalCoreAllocator) Swap(aIndex int, aContainerID string, bIndex int, bContainerID string) error {
+	// Determine current sockets (must be single-socket allocations).
+	a.mu.Lock()
+	aCPUs, aOK := a.assigned[aIndex]
+	bCPUs, bOK := a.assigned[bIndex]
+	aCPUs = append([]int(nil), aCPUs...)
+	bCPUs = append([]int(nil), bCPUs...)
+	socketCount := a.host.Topology.Sockets
+	a.mu.Unlock()
+
+	if !aOK || len(aCPUs) == 0 {
+		return fmt.Errorf("container %d has no CPU assignment", aIndex)
+	}
+	if !bOK || len(bCPUs) == 0 {
+		return fmt.Errorf("container %d has no CPU assignment", bIndex)
+	}
+
+	aSocket, err := a.host.SocketOfPhysicalCPUs(aCPUs)
+	if err != nil {
+		return fmt.Errorf("failed to determine socket for container %d: %w", aIndex, err)
+	}
+	bSocket, err := a.host.SocketOfPhysicalCPUs(bCPUs)
+	if err != nil {
+		return fmt.Errorf("failed to determine socket for container %d: %w", bIndex, err)
+	}
+
+	// Same socket: move the first container to a different socket.
+	if aSocket == bSocket {
+		if socketCount <= 1 {
+			return fmt.Errorf("cannot swap/move across sockets: host has %d socket(s)", socketCount)
+		}
+		other := -1
+		for s := 0; s < socketCount; s++ {
+			if s != aSocket {
+				other = s
+				break
+			}
+		}
+		if other == -1 {
+			return fmt.Errorf("no alternative socket available")
+		}
+		_, err := a.Move(aIndex, aContainerID, other)
+		return err
+	}
+
+	// Different sockets: compute both target sets first, then apply updates.
+	neededA := len(aCPUs)
+	neededB := len(bCPUs)
+
+	a.mu.Lock()
+	// Plan new CPU sets assuming the other container's CPUs on that socket become available.
+	newA, err := a.pickCPUsOnSocketLocked(bSocket, neededA, map[int]bool{bIndex: true})
+	if err != nil {
+		a.mu.Unlock()
+		return fmt.Errorf("insufficient capacity on socket %d for container %d: %w", bSocket, aIndex, err)
+	}
+	newB, err := a.pickCPUsOnSocketLocked(aSocket, neededB, map[int]bool{aIndex: true})
+	if err != nil {
+		a.mu.Unlock()
+		return fmt.Errorf("insufficient capacity on socket %d for container %d: %w", aSocket, bIndex, err)
+	}
+
+	oldA := append([]int(nil), a.assigned[aIndex]...)
+	oldB := append([]int(nil), a.assigned[bIndex]...)
+	oldCpusetA := config.FormatCPUSpec(oldA)
+	oldCpusetB := config.FormatCPUSpec(oldB)
+	newCpusetA := config.FormatCPUSpec(newA)
+	newCpusetB := config.FormatCPUSpec(newB)
+	cfgA := a.cfgByIndex[aIndex]
+	cfgB := a.cfgByIndex[bIndex]
+
+	// Optimistically update allocator state (rollback on docker failure).
+	a.releaseLocked(aIndex)
+	a.releaseLocked(bIndex)
+	if err := a.assignLocked(aIndex, newA); err != nil {
+		// restore
+		_ = a.assignLocked(aIndex, oldA)
+		_ = a.assignLocked(bIndex, oldB)
+		a.mu.Unlock()
+		return err
+	}
+	if err := a.assignLocked(bIndex, newB); err != nil {
+		// restore
+		a.releaseLocked(aIndex)
+		a.releaseLocked(bIndex)
+		_ = a.assignLocked(aIndex, oldA)
+		_ = a.assignLocked(bIndex, oldB)
+		a.mu.Unlock()
+		return err
+	}
+	if cfgA != nil {
+		cfgA.CPUCores = append([]int(nil), newA...)
+		cfgA.Core = newCpusetA
+	}
+	if cfgB != nil {
+		cfgB.CPUCores = append([]int(nil), newB...)
+		cfgB.Core = newCpusetB
+	}
+	a.mu.Unlock()
+
+	ctx := context.Background()
+	if a.cpuset == nil {
+		return fmt.Errorf("cpuset applier is not configured")
+	}
+	if err := a.cpuset.UpdateCpuset(ctx, aContainerID, newCpusetA); err != nil {
+		// rollback state
+		a.mu.Lock()
+		a.releaseLocked(aIndex)
+		a.releaseLocked(bIndex)
+		_ = a.assignLocked(aIndex, oldA)
+		_ = a.assignLocked(bIndex, oldB)
+		if cfgA != nil {
+			cfgA.CPUCores = append([]int(nil), oldA...)
+			cfgA.Core = oldCpusetA
+		}
+		if cfgB != nil {
+			cfgB.CPUCores = append([]int(nil), oldB...)
+			cfgB.Core = oldCpusetB
+		}
+		a.mu.Unlock()
+		return fmt.Errorf("failed to update container %d cpuset: %w", aIndex, err)
+	}
+	if err := a.cpuset.UpdateCpuset(ctx, bContainerID, newCpusetB); err != nil {
+		// best-effort rollback both containers and allocator state
+		_ = a.cpuset.UpdateCpuset(ctx, aContainerID, oldCpusetA)
+		a.mu.Lock()
+		a.releaseLocked(aIndex)
+		a.releaseLocked(bIndex)
+		_ = a.assignLocked(aIndex, oldA)
+		_ = a.assignLocked(bIndex, oldB)
+		if cfgA != nil {
+			cfgA.CPUCores = append([]int(nil), oldA...)
+			cfgA.Core = oldCpusetA
+		}
+		if cfgB != nil {
+			cfgB.CPUCores = append([]int(nil), oldB...)
+			cfgB.Core = oldCpusetB
+		}
+		a.mu.Unlock()
+		return fmt.Errorf("failed to update container %d cpuset: %w", bIndex, err)
+	}
+
+	a.logger.WithFields(logrus.Fields{
+		"a_index":      aIndex,
+		"b_index":      bIndex,
+		"a_socket":     aSocket,
+		"b_socket":     bSocket,
+		"a_old_cpuset": oldCpusetA,
+		"b_old_cpuset": oldCpusetB,
+		"a_new_cpuset": newCpusetA,
+		"b_new_cpuset": newCpusetB,
+	}).Info("Swapped CPU allocations across sockets")
+
+	return nil
+}
+
+func (a *PhysicalCoreAllocator) movePlanned(containerIndex int, containerID string, targetSocket int) ([]int, error) {
+	if a == nil {
+		return nil, fmt.Errorf("allocator is nil")
+	}
+	if a.cpuset == nil {
+		return nil, fmt.Errorf("cpuset applier is not configured")
+	}
+	if containerID == "" {
+		return nil, fmt.Errorf("containerID is empty")
+	}
+
+	a.mu.Lock()
+	cur, ok := a.assigned[containerIndex]
+	if !ok || len(cur) == 0 {
+		a.mu.Unlock()
+		return nil, fmt.Errorf("container %d has no CPU assignment", containerIndex)
+	}
+	cur = append([]int(nil), cur...)
+	curSocket, err := a.host.SocketOfPhysicalCPUs(cur)
+	if err != nil {
+		a.mu.Unlock()
+		return nil, fmt.Errorf("failed to determine current socket for container %d: %w", containerIndex, err)
+	}
+	if targetSocket == curSocket {
+		out := append([]int(nil), cur...)
+		a.mu.Unlock()
+		return out, nil
+	}
+
+	needed := len(cur)
+	newCPUs, err := a.pickCPUsOnSocketLocked(targetSocket, needed, map[int]bool{containerIndex: true})
+	if err != nil {
+		a.mu.Unlock()
+		return nil, err
+	}
+	oldCPUs := append([]int(nil), cur...)
+	oldCpuset := config.FormatCPUSpec(oldCPUs)
+	newCpuset := config.FormatCPUSpec(newCPUs)
+	cfg := a.cfgByIndex[containerIndex]
+
+	// Update allocator state optimistically (rollback on docker update failure).
+	a.releaseLocked(containerIndex)
+	if err := a.assignLocked(containerIndex, newCPUs); err != nil {
+		_ = a.assignLocked(containerIndex, oldCPUs) // best effort
+		a.mu.Unlock()
+		return nil, err
+	}
+	if cfg != nil {
+		cfg.CPUCores = append([]int(nil), newCPUs...)
+		cfg.Core = newCpuset
+	}
+	a.mu.Unlock()
+
+	ctx := context.Background()
+	if err := a.cpuset.UpdateCpuset(ctx, containerID, newCpuset); err != nil {
+		// rollback allocator state
+		a.mu.Lock()
+		a.releaseLocked(containerIndex)
+		_ = a.assignLocked(containerIndex, oldCPUs)
+		if cfg != nil {
+			cfg.CPUCores = append([]int(nil), oldCPUs...)
+			cfg.Core = oldCpuset
+		}
+		a.mu.Unlock()
+		return nil, fmt.Errorf("failed to update container cpuset: %w", err)
+	}
+
+	a.logger.WithFields(a.containerFields(containerIndex, cfg)).WithFields(logrus.Fields{
+		"from_socket": curSocket,
+		"to_socket":   targetSocket,
+		"old_cpuset":  oldCpuset,
+		"new_cpuset":  newCpuset,
+	}).Info("Moved CPU allocation across sockets")
+
+	return append([]int(nil), newCPUs...), nil
+}
+
+func (a *PhysicalCoreAllocator) pickCPUsOnSocketLocked(targetSocket int, num int, freeOwners map[int]bool) ([]int, error) {
+	if num <= 0 {
+		return nil, fmt.Errorf("num must be >= 1")
+	}
+	bySocket, err := a.host.PhysicalCPUsBySocket()
+	if err != nil {
+		return nil, err
+	}
+	cpus, ok := bySocket[targetSocket]
+	if !ok {
+		return nil, fmt.Errorf("socket %d not present in topology", targetSocket)
+	}
+
+	picked := make([]int, 0, num)
+	for _, cpu := range cpus {
+		owner, used := a.reservedBy[cpu]
+		if used && !freeOwners[owner] {
+			continue
+		}
+		picked = append(picked, cpu)
+		if len(picked) == num {
+			break
+		}
+	}
+	if len(picked) != num {
+		return nil, fmt.Errorf("insufficient physical cores on socket %d: requested %d", targetSocket, num)
+	}
+	return append([]int(nil), picked...), nil
+}
+
+func (a *PhysicalCoreAllocator) assignLocked(containerIndex int, cpuIDs []int) error {
+	uniq := uniqueSorted(cpuIDs)
+	for _, cpu := range uniq {
+		if owner, ok := a.reservedBy[cpu]; ok && owner != containerIndex {
+			return fmt.Errorf("cpu %d already reserved by container %d", cpu, owner)
+		}
+		a.reservedBy[cpu] = containerIndex
+	}
+	a.assigned[containerIndex] = uniq
+	return nil
 }
 
 func (a *PhysicalCoreAllocator) EnsureAssigned(containerIndex int, cfg *config.ContainerConfig) ([]int, error) {
