@@ -1,0 +1,149 @@
+benchmark:
+  name: Trace with low and high
+  description: Test which starts a baseline, a victim and multiple neighbors
+  max_t: 620
+  log_level: info
+  accounting:
+    log_level: info
+  scheduler:
+    implementation: least_loaded
+    prober:
+      log_level: info
+      min_l3: 1
+      max_l3: 2
+      step_l3: 1
+      min_mem: 10
+      max_mem: 20
+      mem_step: 10
+      probing_t: 8
+    break_condition: 80
+    break_improvement: -1
+    warmup_t: 10
+    cooldown_t: 10 
+    skip_allocation_after_probing: true
+    allocate_unbound: false
+    reallocate: true
+    rdt: false
+    log_level: info
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+
+first-high:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --matrix-3d 1 --timeout 0 "
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+
+second-low:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --cache 1 --cache-level 1 --timeout 0"
+  start_t: 60
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+third-high:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --matrix-3d 1 --timeout 0 "
+  start_t: 120
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+
+four-low:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --cache 1 --cache-level 1 --timeout 0 "
+  start_t: 180
+  num_cores: 1
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+five-high:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --matrix-3d 1 --timeout 0"
+  start_t: 240
+  num_cores: 1
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+six-low:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --cache 1 --cache-level 1 --timeout 0 "
+  start_t: 300
+  num_cores: 1
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+seven-high:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --matrix-3d 1 --timeout 0"
+  start_t: 360
+  num_cores: 1
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+
+eight-low:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --cache 1 --cache-level 1 --timeout 0 "
+  start_t: 420
+  num_cores: 1
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+nine-high:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --matrix-3d 1 --timeout 0"
+  start_t: 480
+  num_cores: 1
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+ten-low:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --cache 1 --cache-level 1 --timeout 0 "
+  start_t: 540
+  num_cores: 1
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true

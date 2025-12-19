@@ -27,7 +27,7 @@ type DefaultRDTAllocator struct {
 // NewDefaultRDTAllocator creates a new RDT allocator instance
 func NewDefaultRDTAllocator() *DefaultRDTAllocator {
 	return &DefaultRDTAllocator{
-		logger:         logging.GetSchedulerLogger(),
+		logger:         logging.GetAccountantLogger(),
 		managedClasses: make(map[string]rdt.CtrlGroup),
 		managedConfigs: make(map[string]struct {
 			Socket0 *SocketAllocation
@@ -85,7 +85,7 @@ func (a *DefaultRDTAllocator) CreateRDTClass(className string, socket0, socket1 
 		a.managedClasses[className] = ctrlGroup
 	}
 
-	a.logger.WithField("class_name", className).Info("RDT class created successfully")
+	a.logger.WithField("class_name", className).Debug("RDT class created successfully")
 	return nil
 }
 
@@ -111,7 +111,7 @@ func (a *DefaultRDTAllocator) UpdateRDTClass(className string, socket0, socket1 
 		a.managedClasses[className] = ctrlGroup
 	}
 
-	a.logger.WithField("class_name", className).Info("RDT class updated successfully")
+	a.logger.WithField("class_name", className).Debug("RDT class updated successfully")
 	return nil
 }
 
@@ -151,7 +151,7 @@ func (a *DefaultRDTAllocator) CreateAllRDTClasses(classes map[string]struct {
 		}
 	}
 
-	a.logger.WithField("classes_created", len(classes)).Info("All RDT classes created successfully")
+	a.logger.WithField("classes_created", len(classes)).Debug("All RDT classes created successfully")
 	return nil
 	/*
 		NOTE: This method historically applied the provided classes directly.
@@ -160,7 +160,7 @@ func (a *DefaultRDTAllocator) CreateAllRDTClasses(classes map[string]struct {
 }
 
 func (a *DefaultRDTAllocator) applyManagedConfigLocked(force bool) error {
-	a.logger.WithField("total_classes", len(a.managedConfigs)).Info("Creating all RDT classes in single configuration")
+	a.logger.WithField("total_classes", len(a.managedConfigs)).Debug("Creating all RDT classes in single configuration")
 
 	configClasses := make(map[string]struct {
 		L2Allocation rdt.CatConfig         `json:"l2Allocation"`
@@ -241,7 +241,7 @@ func (a *DefaultRDTAllocator) applyManagedConfigLocked(force bool) error {
 		return fmt.Errorf("failed to create RDT classes: %v", err)
 	}
 
-	a.logger.WithField("classes_created", len(a.managedConfigs)).Info("All RDT classes created successfully")
+	a.logger.WithField("classes_created", len(a.managedConfigs)).Debug("All RDT classes created successfully")
 	return nil
 }
 
@@ -278,7 +278,7 @@ func (a *DefaultRDTAllocator) AssignContainerToClass(pid int, className string) 
 		"pid":        pid,
 		"class_name": className,
 		"prev_class": currentClass,
-	}).Info("Container assigned to RDT class")
+	}).Debug("Container assigned to RDT class")
 
 	return nil
 }
@@ -409,7 +409,7 @@ func (a *DefaultRDTAllocator) DeleteRDTClass(className string) error {
 	}
 	delete(a.managedClasses, className)
 
-	a.logger.WithField("class", className).Info("RDT class deleted successfully")
+	a.logger.WithField("class", className).Debug("RDT class deleted successfully")
 	return nil
 }
 
@@ -421,7 +421,7 @@ func (a *DefaultRDTAllocator) Cleanup() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	a.logger.Info("Cleaning up RDT allocations")
+	a.logger.Debug("Cleaning up RDT allocations")
 
 	// Get list of class names before deleting (to avoid modifying map during iteration)
 	classNames := make([]string, 0, len(a.managedConfigs))
@@ -462,6 +462,6 @@ func (a *DefaultRDTAllocator) Cleanup() error {
 	a.managedClasses = make(map[string]rdt.CtrlGroup)
 	a.initialized = false
 
-	a.logger.Info("RDT allocator cleanup completed successfully")
+	a.logger.Debug("RDT allocator cleanup completed successfully")
 	return nil
 }

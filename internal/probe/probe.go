@@ -48,7 +48,7 @@ func NewProbe(
 		benchmarkName: benchmarkName,
 		probeImage:    probeImage,
 		probeResults:  make([]*ProbeResult, 0),
-		logger:        logging.GetLogger(),
+		logger:        logging.GetProberLogger(),
 	}
 }
 

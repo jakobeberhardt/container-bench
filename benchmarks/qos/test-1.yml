@@ -1,0 +1,101 @@
+benchmark:
+  name: Trace One
+  description: Test trace
+  max_t: 100
+  log_level: info
+  accounting:
+    log_level: info
+  scheduler:
+    implementation: default
+    prober:
+      log_level: info
+      min_l3: 1
+      max_l3: 2
+      step_l3: 1
+      min_mem: 10
+      max_mem: 20
+      mem_step: 10
+      probing_t: 8
+    break_condition: 80
+    break_improvement: -1
+    warmup_t: 5
+    cooldown_t: 5 
+    skip_allocation_after_probing: true
+    allocate_unbound: false
+    reallocate: true
+    rdt: false
+    log_level: info
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+high-1:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --matrix-3d 1 --timeout 0 "
+  start_t: 0
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+low-1:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --cache 1 --cache-level 1 --timeout 0"
+  start_t: 10
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+high-2:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --matrix-3d 1 --timeout 0 "
+  start_t: 20
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+
+low-2:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --cache 1 --cache-level 1 --timeout 0"
+  start_t: 30
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+high-3:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --matrix-3d 1 --timeout 0 "
+  start_t: 40
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+
+low-3:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --cache 1 --cache-level 1 --timeout 0"
+  start_t: 50
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true

@@ -1,0 +1,154 @@
+benchmark:
+  name: Trace Zero
+  description: Implements a trace with jobs arriving at a normal distribution
+  max_t: 230
+  log_level: warn
+  scheduler:
+    implementation: interference_aware
+    max_l3: 3
+    max_mem: 20
+    probing_t: 20
+    break_condition: 80
+    break_improvement: -1
+    warmup_t: 10
+    cooldown_t: 10 
+    skip_allocation_after_probing: true
+    allocate_unbound: false
+    reallocate: true
+    rdt: false
+    log_level: info
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+matrix-120000:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 0
+  expected_t: 168
+  command: "stress-ng --matrix-3d 1 --matrix-3d-ops 120000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+qsort-520:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 50
+  expected_t: 35
+  command: "stress-ng --qsort 1 --qsort-ops 520"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+
+heapsort-500:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 60
+  expected_t: 85
+  command: "stress-ng --heapsort 1 --heapsort-ops 500"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+matrixprod-20000:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 10
+  expected_t: 52
+  command: " stress-ng --cpu 1 --cpu-method matrixprod --cpu-ops 20000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+tsearch-1000:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 80
+  expected_t: 42
+  command: "stress-ng --tsearch 1 --tsearch-ops 1000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+stream-1000:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 100
+  expected_t: 52
+  command: "stress-ng --stream 1 --stream-ops 1000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+io-500000:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 110
+  expected_t: 55
+  command: "stress-ng --io 1 --io-ops 500000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+
+hdd-1000000:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 120
+  expected_t: 57
+  command: "stress-ng --hdd 1 --hdd-ops 1000000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true
+
+sparsematrix-5000:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 125
+  expected_t: 97
+  command: "stress-ng --sparsematrix 1 --sparsematrix-ops 5000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true    
+
+l1-100000:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 130
+  expected_t: 43
+  command: "stress-ng --cache 1 --cache-level 1 --cache-ops 100000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true    
+
+l2-50000:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  start_t: 140
+  expected_t: 31
+  command: "stress-ng --cache 2 --cache-level 1 --cache-ops 100000"
+  data:
+    frequency: 1000
+    perf: true
+    docker: true
+    rdt: true    

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -27,6 +28,7 @@ import (
 	"container-bench/internal/plot"
 	"container-bench/internal/probe"
 	"container-bench/internal/probe/kernels"
+	"container-bench/internal/probe/resources"
 	"container-bench/internal/scheduler"
 
 	"github.com/docker/docker/api/types"
@@ -41,6 +43,16 @@ import (
 )
 
 const Version = "1.0.1"
+
+var errAdmissionDeferred = errors.New("admission deferred")
+
+func isInsufficientCPUCapacity(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "insufficient physical cores") || strings.Contains(msg, "insufficient capacity")
+}
 
 // checks if an image belongs to a private registry
 func isPrivateRegistryImage(image string, registryHost string) bool {
@@ -446,6 +458,29 @@ func runBenchmark(configFile string) error {
 		logger.WithField("log_level", bench.config.Benchmark.LogLevel).Debug("Log level set from configuration")
 	}
 
+	// Redirect stdlib logger (used by some third-party libs) into SYSTEM at Debug so it's filtered by benchmark.log_level.
+	logging.RedirectStdLogToSystem(logrus.DebugLevel)
+
+	// Set accountant log level (independent from SYSTEM/SCHEDULER)
+	if bench.config.Benchmark.Accounting != nil && bench.config.Benchmark.Accounting.LogLevel != "" {
+		if err := logging.SetAccountantLogLevel(bench.config.Benchmark.Accounting.LogLevel); err != nil {
+			logger.WithField("accounting_log_level", bench.config.Benchmark.Accounting.LogLevel).WithError(err).Warn("Invalid accounting log level, using INFO")
+			_ = logging.SetAccountantLogLevel("info")
+		} else {
+			logger.WithField("accounting_log_level", bench.config.Benchmark.Accounting.LogLevel).Debug("Accounting log level set from configuration")
+		}
+	}
+
+	// Set prober log level (independent from SYSTEM/SCHEDULER)
+	if bench.config.Benchmark.Scheduler.Prober != nil && bench.config.Benchmark.Scheduler.Prober.LogLevel != "" {
+		if err := logging.SetProberLogLevel(bench.config.Benchmark.Scheduler.Prober.LogLevel); err != nil {
+			logger.WithField("prober_log_level", bench.config.Benchmark.Scheduler.Prober.LogLevel).WithError(err).Warn("Invalid prober log level, using INFO")
+			_ = logging.SetProberLogLevel("info")
+		} else {
+			logger.WithField("prober_log_level", bench.config.Benchmark.Scheduler.Prober.LogLevel).Debug("Prober log level set from configuration")
+		}
+	}
+
 	// Check if RDT is needed for any container or scheduler
 	rdtNeeded := false
 	for _, container := range bench.config.Containers {
@@ -567,8 +602,20 @@ func runBenchmark(configFile string) error {
 	// Set benchmark ID for scheduler
 	bench.scheduler.SetBenchmarkID(bench.benchmarkID)
 
-	// Initialize Probe if configured
-	if bench.config.Benchmark.Scheduler.Prober != nil {
+	// Initialize kernel Probe only if configured for kernel probing (so scheduler.prober can be used
+	// for allocation-prober parameters without creating a probe container).
+	shouldInitKernelProber := func(pc *config.ProberConfig) bool {
+		if pc == nil {
+			return false
+		}
+		// Any legacy kernel-prober field enables it.
+		if pc.Implementation != "" || pc.ProbeImage != "" || pc.DefaultProbeCores != "" || pc.DefaultT != 0 || pc.WarmupT != 0 || pc.CooldownT != 0 || pc.Abortable || pc.Isolated {
+			return true
+		}
+		return false
+	}
+
+	if shouldInitKernelProber(bench.config.Benchmark.Scheduler.Prober) {
 		proberConfig := bench.config.Benchmark.Scheduler.Prober
 		logger.WithField("prober_implementation", proberConfig.Implementation).Info("Initializing probe")
 
@@ -1142,6 +1189,13 @@ func (cb *ContainerBench) startContainer(ctx context.Context, containerConfig *c
 
 	// Ensure CPU affinity is assigned by the scheduler before starting the container.
 	if _, err := cb.scheduler.AssignCPUCores(containerConfig.Index); err != nil {
+		if isInsufficientCPUCapacity(err) {
+			logger.WithFields(logrus.Fields{
+				"index":  containerConfig.Index,
+				"reason": err.Error(),
+			}).Debug("Admission deferred (insufficient CPU capacity)")
+			return 0, errAdmissionDeferred
+		}
 		return 0, fmt.Errorf("failed to assign CPU cores for container %d: %w", containerConfig.Index, err)
 	}
 	cb.syncRuntimeContainerConfig(containerConfig)
@@ -1150,6 +1204,10 @@ func (cb *ContainerBench) startContainer(ctx context.Context, containerConfig *c
 			Resources: container.Resources{CpusetCpus: containerConfig.Core},
 		})
 		if err != nil {
+			// Best-effort: release any CPU reservation on failure.
+			if listener, ok := cb.scheduler.(scheduler.ContainerLifecycleListener); ok {
+				_ = listener.OnContainerStop(containerConfig.Index)
+			}
 			return 0, fmt.Errorf("failed to apply cpuset for container %d: %w", containerConfig.Index, err)
 		}
 	}
@@ -1159,6 +1217,10 @@ func (cb *ContainerBench) startContainer(ctx context.Context, containerConfig *c
 			"index":        containerConfig.Index,
 			"container_id": containerID[:12],
 		}).WithError(err).Error("Failed to start container")
+		// Best-effort: release any CPU reservation on failure.
+		if listener, ok := cb.scheduler.(scheduler.ContainerLifecycleListener); ok {
+			_ = listener.OnContainerStop(containerConfig.Index)
+		}
 		return 0, fmt.Errorf("failed to start container %d: %w", containerConfig.Index, err)
 	}
 
@@ -1168,6 +1230,10 @@ func (cb *ContainerBench) startContainer(ctx context.Context, containerConfig *c
 			"index":        containerConfig.Index,
 			"container_id": containerID[:12],
 		}).WithError(err).Error("Failed to inspect container")
+		// Best-effort: release any CPU reservation on failure.
+		if listener, ok := cb.scheduler.(scheduler.ContainerLifecycleListener); ok {
+			_ = listener.OnContainerStop(containerConfig.Index)
+		}
 		return 0, fmt.Errorf("failed to inspect container %d: %w", containerConfig.Index, err)
 	}
 
@@ -1470,6 +1536,7 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 		stopSec        int
 		expectedSec    int
 		hasExpected    bool
+		queued         bool
 		started        bool
 		stopped        bool
 		commandStarted bool
@@ -1488,10 +1555,14 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 			stopSec:     stopSec,
 			expectedSec: expectedSec,
 			hasExpected: hasExpected,
+			queued:      false,
 			started:     false,
 			stopped:     false,
 		}
 	}
+
+	// Pending admission queue in start_t order.
+	pending := make([]int, 0, len(containers))
 
 	// Start scheduler updates
 	schedulerTicker := time.NewTicker(1 * time.Second)
@@ -1610,32 +1681,21 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 
 	processSchedule := func(now time.Time) error {
 		elapsedSec := int(now.Sub(cb.startTime).Seconds())
+
+		// Queue any containers that reached their start time.
 		for idx, st := range states {
 			if st.stopped {
 				continue
 			}
-			if !st.started && elapsedSec >= st.startSec {
-				pid, err := cb.startContainer(ctx, st.cfg)
-				if err != nil {
-					return err
-				}
-				st.started = true
-				if err := cb.startCollectorForContainer(ctx, st.cfg, pid); err != nil {
-					return err
-				}
-				execID, err := cb.executeContainerCommand(ctx, st.cfg)
-				if err != nil {
-					return err
-				}
-				if execID != "" {
-					cb.startExecWatcher(timeoutCtx, st.cfg.Index, execID, execEvents)
-				}
-				st.commandStarted = true
-				if !st.exitWatch {
-					cb.startExitWatcher(timeoutCtx, st.cfg, exitEvents)
-					st.exitWatch = true
-				}
+			if !st.queued && !st.started && elapsedSec >= st.startSec {
+				st.queued = true
+				pending = append(pending, idx)
+				logger.WithFields(logrus.Fields{
+					"index":   idx,
+					"start_t": st.startSec,
+				}).Info("Container queued for scheduler admission")
 			}
+			// If a container never got admitted before its stop time, mark as stopped.
 			if st.started && !st.stopped && elapsedSec >= st.stopSec {
 				cb.stopCollectorForContainer(idx)
 				aborted := cb.config.Benchmark.MaxT > 0 && st.stopSec == cb.config.Benchmark.MaxT && elapsedSec >= cb.config.Benchmark.MaxT
@@ -1647,6 +1707,58 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 					return err
 				}
 			}
+			if !st.started && st.queued && elapsedSec >= st.stopSec {
+				st.stopped = true
+				logger.WithFields(logrus.Fields{
+					"index":  idx,
+					"stop_t": st.stopSec,
+				}).Warn("Container reached stop time before admission")
+			}
+		}
+
+		// Admit/start containers from the pending queue (strict FIFO, no backfilling).
+		for len(pending) > 0 {
+			idx := pending[0]
+			st := states[idx]
+			if st == nil || st.stopped || st.started {
+				pending = pending[1:]
+				continue
+			}
+			if elapsedSec < st.startSec {
+				break
+			}
+
+			pid, err := cb.startContainer(ctx, st.cfg)
+			if err != nil {
+				if errors.Is(err, errAdmissionDeferred) {
+					// Head cannot be admitted yet; do not backfill.
+					break
+				}
+				return err
+			}
+			st.started = true
+			logger.WithFields(logrus.Fields{
+				"index": idx,
+				"pid":   pid,
+			}).Info("Container admitted and started")
+
+			if err := cb.startCollectorForContainer(ctx, st.cfg, pid); err != nil {
+				return err
+			}
+			execID, err := cb.executeContainerCommand(ctx, st.cfg)
+			if err != nil {
+				return err
+			}
+			if execID != "" {
+				cb.startExecWatcher(timeoutCtx, st.cfg.Index, execID, execEvents)
+			}
+			st.commandStarted = true
+			if !st.exitWatch {
+				cb.startExitWatcher(timeoutCtx, st.cfg, exitEvents)
+				st.exitWatch = true
+			}
+
+			pending = pending[1:]
 		}
 		return nil
 	}
@@ -1790,10 +1902,10 @@ func (cb *ContainerBench) writeDatabaseData() error {
 		}
 	}
 
-	// Export allocation probe results if probe_allocation scheduler was used
-	if probeAllocScheduler, ok := cb.scheduler.(*scheduler.ProbeAllocationScheduler); ok {
-		if probeAllocScheduler.HasAllocationProbeResults() {
-			allocProbeResults := probeAllocScheduler.GetAllocationProbeResults()
+	// Export allocation probe results if scheduler provides them
+	if allocProvider, ok := cb.scheduler.(resources.AllocationProbeResultsProvider); ok {
+		if allocProvider.HasAllocationProbeResults() {
+			allocProbeResults := allocProvider.GetAllocationProbeResults()
 			logger.WithField("allocation_probe_count", len(allocProbeResults)).Info("Exporting allocation probe results")
 			if err := cb.dbClient.WriteAllocationProbeResults(allocProbeResults); err != nil {
 				logger.WithError(err).Error("Failed to export allocation probe results")

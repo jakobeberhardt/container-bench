@@ -232,6 +232,21 @@ func (as *ProbeAllocationScheduler) ProcessDataFrames(dataframes *dataframe.Data
 	}).Info("Calculated allocation probe timing")
 
 	// Build allocation range configuration
+	targetSocket := 0
+	if as.hostConfig != nil {
+		if as.hostConfig.Topology.Sockets <= 1 {
+			targetSocket = 0
+		} else if as.cpuAllocator != nil {
+			if cpus, ok := as.cpuAllocator.Get(as.containers[0].Index); ok && len(cpus) > 0 {
+				if sock, err := as.hostConfig.SocketOfPhysicalCPUs(cpus); err == nil {
+					targetSocket = sock
+				} else {
+					as.schedulerLogger.WithError(err).WithField("cpus", cpus).Warn("Failed to determine target socket from CPU assignment; defaulting to socket 0")
+				}
+			}
+		}
+	}
+
 	probeRange := proberesources.AllocationRange{
 		MinL3Ways:         minL3Ways,
 		MaxL3Ways:         maxL3Ways,
@@ -242,7 +257,7 @@ func (as *ProbeAllocationScheduler) ProcessDataFrames(dataframes *dataframe.Data
 		Order:             order,
 		DurationPerAlloc:  durationPerAllocMs,
 		MaxTotalDuration:  allocCfg.Duration,
-		SocketID:          0,
+		SocketID:          targetSocket,
 		IsolateOthers:     isolateOthers,
 		ForceReallocation: forceReallocation,
 	}
@@ -266,7 +281,7 @@ func (as *ProbeAllocationScheduler) ProcessDataFrames(dataframes *dataframe.Data
 		ID:      as.containers[0].ContainerID,
 		Name:    "", // Not available in scheduler ContainerInfo
 		Cores:   "", // Not available in scheduler ContainerInfo
-		Socket:  0,  // Assume socket 0
+		Socket:  targetSocket,
 		Image:   "", // Not available in scheduler ContainerInfo
 		Command: "", // Not available in scheduler ContainerInfo
 	}
@@ -274,13 +289,27 @@ func (as *ProbeAllocationScheduler) ProcessDataFrames(dataframes *dataframe.Data
 	// Build list of other containers for isolation
 	var otherContainers []proberesources.ContainerInfo
 	for i := 1; i < len(as.containers); i++ {
+		otherSocket := 0
+		if as.hostConfig != nil {
+			if as.hostConfig.Topology.Sockets <= 1 {
+				otherSocket = 0
+			} else if as.cpuAllocator != nil {
+				if cpus, ok := as.cpuAllocator.Get(as.containers[i].Index); ok && len(cpus) > 0 {
+					if sock, err := as.hostConfig.SocketOfPhysicalCPUs(cpus); err == nil {
+						otherSocket = sock
+					} else {
+						as.schedulerLogger.WithError(err).WithFields(logrus.Fields{"index": as.containers[i].Index, "cpus": cpus}).Warn("Failed to determine other container socket from CPU assignment; defaulting to socket 0")
+					}
+				}
+			}
+		}
 		otherContainers = append(otherContainers, proberesources.ContainerInfo{
 			Index:   as.containers[i].Index,
 			PID:     as.containers[i].PID,
 			ID:      as.containers[i].ContainerID,
 			Name:    "",
 			Cores:   "",
-			Socket:  0,
+			Socket:  otherSocket,
 			Image:   "",
 			Command: "",
 		})

@@ -75,7 +75,7 @@ func NewRDTAccountant(allocator allocation.RDTAllocator, hostCfg *host.HostConfi
 	return &RDTAccountant{
 		allocator:      allocator,
 		hostConfig:     hostCfg,
-		logger:         logging.GetSchedulerLogger(),
+		logger:         logging.GetAccountantLogger(),
 		socket0State:   SocketState{TotalWays: totalWays, AllocatedBitmask: 0, MemBandwidthUsed: 0},
 		socket1State:   SocketState{TotalWays: totalWays, AllocatedBitmask: 0, MemBandwidthUsed: 0},
 		classes:        make(map[string]*ClassAllocation),
@@ -134,7 +134,7 @@ func (a *RDTAccountant) CreateClass(className string, socket0Req, socket1Req *Al
 		a.socket1State.MemBandwidthUsed += socket1Alloc.MemBandwidth
 	}
 
-	a.logger.WithField("class", className).Info("RDT class created and tracked in accountant")
+	a.logger.WithField("class", className).Debug("RDT class created and tracked in accountant")
 	return nil
 }
 
@@ -199,7 +199,7 @@ func (a *RDTAccountant) UpdateClass(className string, socket0Req, socket1Req *Al
 		a.socket1State.MemBandwidthUsed += socket1Alloc.MemBandwidth
 	}
 
-	a.logger.WithField("class", className).Info("RDT class updated in accountant")
+	a.logger.WithField("class", className).Debug("RDT class updated in accountant")
 	return nil
 }
 

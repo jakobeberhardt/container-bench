@@ -17,9 +17,14 @@ type BenchmarkInfo struct {
 	MaxT            int             `yaml:"max_t"`
 	PIDSyncInterval int             `yaml:"pid_sync_interval,omitempty"` // Interval in ms for syncing PIDs to RDT groups (default: 100ms)
 	LogLevel        string          `yaml:"log_level"`
+	Accounting      *LoggingConfig  `yaml:"accounting,omitempty"`
 	Scheduler       SchedulerConfig `yaml:"scheduler"`
 	Data            DataConfig      `yaml:"data"`
 	Docker          *DockerConfig   `yaml:"docker,omitempty"`
+}
+
+type LoggingConfig struct {
+	LogLevel string `yaml:"log_level,omitempty"`
 }
 
 type DockerConfig struct {
@@ -41,8 +46,9 @@ type SchedulerConfig struct {
 	MaxL3                      int     `yaml:"max_l3,omitempty"`                        // max exclusive cache ways to probe/allocate
 	MaxMem                     float64 `yaml:"max_mem,omitempty"`                       // max memory bandwidth percentage to probe/allocate
 	ProbingT                   float64 `yaml:"probing_t,omitempty"`                     // total probing time budget (seconds)
-	BreakCondition             float64 `yaml:"break_condition,omitempty"`               // stop probing when avg IPC efficiency >= this
+	BreakCondition             float64 `yaml:"break_condition,omitempty"`               // stop probing when avg IPCE (Perf.IPCEfficancy) >= this
 	BreakImprovement           float64 `yaml:"break_improvement,omitempty"`             // stop when relative improvement below this
+	GreedyAllocation           bool    `yaml:"greedy_allocation,omitempty"`             // if true, stop probe early on diminishing returns; if false, classify diminishing returns post-mortem
 	Reallocate                 bool    `yaml:"reallocate,omitempty"`                    // opportunistic reallocation when jobs finish
 	SkipAllocationAfterProbing *bool   `yaml:"skip_allocation_after_probing,omitempty"` // if true, never keep allocations after probing (default: true)
 	AllocateUnbound            bool    `yaml:"allocate_unbound,omitempty"`              // keep allocation for unbound containers even if skip_allocation_after_probing is true
@@ -71,6 +77,19 @@ type AllocatorConfig struct {
 }
 
 type ProberConfig struct {
+	// Log level for the prober subsystem (allocation probing + optional kernel probing)
+	LogLevel string `yaml:"log_level,omitempty"`
+
+	// Allocation prober parameters (used by schedulers doing allocation probing).
+	MinL3Ways        int     `yaml:"min_l3,omitempty"`
+	MaxL3Ways        int     `yaml:"max_l3,omitempty"`
+	StepL3Ways       int     `yaml:"step_l3,omitempty"`
+	MinMemBandwidth  float64 `yaml:"min_mem,omitempty"`
+	MaxMemBandwidth  float64 `yaml:"max_mem,omitempty"`
+	StepMemBandwidth float64 `yaml:"mem_step,omitempty"`
+	ProbingT         float64 `yaml:"probing_t,omitempty"`
+
+	// Kernel prober configuration (legacy/optional; used by ProbeScheduler and similar).
 	Implementation    string `yaml:"implementation"`
 	Abortable         bool   `yaml:"abortable"`
 	Isolated          bool   `yaml:"isolated"`

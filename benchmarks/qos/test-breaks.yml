@@ -1,7 +1,7 @@
 benchmark:
-  name: Trace
-  description: Test which starts a baseline, a victim and multiple neighbors
-  max_t: 80
+  name: Test Breaks
+  description: Test trace
+  max_t: 100
   log_level: info
   accounting:
     log_level: info
@@ -10,16 +10,17 @@ benchmark:
     prober:
       log_level: info
       min_l3: 1
-      max_l3: 2
+      max_l3: 3
       step_l3: 1
       min_mem: 10
-      max_mem: 20
+      max_mem: 30
       mem_step: 10
-      probing_t: 8
+      probing_t: 30
+      greedy_allocation: false
     break_condition: 80
-    break_improvement: -1
-    warmup_t: 10
-    cooldown_t: 10 
+    break_improvement: 10
+    warmup_t: 5
+    cooldown_t: 5 
     skip_allocation_after_probing: true
     allocate_unbound: false
     reallocate: true
@@ -38,10 +39,10 @@ benchmark:
       username: ${DOCKER_REGISTRY_USERNAME}
       password: ${DOCKER_REGISTRY_PASSWORD}
 
-
-first:
+unbound-1:
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
   command: "stress-ng --matrix-3d 1 --timeout 0 "
+  start_t: 0
   data:
     frequency: 100
     perf: true
@@ -49,9 +50,9 @@ first:
     rdt: true
 
 
-second:
+immediate-2:
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-  command: "stress-ng --matrix-3d 1 --timeout 0"
+  command: "stress-ng --cache 1 --cache-level 1 --timeout 0"
   start_t: 5
   data:
     frequency: 100
@@ -59,25 +60,13 @@ second:
     docker: true
     rdt: true
 
-# third:
-#   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-#   command: "stress-ng --matrix-3d 1 --timeout 0 "
-#   start_t: 10
-#   data:
-#     frequency: 100
-#     perf: true
-#     docker: true
-#     rdt: true
 
-
-# four:
-#   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-#   command: "stress-ng --matrix-3d 1 --timeout 0 "
-#   start_t: 30
-#   num_cores: 7
-#   data:
-#     frequency: 100
-#     perf: true
-#     docker: true
-#     rdt: true
-
+diminish-3:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --tsearch 1 --timeout 0"
+  start_t: 10
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true

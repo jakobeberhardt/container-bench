@@ -55,7 +55,7 @@ type AllocationResult struct {
 	// Performance metrics (computed from dataframes)
 	AvgIPC                 float64 `json:"avg_ipc,omitempty"`
 	AvgTheoreticalIPC      float64 `json:"avg_theoretical_ipc,omitempty"`
-	IPCEfficiency          float64 `json:"ipc_efficiency,omitempty"` // IPC / Theoretical IPC
+	IPCEfficiency          float64 `json:"ipc_efficiency,omitempty"` // From Perf.IPCEfficancy (no fallback)
 	AvgCacheMissRate       float64 `json:"avg_cache_miss_rate,omitempty"`
 	AvgStalledCycles       float64 `json:"avg_stalled_cycles,omitempty"`
 	AvgStallsL3MissPercent float64 `json:"avg_stalls_l3_miss_percent,omitempty"`
@@ -116,7 +116,7 @@ func ProbeAllocation(
 	benchmarkID int,
 ) (*AllocationProbeResult, error) {
 
-	logger := logging.GetSchedulerLogger()
+	logger := logging.GetProberLogger()
 
 	result := &AllocationProbeResult{
 		BenchmarkID:      benchmarkID,
@@ -376,6 +376,32 @@ func GenerateAllocationSequence(allocRange AllocationRange) []AllocationSpec {
 	return generateAllocationSequence(allocRange)
 }
 
+// ComputeAllocationMetrics calculates performance metrics for a probe allocation
+// from the collected dataframes.
+func ComputeAllocationMetrics(
+	result *AllocationResult,
+	dataframes *dataframe.DataFrames,
+	containerIndex int,
+	startStep, endStep int,
+) {
+	containerDF := dataframes.GetContainer(containerIndex)
+	if containerDF == nil {
+		result.IPCEfficiency = -1
+		return
+	}
+	computeAllocationMetricsFromContainerDF(result, containerDF, startStep, endStep)
+}
+
+// ComputeAllocationMetricsFromContainerDF calculates performance metrics for a probe allocation
+// from a specific container dataframe.
+func ComputeAllocationMetricsFromContainerDF(
+	result *AllocationResult,
+	containerDF *dataframe.ContainerDataFrame,
+	startStep, endStep int,
+) {
+	computeAllocationMetricsFromContainerDF(result, containerDF, startStep, endStep)
+}
+
 // classCreationStatus tracks which classes were created
 type classCreationStatus struct {
 	ProbeCreated     bool
@@ -415,34 +441,43 @@ func applyAndMeasureAllocation(
 	// Calculate ways range string (e.g., "0-3" for 4 ways)
 	waysRange := fmt.Sprintf("0-%d", alloc.L3Ways-1)
 
+	socketScopedReqs := func(socketID int, req *accounting.AllocationRequest) (socket0Req, socket1Req *accounting.AllocationRequest, err error) {
+		switch socketID {
+		case 0:
+			return req, nil, nil
+		case 1:
+			return nil, req, nil
+		default:
+			return nil, nil, fmt.Errorf("invalid socket id: %d", socketID)
+		}
+	}
+
 	// Step 1: Create or update probe class for target container
 	if !probeClassExists {
 		// First allocation
-		err := rdtAccountant.CreateClass(probeClassName,
-			&accounting.AllocationRequest{
-				L3Ways:       waysRange,
-				MemBandwidth: alloc.MemBandwidth,
-			},
-			&accounting.AllocationRequest{
-				L3Ways:       waysRange,
-				MemBandwidth: alloc.MemBandwidth,
-			},
-		)
+		req := &accounting.AllocationRequest{
+			L3Ways:       waysRange,
+			MemBandwidth: alloc.MemBandwidth,
+		}
+		socket0Req, socket1Req, err := socketScopedReqs(allocRange.SocketID, req)
+		if err != nil {
+			return nil, status, err
+		}
+		err = rdtAccountant.CreateClass(probeClassName, socket0Req, socket1Req)
 
 		if err != nil {
 			if allocRange.ForceReallocation {
 				logger.WithField("class", probeClassName).Debug("Class exists, removing and recreating")
 				_ = rdtAccountant.DeleteClass(probeClassName)
-				err = rdtAccountant.CreateClass(probeClassName,
-					&accounting.AllocationRequest{
-						L3Ways:       waysRange,
-						MemBandwidth: alloc.MemBandwidth,
-					},
-					&accounting.AllocationRequest{
-						L3Ways:       waysRange,
-						MemBandwidth: alloc.MemBandwidth,
-					},
-				)
+				req := &accounting.AllocationRequest{
+					L3Ways:       waysRange,
+					MemBandwidth: alloc.MemBandwidth,
+				}
+				socket0Req, socket1Req, serr := socketScopedReqs(allocRange.SocketID, req)
+				if serr != nil {
+					return nil, status, serr
+				}
+				err = rdtAccountant.CreateClass(probeClassName, socket0Req, socket1Req)
 				if err != nil {
 					return nil, status, fmt.Errorf("failed to create probe class: %w", err)
 				}
@@ -459,16 +494,15 @@ func applyAndMeasureAllocation(
 		}
 	} else {
 		// Subsequent allocations
-		err := rdtAccountant.UpdateClass(probeClassName,
-			&accounting.AllocationRequest{
-				L3Ways:       waysRange,
-				MemBandwidth: alloc.MemBandwidth,
-			},
-			&accounting.AllocationRequest{
-				L3Ways:       waysRange,
-				MemBandwidth: alloc.MemBandwidth,
-			},
-		)
+		req := &accounting.AllocationRequest{
+			L3Ways:       waysRange,
+			MemBandwidth: alloc.MemBandwidth,
+		}
+		socket0Req, socket1Req, err := socketScopedReqs(allocRange.SocketID, req)
+		if err != nil {
+			return nil, status, err
+		}
+		err = rdtAccountant.UpdateClass(probeClassName, socket0Req, socket1Req)
 		if err != nil {
 			return nil, status, fmt.Errorf("failed to update probe class: %w", err)
 		}
@@ -487,18 +521,18 @@ func applyAndMeasureAllocation(
 				remainingMemBW = 1.0
 			}
 
+			isoReq := &accounting.AllocationRequest{
+				L3Ways:       isolationWaysRange,
+				MemBandwidth: remainingMemBW,
+			}
+			socket0Iso, socket1Iso, ierr := socketScopedReqs(allocRange.SocketID, isoReq)
+			if ierr != nil {
+				return nil, status, ierr
+			}
+
 			if !isolationClassExists {
 				// First allocation
-				err := rdtAccountant.CreateClass(isolationClassName,
-					&accounting.AllocationRequest{
-						L3Ways:       isolationWaysRange,
-						MemBandwidth: remainingMemBW,
-					},
-					&accounting.AllocationRequest{
-						L3Ways:       isolationWaysRange,
-						MemBandwidth: remainingMemBW,
-					},
-				)
+				err := rdtAccountant.CreateClass(isolationClassName, socket0Iso, socket1Iso)
 
 				if err != nil {
 					logger.WithError(err).Warn("Failed to create isolation class, continuing without isolation")
@@ -540,16 +574,7 @@ func applyAndMeasureAllocation(
 				}
 			} else {
 				// Subsequent allocations
-				err := rdtAccountant.UpdateClass(isolationClassName,
-					&accounting.AllocationRequest{
-						L3Ways:       isolationWaysRange,
-						MemBandwidth: remainingMemBW,
-					},
-					&accounting.AllocationRequest{
-						L3Ways:       isolationWaysRange,
-						MemBandwidth: remainingMemBW,
-					},
-				)
+				err := rdtAccountant.UpdateClass(isolationClassName, socket0Iso, socket1Iso)
 				if err != nil {
 					logger.WithError(err).Warn("Failed to update isolation class")
 				}
@@ -567,7 +592,7 @@ func applyAndMeasureAllocation(
 	allocResult.Duration = time.Since(allocResult.Started)
 
 	// Step 5: Compute performance metrics from dataframes
-	computeAllocationMetrics(allocResult, dataframes, targetContainer.Index, startStepNumber, endStepNumber)
+	ComputeAllocationMetrics(allocResult, dataframes, targetContainer.Index, startStepNumber, endStepNumber)
 
 	// Note: We do NOT cleanup probe classes here
 	// The scheduler or ProbeAllocation caller will clean them up at the end
@@ -608,18 +633,13 @@ func removeOutliers(values []float64) []float64 {
 }
 
 // computeAllocationMetrics calculates performance metrics from collected dataframes
-func computeAllocationMetrics(
+
+func computeAllocationMetricsFromContainerDF(
 	result *AllocationResult,
-	dataframes *dataframe.DataFrames,
-	containerIndex int,
+	containerDF *dataframe.ContainerDataFrame,
 	startStep, endStep int,
 ) {
-	containerDF := dataframes.GetContainer(containerIndex)
-	if containerDF == nil {
-		return
-	}
-
-	var ipcValues, theoreticalIPCValues, cacheMissRateValues, stalledCyclesValues, stallsL3MissPercentValues []float64
+	var ipcEffValues, ipcValues, theoreticalIPCValues, cacheMissRateValues, stalledCyclesValues, stallsL3MissPercentValues []float64
 	var l3OccupancyValues, memBandwidthValues []uint64
 
 	steps := containerDF.GetAllSteps()
@@ -633,6 +653,9 @@ func computeAllocationMetrics(
 
 		// Collect performance metrics
 		if step.Perf != nil {
+			if step.Perf.IPCEfficancy != nil {
+				ipcEffValues = append(ipcEffValues, *step.Perf.IPCEfficancy)
+			}
 			if step.Perf.InstructionsPerCycle != nil {
 				ipcValues = append(ipcValues, *step.Perf.InstructionsPerCycle)
 			}
@@ -665,11 +688,23 @@ func computeAllocationMetrics(
 	}
 
 	// Remove outliers from float metrics
+	ipcEffValues = removeOutliers(ipcEffValues)
 	ipcValues = removeOutliers(ipcValues)
 	theoreticalIPCValues = removeOutliers(theoreticalIPCValues)
 	cacheMissRateValues = removeOutliers(cacheMissRateValues)
 	stalledCyclesValues = removeOutliers(stalledCyclesValues)
 	stallsL3MissPercentValues = removeOutliers(stallsL3MissPercentValues)
+
+	// Calculate IPC efficiency directly from dataframe (preferred)
+	if len(ipcEffValues) > 0 {
+		var sum float64
+		for _, v := range ipcEffValues {
+			sum += v
+		}
+		result.IPCEfficiency = sum / float64(len(ipcEffValues))
+	} else {
+		result.IPCEfficiency = -1
+	}
 
 	// Calculate averages from filtered values
 	if len(ipcValues) > 0 {
@@ -728,8 +763,5 @@ func computeAllocationMetrics(
 		result.AvgMemBandwidthUsed = sum / uint64(len(memBandwidthValues))
 	}
 
-	// Calculate IPC efficiency
-	if result.AvgTheoreticalIPC > 0 {
-		result.IPCEfficiency = result.AvgIPC / result.AvgTheoreticalIPC
-	}
+	// Note: result.IPCEfficiency is populated from Perf.IPCEfficancy above.
 }
