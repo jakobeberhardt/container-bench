@@ -9,6 +9,7 @@ import (
 	"container-bench/internal/logging"
 	"container-bench/internal/probe"
 	proberesources "container-bench/internal/probe/resources"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -51,6 +52,10 @@ type activeProbe struct {
 	containerIndex int
 	originalSocket int
 	runner         *proberesources.AllocationProbeRunner
+
+	stepCtx    context.Context
+	stepCancel context.CancelFunc
+	stepDone   chan struct{}
 }
 
 type InterferenceAwareScheduler struct {
@@ -63,6 +68,7 @@ type InterferenceAwareScheduler struct {
 	rdtAccountant *accounting.RDTAccountant
 	prober        *probe.Probe
 	config        *config.SchedulerConfig
+	collectorFreq CollectorFrequencyController
 	cpuAllocator  cpuallocator.Allocator
 	benchmarkID   int
 
@@ -83,6 +89,10 @@ type InterferenceAwareScheduler struct {
 
 	probeQueue  []int
 	probeQueued map[int]bool
+}
+
+func (s *InterferenceAwareScheduler) SetCollectorFrequencyController(controller CollectorFrequencyController) {
+	s.collectorFreq = controller
 }
 
 func (s *InterferenceAwareScheduler) debugStateLocked(event string) {
@@ -284,9 +294,9 @@ func (s *InterferenceAwareScheduler) ProcessDataFrames(dfs *dataframe.DataFrames
 		}
 	}
 
-	// Advance active probe.
+	// Active probe is stepped asynchronously (see startProbeLocked).
 	if s.probing != nil {
-		return s.stepProbeLocked(dfs)
+		return nil
 	}
 
 	// FIFO: only probe the head of the queue.
@@ -324,12 +334,79 @@ func (s *InterferenceAwareScheduler) ProcessDataFrames(dfs *dataframe.DataFrames
 
 func (s *InterferenceAwareScheduler) Shutdown() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	// Abort any active probe so we reliably restore any temporary collector frequency override.
+	if s.probing != nil {
+		ap := s.probing
+		if ap.stepCancel != nil {
+			ap.stepCancel()
+		}
+		if ap.runner != nil {
+			ap.runner.Abort("shutdown")
+		}
+		_ = s.resetContainerToBenchmarkLocked(ap.containerIndex)
+		s.lastProbeFinished = time.Now()
+		s.probing = nil
+	}
+	s.mu.Unlock()
 
 	if s.rdtAccountant != nil {
 		_ = s.rdtAccountant.Cleanup()
 	}
 	return nil
+}
+
+func (s *InterferenceAwareScheduler) startProbeStepperLocked(dfs *dataframe.DataFrames, ap *activeProbe) {
+	if ap == nil || ap.runner == nil {
+		return
+	}
+	if ap.stepCancel != nil {
+		// Already started.
+		return
+	}
+
+	cd := ap.runner.CandidateDuration()
+	stepEvery := 100 * time.Millisecond
+	if cd > 0 {
+		q := cd / 5
+		if q > 0 && q < stepEvery {
+			stepEvery = q
+		}
+	}
+	if stepEvery < 10*time.Millisecond {
+		stepEvery = 10 * time.Millisecond
+	}
+
+	ap.stepCtx, ap.stepCancel = context.WithCancel(context.Background())
+	ap.stepDone = make(chan struct{})
+
+	// Step the probe independently from ProcessDataFrames cadence so the probe finishes
+	// close to its configured budget/candidate durations.
+	go func() {
+		defer close(ap.stepDone)
+		ticker := time.NewTicker(stepEvery)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ap.stepCtx.Done():
+				return
+			case <-ticker.C:
+				s.mu.Lock()
+				// Probe may have been cleared/replaced.
+				if s.probing != ap {
+					s.mu.Unlock()
+					return
+				}
+				err := s.stepProbeLocked(dfs)
+				s.mu.Unlock()
+				if err != nil {
+					if s.schedulerLogger != nil {
+						s.schedulerLogger.WithError(err).Warn("Asynchronous probe step failed")
+					}
+					return
+				}
+			}
+		}
+	}()
 }
 
 func (s *InterferenceAwareScheduler) GetVersion() string { return s.version }
@@ -751,6 +828,8 @@ func (s *InterferenceAwareScheduler) startProbeLocked(dfs *dataframe.DataFrames,
 	maxMem := 30.0
 	stepMem := defaultProbeMemStepPercent
 	budgetSeconds := defaultProbeTotalSeconds
+	var probingFrequency time.Duration
+	var outlierDrop int
 	if cfg != nil {
 		if cfg.Prober != nil {
 			if cfg.Prober.MinL3Ways > 0 {
@@ -773,6 +852,12 @@ func (s *InterferenceAwareScheduler) startProbeLocked(dfs *dataframe.DataFrames,
 			}
 			if cfg.Prober.ProbingT > 0 {
 				budgetSeconds = cfg.Prober.ProbingT
+			}
+			if cfg.Prober.ProbingFrequency > 0 {
+				probingFrequency = time.Duration(cfg.Prober.ProbingFrequency) * time.Millisecond
+			}
+			if cfg.Prober.DropOutliers != 0 {
+				outlierDrop = cfg.Prober.DropOutliers
 			}
 		}
 
@@ -862,7 +947,7 @@ func (s *InterferenceAwareScheduler) startProbeLocked(dfs *dataframe.DataFrames,
 		AcceptableIPCEfficiency:     acceptable,
 		DiminishingReturnsThreshold: diminishing,
 	}
-	opts := proberesources.AllocationProbeOptions{}
+	opts := proberesources.AllocationProbeOptions{ProbingFrequency: probingFrequency, OutlierDrop: outlierDrop}
 	if cfg != nil {
 		opts.GreedyAllocation = cfg.GreedyAllocation
 	}
@@ -888,6 +973,15 @@ func (s *InterferenceAwareScheduler) startProbeLocked(dfs *dataframe.DataFrames,
 		LatestStepNumber: func(dfs *dataframe.DataFrames, idx int) int {
 			return latestStepNumber(dfs, idx)
 		},
+		OverrideContainerCollectorFrequency: func(idx int, freq time.Duration) (func(), error) {
+			if freq <= 0 {
+				return nil, nil
+			}
+			if s.collectorFreq == nil {
+				return nil, fmt.Errorf("collector frequency controller not configured")
+			}
+			return s.collectorFreq.OverrideContainerFrequency(idx, freq)
+		},
 	}
 
 	runner := proberesources.NewAllocationProbeRunnerFromRange(
@@ -908,11 +1002,15 @@ func (s *InterferenceAwareScheduler) startProbeLocked(dfs *dataframe.DataFrames,
 		origSock = 0
 	}
 
-	s.probing = &activeProbe{containerIndex: containerIndex, originalSocket: origSock, runner: runner}
+	ap := &activeProbe{containerIndex: containerIndex, originalSocket: origSock, runner: runner}
+	s.probing = ap
 
 	if err := runner.Start(dfs); err != nil {
 		return err
 	}
+
+	// Run probing asynchronously at a finer cadence than the scheduler tick.
+	s.startProbeStepperLocked(dfs, ap)
 
 	s.schedulerLogger.WithFields(logrus.Fields{
 		"container":     containerIndex,
@@ -1670,7 +1768,7 @@ func normalizeIPCEPercentThreshold(v float64) *float64 {
 		return &v
 	}
 	// IPCE is stored as a percentage in Perf.IPCEfficancy (0-100 typical).
-	// Backwards-compat: if a user provided a fraction (0-1), convert to percent.
+	// Backwards-compat: if we provided a fraction (0-1), convert to percent e.g. in old benchmarks.
 	if v > 0 && v <= 1 {
 		v = v * 100
 	}

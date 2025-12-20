@@ -2,6 +2,8 @@ package collectors
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"time"
 
 	"container-bench/internal/config"
@@ -25,6 +27,10 @@ type ContainerCollector struct {
 	config         CollectorConfig
 	dataFrame      *dataframe.ContainerDataFrame
 
+	frequencyMu      sync.Mutex
+	currentFrequency time.Duration
+	freqUpdateChan   chan time.Duration
+
 	perfCollector   *PerfCollector
 	dockerCollector *DockerCollector
 	rdtCollector    *RDTCollector
@@ -43,12 +49,50 @@ type CollectorConfig struct {
 
 func NewContainerCollector(containerIndex int, containerID string, config CollectorConfig, df *dataframe.ContainerDataFrame) *ContainerCollector {
 	return &ContainerCollector{
-		containerIndex: containerIndex,
-		ContainerID:    containerID,
-		config:         config,
-		dataFrame:      df,
-		stopChan:       make(chan struct{}),
+		containerIndex:   containerIndex,
+		ContainerID:      containerID,
+		config:           config,
+		dataFrame:        df,
+		currentFrequency: config.Frequency,
+		freqUpdateChan:   make(chan time.Duration, 1),
+		stopChan:         make(chan struct{}),
 	}
+}
+
+func (cc *ContainerCollector) setFrequencyLocked(freq time.Duration) {
+	cc.currentFrequency = freq
+	// Ensure the latest value wins even if a previous update is still buffered.
+	select {
+	case cc.freqUpdateChan <- freq:
+	default:
+		select {
+		case <-cc.freqUpdateChan:
+		default:
+		}
+		cc.freqUpdateChan <- freq
+	}
+}
+
+// OverrideFrequency temporarily overrides the collector sampling frequency.
+// It returns a restore function that resets the previous frequency.
+func (cc *ContainerCollector) OverrideFrequency(freq time.Duration) (restore func(), err error) {
+	if freq <= 0 {
+		return nil, fmt.Errorf("frequency must be > 0")
+	}
+
+	cc.frequencyMu.Lock()
+	prev := cc.currentFrequency
+	cc.setFrequencyLocked(freq)
+	cc.frequencyMu.Unlock()
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			cc.frequencyMu.Lock()
+			cc.setFrequencyLocked(prev)
+			cc.frequencyMu.Unlock()
+		})
+	}, nil
 }
 
 func (cc *ContainerCollector) SetContainerInfo(pid int, cgroupPath string, cpuCores []int) {
@@ -101,7 +145,10 @@ func (cc *ContainerCollector) Start(ctx context.Context) error {
 }
 
 func (cc *ContainerCollector) collect(ctx context.Context) {
-	ticker := time.NewTicker(cc.config.Frequency)
+	cc.frequencyMu.Lock()
+	freq := cc.currentFrequency
+	cc.frequencyMu.Unlock()
+	ticker := time.NewTicker(freq)
 	defer ticker.Stop()
 
 	stepCounter := 0
@@ -112,6 +159,10 @@ func (cc *ContainerCollector) collect(ctx context.Context) {
 			return
 		case <-cc.stopChan:
 			return
+		case newFreq := <-cc.freqUpdateChan:
+			if newFreq > 0 {
+				ticker.Reset(newFreq)
+			}
 		case <-ticker.C:
 			step := &dataframe.SamplingStep{
 				Timestamp: time.Now(),

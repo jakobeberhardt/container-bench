@@ -17,6 +17,7 @@ benchmark:
       mem_step: 10
       probing_t: 30
       greedy_allocation: false
+      probing_frequency: 50
     break_condition: 80
     break_improvement: 10
     warmup_t: 5

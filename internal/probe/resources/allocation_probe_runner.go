@@ -28,6 +28,16 @@ type AllocationProbeOptions struct {
 	// If false, the probe runs the full candidate set (unless break_condition hits) and
 	// diminishing returns is classified post-mortem based on the last within-ways mem step.
 	GreedyAllocation bool
+
+	// ProbingFrequency, if > 0, requests a temporary increase of the target container's
+	// container collector frequency for the duration of this allocation probe.
+	// The orchestration/scheduler must provide a callback to apply this.
+	ProbingFrequency time.Duration
+
+	// OutlierDrop controls outlier trimming for allocation probe metric computation.
+	// If > 0: sort samples and drop N lowest and N highest values.
+	// If <= 0: keep all values.
+	OutlierDrop int
 }
 
 type AllocationProbeTarget struct {
@@ -46,6 +56,11 @@ type AllocationProbeCallbacks struct {
 	ApplyAllocation  func(ways int, mem float64) error
 	ResetToBenchmark func() error
 	LatestStepNumber func(dfs *dataframe.DataFrames, containerIndex int) int
+
+	// OverrideContainerCollectorFrequency temporarily overrides the sampling frequency of
+	// the container collector for the probe target and returns a restore function.
+	// If nil, probing runs with the configured baseline collection frequency.
+	OverrideContainerCollectorFrequency func(containerIndex int, freq time.Duration) (restore func(), err error)
 }
 
 // AllocationProbeRunner incrementally runs an allocation probe using a caller-provided
@@ -75,6 +90,8 @@ type AllocationProbeRunner struct {
 
 	stopReason string
 	unbound    bool
+
+	restoreCollectorFrequency func()
 }
 
 func NewAllocationProbeRunner(
@@ -195,6 +212,15 @@ func (r *AllocationProbeRunner) Unbound() bool                    { return r.unb
 func (r *AllocationProbeRunner) NumCandidates() int               { return len(r.candidates) }
 func (r *AllocationProbeRunner) CandidateDuration() time.Duration { return r.candidateDur }
 
+// Abort stops the probe early and performs cleanup (e.g., restoring collector frequency).
+// It is safe to call multiple times.
+func (r *AllocationProbeRunner) Abort(reason string) {
+	if reason == "" {
+		reason = "aborted"
+	}
+	r.finish(reason)
+}
+
 func (r *AllocationProbeRunner) Start(dfs *dataframe.DataFrames) error {
 	if r.started {
 		return nil
@@ -216,6 +242,24 @@ func (r *AllocationProbeRunner) Start(dfs *dataframe.DataFrames) error {
 		"max_mem_bw":       r.rangeCfg.MaxMemBandwidth,
 		"step_mem_bw":      r.rangeCfg.StepMemBandwidth,
 	}).Info("Allocation probe started")
+
+	if r.opts.ProbingFrequency > 0 && r.cb.OverrideContainerCollectorFrequency != nil {
+		restore, err := r.cb.OverrideContainerCollectorFrequency(r.target.ContainerIndex, r.opts.ProbingFrequency)
+		if err != nil {
+			logger.WithFields(logrus.Fields{
+				"container":       r.target.ContainerName,
+				"container_index": r.target.ContainerIndex,
+				"freq_ms":         int(r.opts.ProbingFrequency / time.Millisecond),
+			}).WithError(err).Warn("Failed to override container collector frequency for allocation probing")
+		} else {
+			r.restoreCollectorFrequency = restore
+			logger.WithFields(logrus.Fields{
+				"container":       r.target.ContainerName,
+				"container_index": r.target.ContainerIndex,
+				"freq_ms":         int(r.opts.ProbingFrequency / time.Millisecond),
+			}).Debug("Overrode container collector frequency for allocation probing")
+		}
+	}
 
 	if len(r.candidates) == 0 {
 		r.finish("no_candidates")
@@ -284,7 +328,20 @@ func (r *AllocationProbeRunner) Step(dfs *dataframe.DataFrames) (done bool, err 
 		Duration:       time.Since(r.startedAt),
 		DataFrameSteps: make([]int, 0),
 	}
-	ComputeAllocationMetrics(&allocRes, dfs, r.target.ContainerIndex, r.startStep, endStep)
+	if r.candidateDur > 0 {
+		ComputeAllocationMetricsWithOutlierDropAndWindow(
+			&allocRes,
+			dfs,
+			r.target.ContainerIndex,
+			r.startStep,
+			endStep,
+			r.opts.OutlierDrop,
+			r.startedAt,
+			r.startedAt.Add(r.candidateDur),
+		)
+	} else {
+		ComputeAllocationMetricsWithOutlierDrop(&allocRes, dfs, r.target.ContainerIndex, r.startStep, endStep, r.opts.OutlierDrop)
+	}
 	r.result.Allocations = append(r.result.Allocations, allocRes)
 
 	eff := allocRes.IPCEfficiency
@@ -382,6 +439,10 @@ func (r *AllocationProbeRunner) finish(reason string) {
 	}
 	r.finished = true
 	r.stopReason = reason
+	if r.restoreCollectorFrequency != nil {
+		r.restoreCollectorFrequency()
+		r.restoreCollectorFrequency = nil
+	}
 
 	r.result.Finished = time.Now()
 	r.result.TotalProbeTime = r.result.Finished.Sub(r.result.Started)

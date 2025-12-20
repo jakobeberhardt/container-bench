@@ -319,36 +319,13 @@ func countSetBits(mask uint64) uint64 {
 
 // syncCGroupPIDs reads all PIDs from the container's cgroup and adds them to the RDT monitoring group
 func (rc *RDTCollector) syncCGroupPIDs() error {
-	// Check if we're shutting down
-	rc.mu.RLock()
-	if rc.isClosing {
-		rc.mu.RUnlock()
-		return fmt.Errorf("collector is closing")
-	}
-	rc.mu.RUnlock()
-
 	if rc.cgroupPath == "" {
 		return fmt.Errorf("cgroup path not set")
 	}
 
-	rc.mu.RLock()
-	monGroup := rc.monGroup
-	ctrlGroup := rc.ctrlGroup
-	rc.mu.RUnlock()
-
-	if monGroup == nil {
-		return fmt.Errorf("monitoring group not initialized")
-	}
-
-	if ctrlGroup == nil {
-		return fmt.Errorf("control group not initialized")
-	}
-
-	pidsBefore, err := monGroup.GetPids()
-	if err != nil {
-		rc.logger.WithError(err).Trace("Could not get PIDs from monitoring group before sync")
-		pidsBefore = []string{} // Continue anyway
-	}
+	// Read PIDs from the cgroup.procs file first (no need to hold the RDT lock).
+	// We keep monGroup/ctrlGroup interactions protected by rc.mu to avoid races with
+	// class migration (which can delete/recreate mon_groups).
 
 	// Read PIDs from the cgroup.procs file
 	cgroupProcsPath := fmt.Sprintf("%s/cgroup.procs", rc.cgroupPath)
@@ -376,23 +353,44 @@ func (rc *RDTCollector) syncCGroupPIDs() error {
 		return nil
 	}
 
+	// From here on, hold the RLock so the monitoring group cannot be deleted/recreated
+	// concurrently by a class migration (which takes the write lock).
 	rc.mu.RLock()
+	defer rc.mu.RUnlock()
 	if rc.isClosing {
-		rc.mu.RUnlock()
 		return fmt.Errorf("collector is closing")
 	}
-	rc.mu.RUnlock()
+	monGroup := rc.monGroup
+	ctrlGroup := rc.ctrlGroup
+	if monGroup == nil {
+		return fmt.Errorf("monitoring group not initialized")
+	}
+	if ctrlGroup == nil {
+		return fmt.Errorf("control group not initialized")
+	}
+	ctrlName := ctrlGroup.Name()
+	monName := monGroup.Name()
+
+	pidsBefore, err := monGroup.GetPids()
+	if err != nil {
+		rc.logger.WithError(err).WithFields(logrus.Fields{
+			"pid":        rc.pid,
+			"ctrl_group": ctrlName,
+			"mon_group":  monName,
+		}).Trace("Could not get PIDs from monitoring group before sync")
+		pidsBefore = []string{} // Continue anyway
+	}
 
 	// PIDs must be added to the control group BEFORE adding to monitoring group
 	// The monitoring group is a subdivision within the control group
 	// Step 1: Add all PIDs to the parent control group first
 	if err := ctrlGroup.AddPids(pids...); err != nil {
-		return fmt.Errorf("failed to add PIDs to RDT control group %s: %v", ctrlGroup.Name(), err)
+		return fmt.Errorf("failed to add PIDs to RDT control group %s: %v", ctrlName, err)
 	}
 
 	rc.logger.WithFields(logrus.Fields{
 		"pid":        rc.pid,
-		"ctrl_group": ctrlGroup.Name(),
+		"ctrl_group": ctrlName,
 		"pids_count": len(pids),
 	}).Trace("Added PIDs to RDT control group")
 
@@ -404,15 +402,30 @@ func (rc *RDTCollector) syncCGroupPIDs() error {
 	// Get PIDs after sync
 	pidsAfter, err := monGroup.GetPids()
 	if err != nil {
-		rc.logger.WithError(err).Error("Could not get PIDs from monitoring group after sync")
+		// This can happen benignly if the underlying mon_group disappears (e.g., external
+		// cleanup or class churn). Avoid spamming Error logs.
+		msg := strings.ToLower(err.Error())
+		if strings.Contains(msg, "no such file") || strings.Contains(msg, "not found") {
+			rc.logger.WithError(err).WithFields(logrus.Fields{
+				"pid":        rc.pid,
+				"ctrl_group": ctrlName,
+				"mon_group":  monName,
+			}).Debug("Could not get PIDs from monitoring group after sync")
+		} else {
+			rc.logger.WithError(err).WithFields(logrus.Fields{
+				"pid":        rc.pid,
+				"ctrl_group": ctrlName,
+				"mon_group":  monName,
+			}).Warn("Could not get PIDs from monitoring group after sync")
+		}
 		pidsAfter = []string{}
 	}
 
 	rc.logger.WithFields(logrus.Fields{
 		"pid":            rc.pid,
 		"cgroup_path":    rc.cgroupPath,
-		"ctrl_group":     ctrlGroup.Name(),
-		"mon_group":      monGroup.Name(),
+		"ctrl_group":     ctrlName,
+		"mon_group":      monName,
 		"pids_before":    len(pidsBefore),
 		"pids_after":     len(pidsAfter),
 		"pids_in_cgroup": len(pids),

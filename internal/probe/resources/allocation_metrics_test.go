@@ -81,6 +81,34 @@ func TestComputeAllocationMetrics_DoesNotFallbackToIPCOverTheoreticalIPC(t *test
 	}
 }
 
+func TestComputeAllocationMetricsWithOutlierDropAndWindow_FiltersByTimestamp(t *testing.T) {
+	dfs := dataframe.NewDataFrames()
+	cdf := dfs.AddContainer(0)
+
+	// Simulate a collector at 50ms but a probe Step() that runs late.
+	// First 25 samples are within the 1250ms candidate window; later samples must be ignored.
+	t0 := time.Now()
+	windowStart := t0
+	windowEnd := t0.Add(1250 * time.Millisecond)
+
+	inside := 1.0
+	outside := 100.0
+	for i := 1; i <= 40; i++ {
+		ts := t0.Add(time.Duration(i) * 50 * time.Millisecond)
+		v := outside
+		if !ts.After(windowEnd) {
+			v = inside
+		}
+		cdf.AddStep(i, &dataframe.SamplingStep{Timestamp: ts, Perf: &dataframe.PerfMetrics{IPCEfficancy: &v}})
+	}
+
+	res := &AllocationResult{SocketID: 0}
+	ComputeAllocationMetricsWithOutlierDropAndWindow(res, dfs, 0, 0, 40, 0, windowStart, windowEnd)
+	if res.IPCEfficiency < 0.99 || res.IPCEfficiency > 1.01 {
+		t.Fatalf("expected ~1.0 when filtering to window, got %v", res.IPCEfficiency)
+	}
+}
+
 func TestAllocationProbeRunner_UnboundWhenCompletedEvenIfBestNotMax(t *testing.T) {
 	dfs := dataframe.NewDataFrames()
 	cdf := dfs.AddContainer(0)
@@ -376,5 +404,83 @@ func TestAllocationProbeRunner_GreedyStopsEarlyOnDiminishingReturns(t *testing.T
 	}
 	if r.StopReason() != "diminishing_returns" {
 		t.Fatalf("expected diminishing_returns, got %q", r.StopReason())
+	}
+}
+
+func TestAllocationProbeRunner_OverridesCollectorFrequencyForProbeAndRestores(t *testing.T) {
+	dfs := dataframe.NewDataFrames()
+
+	overrideCalls := 0
+	restoreCalls := 0
+
+	r := NewAllocationProbeRunner(
+		AllocationProbeTarget{ContainerIndex: 3, ContainerName: "c3"},
+		AllocationRange{SocketID: 0},
+		nil,
+		0,
+		AllocationProbeBreakPolicy{},
+		AllocationProbeOptions{ProbingFrequency: 50 * time.Millisecond},
+		AllocationProbeCallbacks{
+			OverrideContainerCollectorFrequency: func(containerIndex int, freq time.Duration) (func(), error) {
+				overrideCalls++
+				if containerIndex != 3 {
+					return nil, nil
+				}
+				if freq != 50*time.Millisecond {
+					return nil, nil
+				}
+				return func() { restoreCalls++ }, nil
+			},
+		},
+	)
+
+	if err := r.Start(dfs); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if !r.IsFinished() {
+		t.Fatalf("expected finished (no candidates)")
+	}
+	if overrideCalls != 1 {
+		t.Fatalf("expected 1 override call, got %d", overrideCalls)
+	}
+	if restoreCalls != 1 {
+		t.Fatalf("expected 1 restore call, got %d", restoreCalls)
+	}
+}
+
+func TestComputeAllocationMetricsWithOutlierDrop_DropsInner10From30(t *testing.T) {
+	dfs := dataframe.NewDataFrames()
+	cdf := dfs.AddContainer(0)
+
+	// Add 30 samples: 0..29
+	for i := 1; i <= 30; i++ {
+		v := float64(i - 1)
+		cdf.AddStep(i, &dataframe.SamplingStep{Timestamp: time.Now(), Perf: &dataframe.PerfMetrics{IPCEfficancy: &v}})
+	}
+
+	res := &AllocationResult{SocketID: 0}
+	ComputeAllocationMetricsWithOutlierDrop(res, dfs, 0, 0, 30, 10)
+
+	// After dropping 10 lowest and 10 highest, kept values are 10..19, avg=14.5
+	if res.IPCEfficiency < 14.49 || res.IPCEfficiency > 14.51 {
+		t.Fatalf("expected ~14.5, got %v", res.IPCEfficiency)
+	}
+}
+
+func TestComputeAllocationMetricsWithOutlierDrop_DisabledKeepsAll(t *testing.T) {
+	dfs := dataframe.NewDataFrames()
+	cdf := dfs.AddContainer(0)
+
+	// Add 30 samples: 0..29, avg=14.5
+	for i := 1; i <= 30; i++ {
+		v := float64(i - 1)
+		cdf.AddStep(i, &dataframe.SamplingStep{Timestamp: time.Now(), Perf: &dataframe.PerfMetrics{IPCEfficancy: &v}})
+	}
+
+	res := &AllocationResult{SocketID: 0}
+	ComputeAllocationMetricsWithOutlierDrop(res, dfs, 0, 0, 30, -1)
+
+	if res.IPCEfficiency < 14.49 || res.IPCEfficiency > 14.51 {
+		t.Fatalf("expected ~14.5, got %v", res.IPCEfficiency)
 	}
 }

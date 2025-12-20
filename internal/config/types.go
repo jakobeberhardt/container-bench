@@ -89,6 +89,15 @@ type ProberConfig struct {
 	StepMemBandwidth float64 `yaml:"mem_step,omitempty"`
 	ProbingT         float64 `yaml:"probing_t,omitempty"`
 
+	// ProbingFrequency temporarily overrides the container collector sampling frequency (ms)
+	// while the allocation prober is running for a container. If 0: disabled.
+	ProbingFrequency int `yaml:"probing_frequency,omitempty"`
+
+	// DropOutliers controls outlier trimming for allocation probing metrics.
+	// If > 0: sort samples and drop N lowest and N highest values (keep the inner values).
+	// If <= 0: keep all values (-1 disables trimming; 0 means keep all).
+	DropOutliers int `yaml:"drop_outliers,omitempty"`
+
 	// Kernel prober configuration (legacy/optional; used by ProbeScheduler and similar).
 	Implementation    string `yaml:"implementation"`
 	Abortable         bool   `yaml:"abortable"`

@@ -83,17 +83,17 @@ type AllocationRange struct {
 }
 
 // AllocationSpec defines a specific allocation to test (shared helper type).
-// It is intentionally minimal so schedulers can reuse the same search ordering logic
+// It is minimal so schedulers can reuse the same search ordering logic
 // without pulling in the full probe execution loop.
 type AllocationSpec struct {
 	L3Ways       int
 	MemBandwidth float64
 }
 
-// BreakCondition defines when to stop probing early
+// defines when to stop probing early
 type BreakCondition func(result *AllocationResult, allResults []AllocationResult) bool
 
-// ContainerInfo holds information about a container for probing
+// holds information about a container for probing
 type ContainerInfo struct {
 	Index   int
 	PID     int
@@ -105,7 +105,7 @@ type ContainerInfo struct {
 	Command string
 }
 
-// ProbeAllocation tests different resource allocations for a container and measures performance
+// tests different resource allocations for a container and measures performance
 func ProbeAllocation(
 	targetContainer ContainerInfo,
 	otherContainers []ContainerInfo,
@@ -148,7 +148,7 @@ func ProbeAllocation(
 	logger.WithField("total_allocations", len(allocations)).Info("Generated allocation sequence")
 
 	// Track original classes for cleanup
-	// Record all containers' current classes - we'll decide what to restore based on force flag
+	// Record all containers' current classes
 	originalClasses := make(map[int]string)
 	for _, container := range append([]ContainerInfo{targetContainer}, otherContainers...) {
 		if class, err := rdtAccountant.GetContainerClass(container.PID); err == nil {
@@ -166,10 +166,6 @@ func ProbeAllocation(
 	probeClassCreated := false
 	isolationClassCreated := false
 
-	// IMPORTANT: Before creating any classes, we need to ensure system/default is shrunk
-	// to make room for our allocations. We do this by creating a temporary minimal allocation
-	// for system/default so the resctrl filesystem allows our overlapping allocations.
-	// This is necessary because by default, system/default owns all cache ways.
 	logger.Debug("Preparing system/default for probe allocations")
 
 	probeStartTime := time.Now()
@@ -389,7 +385,44 @@ func ComputeAllocationMetrics(
 		result.IPCEfficiency = -1
 		return
 	}
-	computeAllocationMetricsFromContainerDF(result, containerDF, startStep, endStep)
+	computeAllocationMetricsFromContainerDF(result, containerIndex, containerDF, startStep, endStep, 0, nil, nil)
+}
+
+// ComputeAllocationMetricsWithOutlierDrop is like ComputeAllocationMetrics but allows configuring
+// how many low/high samples are trimmed as outliers.
+//
+// outlierDrop semantics:
+// - if > 0: sort samples and drop outlierDrop lowest and outlierDrop highest values
+// - if <= 0: keep all values
+func ComputeAllocationMetricsWithOutlierDrop(
+	result *AllocationResult,
+	dataframes *dataframe.DataFrames,
+	containerIndex int,
+	startStep, endStep int,
+	outlierDrop int,
+) {
+	containerDF := dataframes.GetContainer(containerIndex)
+	if containerDF == nil {
+		result.IPCEfficiency = -1
+		return
+	}
+	computeAllocationMetricsFromContainerDF(result, containerIndex, containerDF, startStep, endStep, outlierDrop, nil, nil)
+}
+
+func ComputeAllocationMetricsWithOutlierDropAndWindow(
+	result *AllocationResult,
+	dataframes *dataframe.DataFrames,
+	containerIndex int,
+	startStep, endStep int,
+	outlierDrop int,
+	windowStart, windowEnd time.Time,
+) {
+	containerDF := dataframes.GetContainer(containerIndex)
+	if containerDF == nil {
+		result.IPCEfficiency = -1
+		return
+	}
+	computeAllocationMetricsFromContainerDF(result, containerIndex, containerDF, startStep, endStep, outlierDrop, &windowStart, &windowEnd)
 }
 
 // ComputeAllocationMetricsFromContainerDF calculates performance metrics for a probe allocation
@@ -399,7 +432,7 @@ func ComputeAllocationMetricsFromContainerDF(
 	containerDF *dataframe.ContainerDataFrame,
 	startStep, endStep int,
 ) {
-	computeAllocationMetricsFromContainerDF(result, containerDF, startStep, endStep)
+	computeAllocationMetricsFromContainerDF(result, -1, containerDF, startStep, endStep, 0, nil, nil)
 }
 
 // classCreationStatus tracks which classes were created
@@ -408,7 +441,6 @@ type classCreationStatus struct {
 	IsolationCreated bool
 }
 
-// applyAndMeasureAllocation applies an allocation and measures its impact
 // Instead of creating/deleting classes, it creates them on first call and updates them subsequently
 func applyAndMeasureAllocation(
 	targetContainer ContainerInfo,
@@ -617,27 +649,33 @@ func getLatestStepNumber(dataframes *dataframe.DataFrames, containerIndex int) i
 	return maxStep
 }
 
-// removeOutliers removes the top 3 and bottom 3 values from a slice if it has >= 20 elements
-func removeOutliers(values []float64) []float64 {
-	if len(values) < 20 {
+// removeOutliers sorts and drops N lowest and N highest values.
+// If drop <= 0: keep all values.
+// If len(values) <= 2*drop: keep all values.
+func removeOutliers(values []float64, drop int) []float64 {
+	if drop <= 0 {
+		return values
+	}
+	if len(values) <= 2*drop {
 		return values
 	}
 
-	// Sort the values
 	sorted := make([]float64, len(values))
 	copy(sorted, values)
 	sort.Float64s(sorted)
 
-	// Remove bottom 3 and top 3
-	return sorted[3 : len(sorted)-3]
+	return sorted[drop : len(sorted)-drop]
 }
 
 // computeAllocationMetrics calculates performance metrics from collected dataframes
 
 func computeAllocationMetricsFromContainerDF(
 	result *AllocationResult,
+	containerIndex int,
 	containerDF *dataframe.ContainerDataFrame,
 	startStep, endStep int,
+	outlierDrop int,
+	windowStart, windowEnd *time.Time,
 ) {
 	var ipcEffValues, ipcValues, theoreticalIPCValues, cacheMissRateValues, stalledCyclesValues, stallsL3MissPercentValues []float64
 	var l3OccupancyValues, memBandwidthValues []uint64
@@ -646,6 +684,13 @@ func computeAllocationMetricsFromContainerDF(
 	for stepNum := startStep + 1; stepNum <= endStep; stepNum++ {
 		step, exists := steps[stepNum]
 		if !exists || step == nil {
+			continue
+		}
+
+		if windowStart != nil && step.Timestamp.Before(*windowStart) {
+			continue
+		}
+		if windowEnd != nil && step.Timestamp.After(*windowEnd) {
 			continue
 		}
 
@@ -688,12 +733,36 @@ func computeAllocationMetricsFromContainerDF(
 	}
 
 	// Remove outliers from float metrics
-	ipcEffValues = removeOutliers(ipcEffValues)
-	ipcValues = removeOutliers(ipcValues)
-	theoreticalIPCValues = removeOutliers(theoreticalIPCValues)
-	cacheMissRateValues = removeOutliers(cacheMissRateValues)
-	stalledCyclesValues = removeOutliers(stalledCyclesValues)
-	stallsL3MissPercentValues = removeOutliers(stallsL3MissPercentValues)
+	ipcEffRaw := len(ipcEffValues)
+	ipcEffValues = removeOutliers(ipcEffValues, outlierDrop)
+	ipcEffKept := len(ipcEffValues)
+	ipcValues = removeOutliers(ipcValues, outlierDrop)
+	theoreticalIPCValues = removeOutliers(theoreticalIPCValues, outlierDrop)
+	cacheMissRateValues = removeOutliers(cacheMissRateValues, outlierDrop)
+	stalledCyclesValues = removeOutliers(stalledCyclesValues, outlierDrop)
+	stallsL3MissPercentValues = removeOutliers(stallsL3MissPercentValues, outlierDrop)
+
+	if logger := logging.GetProberLogger(); logger != nil && logger.IsLevelEnabled(logrus.DebugLevel) {
+		fields := logrus.Fields{
+			"socket":        result.SocketID,
+			"start_step":    startStep,
+			"end_step":      endStep,
+			"drop_outliers": outlierDrop,
+			"ipce_raw":      ipcEffRaw,
+			"ipce_kept":     ipcEffKept,
+			"ipce_drop":     ipcEffRaw - ipcEffKept,
+		}
+		if windowStart != nil {
+			fields["window_start"] = windowStart.Format(time.RFC3339Nano)
+		}
+		if windowEnd != nil {
+			fields["window_end"] = windowEnd.Format(time.RFC3339Nano)
+		}
+		if containerIndex >= 0 {
+			fields["container_index"] = containerIndex
+		}
+		logger.WithFields(fields).Debug("Allocation probe outlier removal summary")
+	}
 
 	// Calculate IPC efficiency directly from dataframe (preferred)
 	if len(ipcEffValues) > 0 {
@@ -763,5 +832,4 @@ func computeAllocationMetricsFromContainerDF(
 		result.AvgMemBandwidthUsed = sum / uint64(len(memBandwidthValues))
 	}
 
-	// Note: result.IPCEfficiency is populated from Perf.IPCEfficancy above.
 }

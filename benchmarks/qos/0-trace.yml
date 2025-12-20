@@ -1,21 +1,32 @@
 benchmark:
   name: Trace Zero
   description: Implements a trace with jobs arriving at a normal distribution
-  max_t: 230
-  log_level: warn
+  max_t: 250
+  log_level: info
+  accounting:
+    log_level: info
   scheduler:
-    implementation: interference_aware
-    max_l3: 3
-    max_mem: 20
-    probing_t: 20
+    implementation: least_loaded
+    prober:
+      log_level: info
+      min_l3: 1
+      max_l3: 1
+      step_l3: 1
+      min_mem: 10
+      max_mem: 20
+      mem_step: 10
+      probing_t: 2
+      greedy_allocation: false
+      probing_frequency: 50
+      drop_outliers: 5
     break_condition: 80
     break_improvement: -1
-    warmup_t: 10
-    cooldown_t: 10 
+    warmup_t: 5
+    cooldown_t: 5 
     skip_allocation_after_probing: true
     allocate_unbound: false
     reallocate: true
-    rdt: false
+    rdt: true
     log_level: info
   data:
     db:
@@ -36,119 +47,331 @@ matrix-120000:
   expected_t: 168
   command: "stress-ng --matrix-3d 1 --matrix-3d-ops 120000"
   data:
-    frequency: 1000
-    perf: true
-    docker: true
+    frequency: 2000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: 
+      assigned_cores: true
+      cpu_usage_total: true
     rdt: true
 
 qsort-520:
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-  start_t: 50
+  start_t: 10
   expected_t: 35
   command: "stress-ng --qsort 1 --qsort-ops 520"
   data:
-    frequency: 1000
-    perf: true
-    docker: true
+    frequency: 2000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: 
+      assigned_cores: true
+      cpu_usage_total: true
     rdt: true
 
 
 heapsort-500:
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-  start_t: 60
+  start_t: 20
   expected_t: 85
   command: "stress-ng --heapsort 1 --heapsort-ops 500"
   data:
-    frequency: 1000
-    perf: true
-    docker: true
+    frequency: 2000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: 
+      assigned_cores: true
+      cpu_usage_total: true
     rdt: true
 
 matrixprod-20000:
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-  start_t: 10
+  start_t: 30
   expected_t: 52
   command: " stress-ng --cpu 1 --cpu-method matrixprod --cpu-ops 20000"
   data:
-    frequency: 1000
-    perf: true
-    docker: true
+    frequency: 2000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: 
+      assigned_cores: true
+      cpu_usage_total: true
     rdt: true
 
 tsearch-1000:
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-  start_t: 80
+  start_t: 40
   expected_t: 42
   command: "stress-ng --tsearch 1 --tsearch-ops 1000"
   data:
-    frequency: 1000
-    perf: true
-    docker: true
+    frequency: 2000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: 
+      assigned_cores: true
+      cpu_usage_total: true
     rdt: true
 
 stream-1000:
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-  start_t: 100
+  start_t: 50
   expected_t: 52
   command: "stress-ng --stream 1 --stream-ops 1000"
   data:
-    frequency: 1000
-    perf: true
-    docker: true
+    frequency: 2000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: 
+      assigned_cores: true
+      cpu_usage_total: true
     rdt: true
 
 io-500000:
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-  start_t: 110
+  start_t: 60
   expected_t: 55
   command: "stress-ng --io 1 --io-ops 500000"
   data:
-    frequency: 1000
-    perf: true
-    docker: true
+    frequency: 2000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: 
+      assigned_cores: true
+      cpu_usage_total: true
     rdt: true
 
 
 hdd-1000000:
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-  start_t: 120
+  start_t: 70
   expected_t: 57
   command: "stress-ng --hdd 1 --hdd-ops 1000000"
   data:
-    frequency: 1000
-    perf: true
-    docker: true
+    frequency: 2000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: 
+      assigned_cores: true
+      cpu_usage_total: true
     rdt: true
 
 sparsematrix-5000:
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-  start_t: 125
+  start_t: 80
   expected_t: 97
   command: "stress-ng --sparsematrix 1 --sparsematrix-ops 5000"
   data:
-    frequency: 1000
-    perf: true
-    docker: true
+    frequency: 2000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: 
+      assigned_cores: true
+      cpu_usage_total: true
     rdt: true    
 
 l1-100000:
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-  start_t: 130
+  start_t: 90
   expected_t: 43
   command: "stress-ng --cache 1 --cache-level 1 --cache-ops 100000"
   data:
-    frequency: 1000
-    perf: true
-    docker: true
+    frequency: 2000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: 
+      assigned_cores: true
+      cpu_usage_total: true
     rdt: true    
 
 l2-50000:
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-  start_t: 140
+  start_t: 100
   expected_t: 31
   command: "stress-ng --cache 2 --cache-level 1 --cache-ops 100000"
   data:
-    frequency: 1000
-    perf: true
-    docker: true
+    frequency: 2000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: 
+      assigned_cores: true
+      cpu_usage_total: true
     rdt: true    
+
+
+7z-one-large:
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+  command: "/populate.sh 1000 && 7z a -mx=1 -mmt=1  dummy.7z /data/*.bin"
+  start_t: 5
+  expected_t: 93
+  data:
+    frequency: 2000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: 
+      assigned_cores: true
+      cpu_usage_total: true
+    rdt: true    
+
+
+7z-two-large:
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+  command: "/populate.sh 1000 && 7z a -mx=2 -mmt=1  dummy.7z /data/*.bin"
+  start_t: 5
+  expected_t: 134
+  data:
+    frequency: 2000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: 
+      assigned_cores: true
+      cpu_usage_total: true
+    rdt: true    
+
+
+7z-three-large:
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+  command: "/populate.sh 1000 && 7z a -mx=3 -mmt=1  dummy.7z /data/*.bin"
+  expected_t: 212
+  data:
+    frequency: 2000
+    perf:
+      instructions: true
+      cycles: true
+      stalls_total: true
+    docker: 
+      assigned_cores: true
+      cpu_usage_total: true
+    rdt: true    
+
+
+
+
+
+
+
+# 7z-four-large:
+#   image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+#   command: "/populate.sh 1000 && 7z a -mx=4 -mmt=1  dummy.7z /data/*.bin"
+#   expected_t: 361 
+#   data:
+#     frequency: 1000
+#     perf: true
+#     docker: true
+#     rdt: true
+
+# 7z-five-large:
+#   image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+#   command: "/populate.sh 1000 && 7z a -mx=5 -mmt=1  dummy.7z /data/*.bin"
+#   expected_t: 360
+#   data:
+#     frequency: 1000
+#     perf: true
+#     docker: true
+#     rdt: true
+
+# 7z-six-large:
+#   image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+#   command: "/populate.sh 1000 && 7z a -mx=6 -mmt=1  dummy.7z /data/*.bin"
+#   expected_t: 494
+#   data:
+#     frequency: 1000
+#     perf: true
+#     docker: true
+#     rdt: true
+
+# 7z-seven-large:
+#   image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+#   command: "/populate.sh 1000 && 7z a -mx=7 -mmt=1  dummy.7z /data/*.bin"
+#   expected_t: 508
+#   data:
+#     frequency: 1000
+#     perf: true
+#     docker: true
+#     rdt: true
+
+# 7z-eight-large:
+#   image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+#   command: "/populate.sh 1000 && 7z a -mx=8 -mmt=1  dummy.7z /data/*.bin"
+#   expected_t: 503
+#   data:
+#     frequency: 1000
+#     perf: true
+#     docker: true
+#     rdt: true
+
+# 7z-nine-large:
+#   image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+#   command: "/populate.sh 1000 && 7z a -mx=9 -mmt=1  dummy.7z /data/*.bin"
+#   expected_t: 496
+#   data:
+#     frequency: 1000
+#     perf: true
+#     docker: true
+#     rdt: true
+
+
+# linpack:
+#   image: registry.jakob-eberhardt.de/rdt4nn/linpack:latest
+#   expected_t: XX
+#   data:
+#     frequency: 1000
+#     perf: true
+#     docker: true
+#     rdt: true
+
+# tealeaf-large:
+#   image: registry.jakob-eberhardt.de/rdt4nn/tealeaf:latest
+#   command: "./tea_leaf Benchmarks/tea_bm_6.in"
+#   #expected_t: XX
+#   data:
+#     frequency: 1000
+#     perf: true
+#     docker: true
+#     rdt: true
+
+# tealeaf-medium:
+#   image: registry.jakob-eberhardt.de/rdt4nn/tealeaf:latest
+#   command: "./tea_leaf Benchmarks/tea_bm_3.in"
+#   #expected_t: XX
+#   data:
+#     frequency: 1000
+#     perf: true
+#     docker: true
+#     rdt: true
+
+# tealeaf-small:
+#   image: registry.jakob-eberhardt.de/rdt4nn/tealeaf:latest
+#   command: "./tea_leaf Benchmarks/tea_bm_3.in"
+#   expected_t: XX
+#   data:
+#     frequency: 1000
+#     perf: true
+#     docker: true
+#     rdt: true
+

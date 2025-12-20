@@ -602,6 +602,12 @@ func runBenchmark(configFile string) error {
 	// Set benchmark ID for scheduler
 	bench.scheduler.SetBenchmarkID(bench.benchmarkID)
 
+	// Allow schedulers/probers to temporarily override container collector frequency (e.g. during allocation probing).
+	if setter, ok := bench.scheduler.(scheduler.CollectorFrequencyControllerSetter); ok {
+		setter.SetCollectorFrequencyController(containerCollectorFrequencyController{bench: bench})
+		logger.Debug("Collector frequency controller injected into scheduler")
+	}
+
 	// Initialize kernel Probe only if configured for kernel probing (so scheduler.prober can be used
 	// for allocation-prober parameters without creating a probe container).
 	shouldInitKernelProber := func(pc *config.ProberConfig) bool {
