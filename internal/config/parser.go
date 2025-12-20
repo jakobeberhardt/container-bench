@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"math"
+	"math/rand"
 	"os"
 	"regexp"
 	"sort"
@@ -38,14 +40,25 @@ func LoadConfigWithContent(filepath string) (*BenchmarkConfig, string, error) {
 		return nil, "", err
 	}
 
-	// Derive container key order from YAML, so indices are assigned deterministically
-	orderedKeys := getContainerKeysInYAMLOrder(expanded)
-	if len(orderedKeys) == 0 {
-		orderedKeys = make([]string, 0, len(config.Containers))
-		for k := range config.Containers {
-			orderedKeys = append(orderedKeys, k)
+	// Generated trace mode: expand workloads into concrete containers.
+	orderedKeys := make([]string, 0)
+	if config.Arrival != nil && len(config.Workloads) > 0 {
+		generated, order, err := expandGeneratedTrace(&config)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to expand generated trace: %w", err)
 		}
-		sort.Strings(orderedKeys)
+		config.Containers = generated
+		orderedKeys = order
+	} else {
+		// Static mode: derive container key order from YAML, so indices are assigned deterministically.
+		orderedKeys = getContainerKeysInYAMLOrder(expanded)
+		if len(orderedKeys) == 0 {
+			orderedKeys = make([]string, 0, len(config.Containers))
+			for k := range config.Containers {
+				orderedKeys = append(orderedKeys, k)
+			}
+			sort.Strings(orderedKeys)
+		}
 	}
 
 	// Auto-assign indices 0..N-1 (ignore any explicit index mapping)
@@ -108,12 +121,236 @@ func getContainerKeysInYAMLOrder(expandedYAML string) []string {
 			continue
 		}
 		key := k.Value
-		if key == "" || key == "benchmark" {
+		if key == "" {
+			continue
+		}
+		// Reserved top-level keys (non-container definitions)
+		switch key {
+		case "benchmark", "arrival", "data", "workloads":
 			continue
 		}
 		keys = append(keys, key)
 	}
 	return keys
+}
+
+func expandGeneratedTrace(cfg *BenchmarkConfig) (map[string]ContainerConfig, []string, error) {
+	if cfg == nil || cfg.Arrival == nil {
+		return nil, nil, fmt.Errorf("arrival config missing")
+	}
+	if len(cfg.Workloads) == 0 {
+		return nil, nil, fmt.Errorf("workloads pool is empty")
+	}
+	if cfg.Data == nil {
+		return nil, nil, fmt.Errorf("top-level data defaults are required in generated-trace mode")
+	}
+	if cfg.Data.Frequency <= 0 {
+		return nil, nil, fmt.Errorf("top-level data.frequency must be > 0")
+	}
+	if cfg.Arrival.Mean <= 0 {
+		return nil, nil, fmt.Errorf("arrival.mean must be > 0")
+	}
+	if cfg.Arrival.Sigma < 0 {
+		return nil, nil, fmt.Errorf("arrival.sigma must be >= 0")
+	}
+
+	length := cfg.Arrival.Length
+	if length == nil {
+		length = &NormalDistConfig{Mean: 30, Sigma: 10, Min: 1}
+	}
+	if length.Mean <= 0 {
+		return nil, nil, fmt.Errorf("arrival.length.mean must be > 0")
+	}
+	if length.Sigma < 0 {
+		return nil, nil, fmt.Errorf("arrival.length.sigma must be >= 0")
+	}
+
+	// Prefer correctly spelled sensitivities if present.
+	sens := cfg.Arrival.Sensitivities
+	if len(sens.Weights) == 0 && cfg.Arrival.Sensetivities.Weights != nil {
+		sens = cfg.Arrival.Sensetivities
+	}
+
+	rng := rand.New(rand.NewSource(cfg.Arrival.Seed))
+	containers := make(map[string]ContainerConfig)
+	order := make([]string, 0)
+
+	// Build template list for selection.
+	templateKeys := make([]string, 0, len(cfg.Workloads))
+	for k := range cfg.Workloads {
+		templateKeys = append(templateKeys, k)
+	}
+	sort.Strings(templateKeys)
+
+	chooseFromWeights := func(ws WeightedSet) (string, bool) {
+		if ws.Random || len(ws.Weights) == 0 {
+			return "", false
+		}
+		// deterministic iteration order
+		keys := make([]string, 0, len(ws.Weights))
+		for k := range ws.Weights {
+			if k == "" {
+				continue
+			}
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		total := 0.0
+		for _, k := range keys {
+			w := ws.Weights[k]
+			if w > 0 {
+				total += w
+			}
+		}
+		if total <= 0 {
+			return "", false
+		}
+		r := rng.Float64() * total
+		acc := 0.0
+		for _, k := range keys {
+			w := ws.Weights[k]
+			if w <= 0 {
+				continue
+			}
+			acc += w
+			if r <= acc {
+				return k, true
+			}
+		}
+		return keys[len(keys)-1], true
+	}
+
+	sampleNormalClamped := func(mean, sigma, min, max float64) float64 {
+		v := mean
+		if sigma > 0 {
+			v = mean + sigma*rng.NormFloat64()
+		}
+		if min != 0 && v < min {
+			v = min
+		}
+		if max != 0 && v > max {
+			v = max
+		}
+		if v < 0 {
+			v = 0
+		}
+		return v
+	}
+
+	// First job at t=0, then sample inter-arrival deltas.
+	// We work in integer seconds to match ContainerConfig start_t granularity.
+	// Important: advance by integer-rounded deltas (not rounding the cumulative time),
+	// otherwise rounding artifacts can create duplicate start_t values and distort the distribution.
+	startSec := 0
+	jobID := 1
+	for {
+		if startSec >= cfg.Benchmark.MaxT {
+			break
+		}
+
+		kind := ""
+		if v, ok := chooseFromWeights(cfg.Arrival.Split); ok {
+			kind = v
+		}
+		sensitivity := ""
+		if v, ok := chooseFromWeights(sens); ok {
+			sensitivity = v
+		}
+
+		// Pick a workload template matching (kind, sensitivity) when possible.
+		candidates := make([]string, 0)
+		for _, k := range templateKeys {
+			w := cfg.Workloads[k]
+			if w.Image == "" || w.Command == "" {
+				continue
+			}
+			if kind != "" && w.Kind != "" && w.Kind != kind {
+				continue
+			}
+			if sensitivity != "" && w.Sensitivity != "" && w.Sensitivity != sensitivity {
+				continue
+			}
+			candidates = append(candidates, k)
+		}
+		if len(candidates) == 0 {
+			// Relax constraints.
+			for _, k := range templateKeys {
+				w := cfg.Workloads[k]
+				if w.Image == "" || w.Command == "" {
+					continue
+				}
+				candidates = append(candidates, k)
+			}
+		}
+		if len(candidates) == 0 {
+			return nil, nil, fmt.Errorf("no valid workloads (missing image/command)")
+		}
+		picked := candidates[rng.Intn(len(candidates))]
+		w := cfg.Workloads[picked]
+
+		cores := w.NumCores
+		if cores <= 0 {
+			cores = 1
+		}
+		baseLen := sampleNormalClamped(length.Mean, length.Sigma, length.Min, length.Max)
+		durSec := int(math.Round(baseLen))
+		if durSec < 1 {
+			durSec = 1
+		}
+
+		stopSec := startSec + durSec
+		if stopSec > cfg.Benchmark.MaxT {
+			stopSec = cfg.Benchmark.MaxT
+		}
+		if stopSec <= startSec {
+			break
+		}
+		expectedSec := stopSec - startSec
+
+		key := fmt.Sprintf("%06d-job-%s", jobID, picked)
+		jobID++
+		st := startSec
+		sp := stopSec
+		ex := expectedSec
+		c := ContainerConfig{
+			Name:      key,
+			Image:     w.Image,
+			Command:   w.Command,
+			NumCores:  cores,
+			StartT:    &st,
+			StopT:     &sp,
+			ExpectedT: &ex,
+			Data:      *cfg.Data,
+		}
+		containers[key] = c
+		order = append(order, key)
+
+		// Next arrival (inter-arrival time in seconds).
+		delta := sampleNormalClamped(cfg.Arrival.Mean, cfg.Arrival.Sigma, 0, 0)
+		deltaSec := int(math.Round(delta))
+		if deltaSec < 1 {
+			deltaSec = 1
+		}
+		startSec += deltaSec
+		// Avoid pathological huge job counts.
+		if jobID > 100000 {
+			return nil, nil, fmt.Errorf("generated too many jobs; check arrival parameters")
+		}
+	}
+
+	// Ensure container order is stable by start time then key.
+	sort.SliceStable(order, func(i, j int) bool {
+		a := containers[order[i]]
+		b := containers[order[j]]
+		as := a.GetStartSeconds()
+		bs := b.GetStartSeconds()
+		if as != bs {
+			return as < bs
+		}
+		return order[i] < order[j]
+	})
+
+	return containers, order, nil
 }
 
 func expandEnvVars(content string) string {

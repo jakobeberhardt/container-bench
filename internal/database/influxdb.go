@@ -167,11 +167,69 @@ func (idb *InfluxDBClient) GetLastBenchmarkID() (int, error) {
 	logger := logging.GetLogger()
 	var result int
 
+	queryMaxFromMeta := func(ctx context.Context, window string) (int, bool, error) {
+		// Use the tag index to fetch benchmark_id tag values.
+		// This avoids Flux schema-collision errors if historical data accidentally wrote benchmark_id
+		// with mixed types (e.g., as a field in some runs and a tag in others).
+		query := fmt.Sprintf(`
+			import "influxdata/influxdb/schema"
+
+			schema.tagValues(
+				bucket: "%s",
+				tag: "benchmark_id",
+				predicate: (r) => r._measurement == "benchmark_meta",
+				start: %s,
+			)
+			|> map(fn: (r) => ({ _value: int(v: r._value) }))
+			|> max()
+			|> yield(name: "max_benchmark_id")
+		`, idb.bucket, window)
+
+		queryResult, err := idb.queryAPI.Query(ctx, query)
+		if err != nil {
+			return 0, false, fmt.Errorf("failed to query last benchmark ID from benchmark_meta: %w", err)
+		}
+		defer queryResult.Close()
+
+		if !queryResult.Next() {
+			if queryResult.Err() != nil {
+				return 0, false, fmt.Errorf("error reading query results: %w", queryResult.Err())
+			}
+			return 0, false, nil
+		}
+
+		switch v := queryResult.Record().Value().(type) {
+		case int64:
+			return int(v), true, nil
+		case uint64:
+			return int(v), true, nil
+		default:
+			if queryResult.Record().Value() == nil {
+				return 0, false, nil
+			}
+			return 0, false, fmt.Errorf("unexpected max_benchmark_id value type %T", queryResult.Record().Value())
+		}
+	}
+
 	operation := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		query := fmt.Sprintf(`
+		// Fast path: query max benchmark_id from benchmark_meta (sparse; one per benchmark).
+		for _, window := range []string{"-7d", "-30d", "-365d", "-3000d"} {
+			id, ok, err := queryMaxFromMeta(ctx, window)
+			if err != nil {
+				return err
+			}
+			if ok {
+				result = id
+				return nil
+			}
+		}
+
+		// Fallback (expensive): derive max ID from benchmark_metrics.
+		// Keep range bounded to avoid scanning unbounded history.
+		fallbackQuery := fmt.Sprintf(`
 			from(bucket: "%s")
 			|> range(start: -300d)
 			|> filter(fn: (r) => r._measurement == "benchmark_metrics")
@@ -180,8 +238,7 @@ func (idb *InfluxDBClient) GetLastBenchmarkID() (int, error) {
 			|> max()
 			|> yield(name: "max_benchmark_id")
 		`, idb.bucket)
-
-		queryResult, err := idb.queryAPI.Query(ctx, query)
+		queryResult, err := idb.queryAPI.Query(ctx, fallbackQuery)
 		if err != nil {
 			return fmt.Errorf("failed to query last benchmark ID: %w", err)
 		}
@@ -195,11 +252,9 @@ func (idb *InfluxDBClient) GetLastBenchmarkID() (int, error) {
 				}
 			}
 		}
-
 		if queryResult.Err() != nil {
 			return fmt.Errorf("error reading query results: %w", queryResult.Err())
 		}
-
 		result = maxID
 		return nil
 	}

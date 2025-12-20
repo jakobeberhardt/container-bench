@@ -117,6 +117,20 @@ container0:
     rdt: false      # Enable Intel RDT data collection
 ```
 
+### Generated Traces (Seed-Based)
+For long experiments, you can generate a trace from distributions instead of manually listing every job.
+
+- Keep `benchmark:` metadata unchanged.
+- Add top-level `arrival:` parameters (inter-arrival time + job length distribution).
+- Add top-level `data:` defaults (applied to every generated job).
+- Add `workloads:` as a pool of templates.
+
+Duration handling:
+- The generator samples a duration (seconds) from `arrival.length` and sets `start_t/stop_t/expected_t` accordingly.
+- Commands are expected to run indefinitely (e.g., `stress-ng --timeout 0`); the orchestrator stops containers at `stop_t`.
+
+Example: `benchmarks/qos/0-trace-generated.yml`
+
 ## Usage
 ### Validate Configuration
 ```bash

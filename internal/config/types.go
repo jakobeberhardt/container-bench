@@ -8,7 +8,63 @@ import (
 
 type BenchmarkConfig struct {
 	Benchmark  BenchmarkInfo              `yaml:"benchmark"`
-	Containers map[string]ContainerConfig `yaml:",inline"`
+	Arrival    *ArrivalConfig             `yaml:"arrival,omitempty"`
+	Data       *CollectorConfig           `yaml:"data,omitempty"` // shared container data defaults (generated-trace mode)
+	Workloads  map[string]WorkloadConfig  `yaml:"workloads,omitempty"`
+	Containers map[string]ContainerConfig `yaml:",inline"` // static containers (or generated containers after expansion)
+}
+
+// ArrivalConfig configures seed-based trace generation.
+// Mean/Sigma control inter-arrival time in seconds.
+type ArrivalConfig struct {
+	Seed  int64   `yaml:"seed,omitempty"`
+	Mean  float64 `yaml:"mean"`
+	Sigma float64 `yaml:"sigma"`
+
+	// Length controls job length distribution (seconds).
+	// If omitted, defaults are used.
+	Length *NormalDistConfig `yaml:"length,omitempty"`
+
+	// Split selects which kind of workload arrives.
+	// If Split.Random is true, split weights are ignored.
+	Split WeightedSet `yaml:"split,omitempty"`
+
+	// Sensitivities selects an interference sensitivity bucket for arriving jobs.
+	// If Random is true, weights are ignored.
+	Sensitivities WeightedSet `yaml:"sensitivities,omitempty"`
+	Sensetivities WeightedSet `yaml:"sensetivities,omitempty"` // backward/typo compatibility
+}
+
+type NormalDistConfig struct {
+	Mean  float64 `yaml:"mean"`
+	Sigma float64 `yaml:"sigma"`
+	Min   float64 `yaml:"min,omitempty"`
+	Max   float64 `yaml:"max,omitempty"`
+}
+
+// WeightedSet supports a YAML mapping like:
+//
+//	split:
+//	  random: false
+//	  single-thread: 80
+//	  multi-thread: 10
+//
+// The non-"random" keys are treated as weights.
+type WeightedSet struct {
+	Random  bool               `yaml:"random,omitempty"`
+	Weights map[string]float64 `yaml:",inline"`
+}
+
+// WorkloadConfig describes an entry in the workload pool for generated traces.
+// The command must run indefinitely (the orchestrator stops it at stop_t).
+type WorkloadConfig struct {
+	Image    string `yaml:"image"`
+	Command  string `yaml:"command"`
+	NumCores int    `yaml:"num_cores,omitempty"`
+
+	// Used only for generation-time selection (never passed to scheduler as semantic labels).
+	Kind        string `yaml:"kind,omitempty"`        // single-thread|multi-thread|multi-programmed|iobound
+	Sensitivity string `yaml:"sensitivity,omitempty"` // low|medium|high
 }
 
 type BenchmarkInfo struct {
