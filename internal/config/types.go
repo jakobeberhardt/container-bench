@@ -70,6 +70,7 @@ type WorkloadConfig struct {
 type BenchmarkInfo struct {
 	Name            string          `yaml:"name"`
 	Description     string          `yaml:"description"`
+	Drain           bool            `yaml:"drain,omitempty"`
 	MaxT            int             `yaml:"max_t"`
 	PIDSyncInterval int             `yaml:"pid_sync_interval,omitempty"` // Interval in ms for syncing PIDs to RDT groups (default: 100ms)
 	LogLevel        string          `yaml:"log_level"`
@@ -103,6 +104,8 @@ type SchedulerConfig struct {
 	MaxMem                     float64 `yaml:"max_mem,omitempty"`                       // max memory bandwidth percentage to probe/allocate
 	ProbingT                   float64 `yaml:"probing_t,omitempty"`                     // total probing time budget (seconds)
 	BreakCondition             float64 `yaml:"break_condition,omitempty"`               // stop probing when avg IPCE (Perf.IPCEfficancy) >= this
+	BreakCPULoad               *float64 `yaml:"break_cpu_load,omitempty"`               // stop probing when avg Docker CPU usage percent <= this (-1 or nil disables)
+	BreakLLCOccupancy          *float64 `yaml:"break_llc_occupancy,omitempty"`          // stop probing when avg LLC utilization percent <= this (-1 or nil disables)
 	BreakImprovement           float64 `yaml:"break_improvement,omitempty"`             // stop when relative improvement below this
 	GreedyAllocation           bool    `yaml:"greedy_allocation,omitempty"`             // if true, stop probe early on diminishing returns; if false, classify diminishing returns post-mortem
 	Reallocate                 bool    `yaml:"reallocate,omitempty"`                    // opportunistic reallocation when jobs finish

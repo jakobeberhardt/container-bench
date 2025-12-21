@@ -1,0 +1,7 @@
+workloads:
+  compile:
+    image: registry.jakob-eberhardt.de/rdt4nn/compile/linux:latest
+    command: "make defconfig && make -j4"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low

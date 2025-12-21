@@ -933,6 +933,8 @@ func (s *InterferenceAwareScheduler) startProbeLocked(dfs *dataframe.DataFrames,
 	// Break policy (IPCE threshold + diminishing returns).
 	var acceptable *float64
 	var diminishing *float64
+	var breakCPU *float64
+	var breakLLC *float64
 	if cfg != nil {
 		acceptable = normalizeIPCEPercentThreshold(cfg.BreakCondition)
 		if cfg.BreakImprovement != 0 {
@@ -942,12 +944,16 @@ func (s *InterferenceAwareScheduler) startProbeLocked(dfs *dataframe.DataFrames,
 			}
 			diminishing = &v
 		}
+		breakCPU = normalizeOptionalPercentThreshold(cfg.BreakCPULoad)
+		breakLLC = normalizeOptionalPercentThreshold(cfg.BreakLLCOccupancy)
 	}
 	breaks := proberesources.AllocationProbeBreakPolicy{
 		AcceptableIPCEfficiency:     acceptable,
 		DiminishingReturnsThreshold: diminishing,
+		MaxCPUUsagePercent:          breakCPU,
+		MaxL3UtilizationPct:         breakLLC,
 	}
-	opts := proberesources.AllocationProbeOptions{ProbingFrequency: probingFrequency, OutlierDrop: outlierDrop}
+	opts := proberesources.AllocationProbeOptions{ProbingFrequency: probingFrequency, OutlierDrop: outlierDrop, BaselineFirst: true}
 	if cfg != nil {
 		opts.GreedyAllocation = cfg.GreedyAllocation
 	}
@@ -1084,6 +1090,7 @@ func (s *InterferenceAwareScheduler) finalizeProbeLocked() error {
 	bestEff := ap.runner.BestEff()
 	bestUnbound := ap.runner.Unbound()
 	bestReason := ap.runner.StopReason()
+	precheck := !ap.runner.StartedAllocating()
 
 	// Persist profile.
 	p.evaluated = true
@@ -1132,6 +1139,7 @@ func (s *InterferenceAwareScheduler) finalizeProbeLocked() error {
 		"mem":           p.demandMem,
 		"best_eff":      bestEff,
 		"unbound":       p.unbound,
+		"precheck":      precheck,
 		"kept_alloc":    keep,
 		"skip_alloc":    skipAlloc,
 		"alloc_unbound": allocateUnbound,
@@ -1773,6 +1781,23 @@ func normalizeIPCEPercentThreshold(v float64) *float64 {
 		v = v * 100
 	}
 	return &v
+}
+
+func normalizeOptionalPercentThreshold(v *float64) *float64 {
+	if v == nil {
+		return nil
+	}
+	val := *v
+	// Negative values are treated as "disabled" by the prober.
+	if val < 0 {
+		return v
+	}
+	// Accept fractions (0-1) as shorthand for percent.
+	if val > 0 && val <= 1 {
+		vv := val * 100
+		return &vv
+	}
+	return v
 }
 
 func averageIPCEfficiency(dfs *dataframe.DataFrames, containerIndex int, startStep, endStep int) float64 {

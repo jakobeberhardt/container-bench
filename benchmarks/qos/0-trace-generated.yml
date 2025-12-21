@@ -1,7 +1,8 @@
 benchmark:
   name: Trace Generated
   description: Seed-based generated trace (arrival + length distributions)
-  max_t: 600
+  drain: false
+  max_t: 1800
   log_level: info
   accounting:
     log_level: info
@@ -13,13 +14,15 @@ benchmark:
       max_l3: 1
       step_l3: 1
       min_mem: 10
-      max_mem: 20
+      max_mem: 10
       mem_step: 10
-      probing_t: 2
+      probing_t: 1
       greedy_allocation: false
       probing_frequency: 50
       drop_outliers: 5
     break_condition: 80
+    break_cpu_load: 20
+    break_llc_occupancy: -1
     break_improvement: -1
     warmup_t: 5
     cooldown_t: 5
@@ -43,13 +46,13 @@ benchmark:
 
 # Generated trace parameters
 arrival:
-  seed: 0
-  mean: 10
-  sigma: 2
+  seed: 1
+  mean: 30
+  sigma: 10
   length:
     mean: 600
     sigma: 100
-    min: 400
+    min: 300
   split:
     random: true
     single-thread: 50
@@ -74,100 +77,9 @@ data:
   rdt: true
 
 workloads:
-  heapsort:
-    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-    command: "stress-ng --heapsort 1 --timeout 0"
-    num_cores: 1
-    kind: single-thread
-    sensitivity: low
-
-  matrix-3d:
-    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-    command: "stress-ng --matrix-3d 1 --timeout 0"
-    num_cores: 1
-    kind: multi-programmed
-    sensitivity: high
-
-  qsort:
-    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-    command: "stress-ng --qsort 1 --timeout 0"
-    num_cores: 1
-    kind: single-thread
-    sensitivity: low
-
-  stream:
-    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-    command: "stress-ng --stream 1 --timeout 0"
-    num_cores: 2
-    kind: iobound
-    sensitivity: medium
-
-  qsort-ops:
-    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-    command: "stress-ng --qsort 1 --timeout 0"
-    num_cores: 1
-    kind: single-thread
-    sensitivity: low
-
-  heapsort-ops:
-    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-    command: "stress-ng --heapsort 1 --timeout 0"
-    num_cores: 1
-    kind: single-thread
-    sensitivity: low
-
-  matrixprod:
-    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-    command: "stress-ng --cpu 1 --cpu-method matrixprod --timeout 0"
-    num_cores: 1
-    kind: single-thread
-    sensitivity: medium
-
-  tsearch:
-    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-    command: "stress-ng --tsearch 1  --timeout 0"
-    num_cores: 1
-    kind: single-thread
-    sensitivity: low
-
-  stream-ops:
-    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-    command: "stress-ng --stream 1 --timeout 0"
-    num_cores: 2
-    kind: iobound
-    sensitivity: high
-
-  hdd:
-    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-    command: "stress-ng --hdd 1 --timeout 0"
-    num_cores: 1
-    kind: iobound
-    sensitivity: low
-
-  sparsematrix:
-    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-    command: "stress-ng --sparsematrix 1 --timeout 0"
-    num_cores: 1
-    kind: multi-programmed
-    sensitivity: high
-
-  cache-l1:
-    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-    command: "stress-ng --cache 1 --cache-level 1 --timeout 0"
-    num_cores: 1
-    kind: single-thread
-    sensitivity: low
-  
-  7z-1-large:
-    image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
-    num_cores: 1
-    command: "while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=1 -mmt=1  dummy.7z /data/*.bin; done"
-    kind: single-thread
-    sensitivity: low
-
-  7z-1-large-multi:
-    image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
-    num_cores: 4
-    command: "while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=1 -mmt=4  dummy.7z /data/*.bin; done"
-    kind: multi-thread
-    sensitivity: low
+  input:
+    - ../../jobs/stress-ng
+    - ../../jobs/compression
+    - ../../jobs/ffmpeg
+    - ../../jobs/compile
+    #- ../../jobs/tealeaf

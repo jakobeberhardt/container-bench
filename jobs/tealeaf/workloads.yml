@@ -1,0 +1,21 @@
+workloads:
+  tealeaf-6:
+    image: registry.jakob-eberhardt.de/rdt4nn/tealeaf:latest
+    command: "while :; do ./tea_leaf Benchmarks/tea_bm_6.in; done"
+    kind: single-thread
+    sensitivity: high
+    num_cores: 1
+  
+  tealeaf-3:
+    image: registry.jakob-eberhardt.de/rdt4nn/tealeaf:latest
+    command: "while :; do ./tea_leaf Benchmarks/tea_bm_3.in; done"
+    kind: single-thread
+    sensitivity: high
+    num_cores: 1
+
+  tealeaf-1:
+    image: registry.jakob-eberhardt.de/rdt4nn/tealeaf:latest
+    command: "while :; do ./tea_leaf Benchmarks/tea_bm_1.in; done"
+    kind: single-thread
+    sensitivity: high
+    num_cores: 1

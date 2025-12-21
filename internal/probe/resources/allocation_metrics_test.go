@@ -172,6 +172,274 @@ func TestAllocationProbeRunner_UnboundWhenCompletedEvenIfBestNotMax(t *testing.T
 	}
 }
 
+func TestAllocationProbeRunner_BaselineFirstSkipsApplyAllocationAndCanBreak(t *testing.T) {
+	dfs := dataframe.NewDataFrames()
+	cdf := dfs.AddContainer(0)
+
+	v1 := 95.0
+	cdf.AddStep(1, &dataframe.SamplingStep{Timestamp: time.Now(), Perf: &dataframe.PerfMetrics{IPCEfficancy: &v1}})
+
+	seq := []int{0, 1}
+	pos := 0
+	latest := func(_ *dataframe.DataFrames, _ int) int {
+		if pos >= len(seq) {
+			return seq[len(seq)-1]
+		}
+		v := seq[pos]
+		pos++
+		return v
+	}
+
+	applyCalls := 0
+	apply := func(_ int, _ float64) error {
+		applyCalls++
+		return nil
+	}
+
+	thr := 80.0
+	r := NewAllocationProbeRunner(
+		AllocationProbeTarget{ContainerIndex: 0, ContainerName: "c0"},
+		AllocationRange{SocketID: 0, MaxL3Ways: 2, MaxMemBandwidth: 20},
+		[]AllocationSpec{{L3Ways: 0, MemBandwidth: 0}, {L3Ways: 1, MemBandwidth: 10}},
+		0,
+		AllocationProbeBreakPolicy{AcceptableIPCEfficiency: &thr},
+		AllocationProbeOptions{},
+		AllocationProbeCallbacks{LatestStepNumber: latest, ApplyAllocation: apply},
+	)
+
+	if err := r.Start(dfs); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if applyCalls != 0 {
+		t.Fatalf("expected no ApplyAllocation call for baseline, got %d", applyCalls)
+	}
+
+	done, err := r.Step(dfs)
+	if err != nil {
+		t.Fatalf("step: %v", err)
+	}
+	if !done {
+		t.Fatalf("expected done")
+	}
+	if r.StopReason() != "break_condition" {
+		t.Fatalf("expected break_condition, got %q", r.StopReason())
+	}
+	if applyCalls != 0 {
+		t.Fatalf("expected no ApplyAllocation calls when breaking on baseline, got %d", applyCalls)
+	}
+	if len(r.Result().Allocations) != 1 {
+		t.Fatalf("expected 1 allocation result (baseline), got %d", len(r.Result().Allocations))
+	}
+}
+
+func TestAllocationProbeRunner_BaselinePrecheckUsesLatestSamplesEvenWithoutNewSteps(t *testing.T) {
+	dfs := dataframe.NewDataFrames()
+	cdf := dfs.AddContainer(0)
+
+	// High IPCE exists, but the baseline candidate will see no new steps (endStep == startStep).
+	v1 := 95.0
+	cdf.AddStep(1, &dataframe.SamplingStep{Timestamp: time.Now(), Perf: &dataframe.PerfMetrics{IPCEfficancy: &v1}})
+
+	// Start baseline at step 1, then report end baseline also at step 1.
+	seq := []int{1, 1}
+	pos := 0
+	latest := func(_ *dataframe.DataFrames, _ int) int {
+		if pos >= len(seq) {
+			return seq[len(seq)-1]
+		}
+		v := seq[pos]
+		pos++
+		return v
+	}
+
+	applyCalls := 0
+	apply := func(_ int, _ float64) error {
+		applyCalls++
+		return nil
+	}
+
+	thr := 80.0
+	r := NewAllocationProbeRunner(
+		AllocationProbeTarget{ContainerIndex: 0, ContainerName: "c0"},
+		AllocationRange{SocketID: 0, MaxL3Ways: 2, MaxMemBandwidth: 20},
+		[]AllocationSpec{{L3Ways: 0, MemBandwidth: 0}, {L3Ways: 1, MemBandwidth: 10}},
+		10*time.Millisecond,
+		AllocationProbeBreakPolicy{AcceptableIPCEfficiency: &thr},
+		AllocationProbeOptions{},
+		AllocationProbeCallbacks{LatestStepNumber: latest, ApplyAllocation: apply},
+	)
+
+	if err := r.Start(dfs); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if applyCalls != 0 {
+		t.Fatalf("expected no ApplyAllocation call for baseline, got %d", applyCalls)
+	}
+
+	// Ensure the candidate duration has elapsed so Step evaluates the baseline.
+	time.Sleep(20 * time.Millisecond)
+
+	done, err := r.Step(dfs)
+	if err != nil {
+		t.Fatalf("step: %v", err)
+	}
+	if !done {
+		t.Fatalf("expected done")
+	}
+	if r.StopReason() != "break_condition" {
+		t.Fatalf("expected break_condition, got %q", r.StopReason())
+	}
+	if applyCalls != 0 {
+		t.Fatalf("expected no ApplyAllocation calls when breaking on baseline, got %d", applyCalls)
+	}
+}
+
+func TestAllocationProbeRunner_BreakConditionCPUStopsEarly(t *testing.T) {
+	dfs := dataframe.NewDataFrames()
+	cdf := dfs.AddContainer(0)
+
+	cpu := 5.0
+	cdf.AddStep(1, &dataframe.SamplingStep{Timestamp: time.Now(), Docker: &dataframe.DockerMetrics{CPUUsagePercent: &cpu}})
+
+	seq := []int{0, 1}
+	pos := 0
+	latest := func(_ *dataframe.DataFrames, _ int) int {
+		if pos >= len(seq) {
+			return seq[len(seq)-1]
+		}
+		v := seq[pos]
+		pos++
+		return v
+	}
+
+	thr := 10.0
+	r := NewAllocationProbeRunner(
+		AllocationProbeTarget{ContainerIndex: 0, ContainerName: "c0"},
+		AllocationRange{SocketID: 0, MaxL3Ways: 2, MaxMemBandwidth: 20},
+		[]AllocationSpec{{L3Ways: 0, MemBandwidth: 0}, {L3Ways: 1, MemBandwidth: 10}},
+		0,
+		AllocationProbeBreakPolicy{MaxCPUUsagePercent: &thr},
+		AllocationProbeOptions{},
+		AllocationProbeCallbacks{LatestStepNumber: latest},
+	)
+
+	if err := r.Start(dfs); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	done, err := r.Step(dfs)
+	if err != nil {
+		t.Fatalf("step: %v", err)
+	}
+	if !done {
+		t.Fatalf("expected done")
+	}
+	if r.StopReason() != "break_condition_cpu" {
+		t.Fatalf("expected break_condition_cpu, got %q", r.StopReason())
+	}
+}
+
+func TestAllocationProbeRunner_BreakConditionCPUOnlyAppliesToBaseline(t *testing.T) {
+	dfs := dataframe.NewDataFrames()
+	cdf := dfs.AddContainer(0)
+
+	// Baseline window has no Docker CPU samples.
+	// Second candidate window has low CPU, but should NOT stop early.
+	cpu := 5.0
+	cdf.AddStep(2, &dataframe.SamplingStep{Timestamp: time.Now(), Docker: &dataframe.DockerMetrics{CPUUsagePercent: &cpu}})
+
+	// Produce step numbers for: start baseline (0), end baseline (1), start cand2 (1), end cand2 (2)
+	seq := []int{0, 1, 1, 2}
+	pos := 0
+	latest := func(_ *dataframe.DataFrames, _ int) int {
+		if pos >= len(seq) {
+			return seq[len(seq)-1]
+		}
+		v := seq[pos]
+		pos++
+		return v
+	}
+
+	thr := 10.0
+	r := NewAllocationProbeRunner(
+		AllocationProbeTarget{ContainerIndex: 0, ContainerName: "c0"},
+		AllocationRange{SocketID: 0, MaxL3Ways: 2, MaxMemBandwidth: 20},
+		[]AllocationSpec{{L3Ways: 0, MemBandwidth: 0}, {L3Ways: 1, MemBandwidth: 10}},
+		0,
+		AllocationProbeBreakPolicy{MaxCPUUsagePercent: &thr},
+		AllocationProbeOptions{},
+		AllocationProbeCallbacks{LatestStepNumber: latest},
+	)
+
+	if err := r.Start(dfs); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	// Step baseline: should not break due to missing CPU samples.
+	done, err := r.Step(dfs)
+	if err != nil {
+		t.Fatalf("step1: %v", err)
+	}
+	if done {
+		t.Fatalf("expected not done after baseline")
+	}
+
+	// Step second candidate: even though CPU is low, CPU break must not apply after baseline.
+	done, err = r.Step(dfs)
+	if err != nil {
+		t.Fatalf("step2: %v", err)
+	}
+	if !done {
+		t.Fatalf("expected done")
+	}
+	if r.StopReason() == "break_condition_cpu" {
+		t.Fatalf("did not expect break_condition_cpu after baseline")
+	}
+}
+
+func TestAllocationProbeRunner_BreakConditionLLCStopsEarly(t *testing.T) {
+	dfs := dataframe.NewDataFrames()
+	cdf := dfs.AddContainer(0)
+
+	llc := 4.0
+	cdf.AddStep(1, &dataframe.SamplingStep{Timestamp: time.Now(), RDT: &dataframe.RDTMetrics{L3UtilizationPctPerSocket: map[int]float64{0: llc}}})
+
+	seq := []int{0, 1}
+	pos := 0
+	latest := func(_ *dataframe.DataFrames, _ int) int {
+		if pos >= len(seq) {
+			return seq[len(seq)-1]
+		}
+		v := seq[pos]
+		pos++
+		return v
+	}
+
+	thr := 5.0
+	r := NewAllocationProbeRunner(
+		AllocationProbeTarget{ContainerIndex: 0, ContainerName: "c0"},
+		AllocationRange{SocketID: 0, MaxL3Ways: 2, MaxMemBandwidth: 20},
+		[]AllocationSpec{{L3Ways: 0, MemBandwidth: 0}, {L3Ways: 1, MemBandwidth: 10}},
+		0,
+		AllocationProbeBreakPolicy{MaxL3UtilizationPct: &thr},
+		AllocationProbeOptions{},
+		AllocationProbeCallbacks{LatestStepNumber: latest},
+	)
+
+	if err := r.Start(dfs); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	done, err := r.Step(dfs)
+	if err != nil {
+		t.Fatalf("step: %v", err)
+	}
+	if !done {
+		t.Fatalf("expected done")
+	}
+	if r.StopReason() != "break_condition_llc" {
+		t.Fatalf("expected break_condition_llc, got %q", r.StopReason())
+	}
+}
+
 func TestAllocationProbeRunner_NotUnboundWhenBreakConditionMet(t *testing.T) {
 	dfs := dataframe.NewDataFrames()
 	cdf := dfs.AddContainer(0)

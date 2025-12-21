@@ -32,7 +32,7 @@ ffmpeg:
   index: 0
   image: registry.jakob-eberhardt.de/rdt4nn/ffmpeg/base:latest
   core: 0
-  command: "/generate_video.sh 5 && while :; do ffmpeg -i /data/video.mov -c:v libx265 -preset veryslow -crf 22 -c:a aac -b:a 128k -y /tmp/output.mp4; done"
+  command: "wget https://lfs.jakob-eberhardt.de/video/320/video.mov && while :; do ffmpeg -i /data/video.mov -c:v libx265 -preset veryslow -crf 22 -c:a aac -b:a 128k -y /tmp/output.mp4; done"
   data:
     frequency: 100
     perf:

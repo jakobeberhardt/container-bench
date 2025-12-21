@@ -1,0 +1,427 @@
+workloads:
+  ackermann:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method ackermann --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  apery:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method apery --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  bitops:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method bitops --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  callfunc:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method callfunc --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  collatz:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method collatz --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  correlate:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method correlate --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: high
+
+  crc16:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method crc16 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  decimal32:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method decimal32 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  decimal64:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method decimal64 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  decimal128:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method decimal128 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  dither:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method dither --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: high
+
+  div8:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method div8 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  div16:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method div16 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  div32:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method div32 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  div64:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method div64 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  div128:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method div128 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  double:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method double --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  euler:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method euler --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  explog:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method explog --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  factorial:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method factorial --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  fibonacci:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method fibonacci --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  float:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method float --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  float32:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method float32 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  float64:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method float64 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  float80:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method float80 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  float128:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method float128 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  gamma:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method gamma --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  gcd:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method gcd --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  gray:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method gray --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  hamming:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method hamming --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  hanoi:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method hanoi --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  hyperbolic:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method hyperbolic --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  idct:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method idct --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: high
+
+  int8:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method int8 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  int16:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method int16 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  int32:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method int32 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  int64:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method int64 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  int128:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method int128 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  ipv4checksum:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method ipv4checksum --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  jmp:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method jmp --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  lfsr32:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method lfsr32 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  ln2:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method ln2 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  logmap:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method logmap --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: high
+
+  longdouble:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method longdouble --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  loop:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method loop --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  matrixprod:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method matrixprod --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: high
+
+  nsqrt:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method nsqrt --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  parity:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method parity --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  phi:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method phi --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  pi:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method pi --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  prime:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method prime --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: high
+
+  psi:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method psi --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  queens:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method queens --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  rand:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method rand --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  rand48:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method rand48 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  rgb:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method rgb --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: high
+
+  sieve:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method sieve --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: high
+
+  stats:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method stats --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: high
+
+  sqrt:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method sqrt --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  trig:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method trig --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  union:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --cpu-method union --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: high

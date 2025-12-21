@@ -21,6 +21,18 @@ type AllocationProbeBreakPolicy struct {
 	// If nil: disabled.
 	// If < 0: disabled.
 	DiminishingReturnsThreshold *float64
+
+	// MaxCPUUsagePercent stops probing when the candidate's average Docker CPU usage
+	// percent is less than or equal to this threshold.
+	// If nil: disabled.
+	// If < 0: disabled.
+	MaxCPUUsagePercent *float64
+
+	// MaxL3UtilizationPct stops probing when the candidate's average LLC/L3 utilization
+	// percent (RDT L3 utilization pct per socket) is less than or equal to this threshold.
+	// If nil: disabled.
+	// If < 0: disabled.
+	MaxL3UtilizationPct *float64
 }
 
 type AllocationProbeOptions struct {
@@ -38,6 +50,11 @@ type AllocationProbeOptions struct {
 	// If > 0: sort samples and drop N lowest and N highest values.
 	// If <= 0: keep all values.
 	OutlierDrop int
+
+	// BaselineFirst prepends a baseline (no-allocation-change) candidate before applying
+	// any RDT allocations. This allows checking break conditions without harming other
+	// workloads.
+	BaselineFirst bool
 }
 
 type AllocationProbeTarget struct {
@@ -90,6 +107,7 @@ type AllocationProbeRunner struct {
 
 	stopReason string
 	unbound    bool
+	startedAlloc bool
 
 	restoreCollectorFrequency func()
 }
@@ -146,6 +164,10 @@ func NewAllocationProbeRunnerFromRange(
 	cb AllocationProbeCallbacks,
 ) *AllocationProbeRunner {
 	candidates := GenerateAllocationSequence(rangeCfg)
+	if opts.BaselineFirst {
+		// Sentinel candidate: (0,0) means "baseline"; runner will skip ApplyAllocation.
+		candidates = append([]AllocationSpec{{L3Ways: 0, MemBandwidth: 0}}, candidates...)
+	}
 	if len(candidates) == 0 {
 		return NewAllocationProbeRunner(target, rangeCfg, nil, 0, breaks, opts, cb)
 	}
@@ -209,6 +231,7 @@ func (r *AllocationProbeRunner) BestMem() float64                 { return r.bes
 func (r *AllocationProbeRunner) BestEff() float64                 { return r.bestEff }
 func (r *AllocationProbeRunner) StopReason() string               { return r.stopReason }
 func (r *AllocationProbeRunner) Unbound() bool                    { return r.unbound }
+func (r *AllocationProbeRunner) StartedAllocating() bool          { return r.startedAlloc }
 func (r *AllocationProbeRunner) NumCandidates() int               { return len(r.candidates) }
 func (r *AllocationProbeRunner) CandidateDuration() time.Duration { return r.candidateDur }
 
@@ -277,7 +300,8 @@ func (r *AllocationProbeRunner) Start(dfs *dataframe.DataFrames) error {
 	}
 
 	first := r.candidates[0]
-	if r.cb.ApplyAllocation != nil {
+	if r.cb.ApplyAllocation != nil && !(first.L3Ways <= 0 && first.MemBandwidth <= 0) {
+		r.startedAlloc = true
 		logger.WithFields(logrus.Fields{
 			"container":        r.target.ContainerName,
 			"container_index":  r.target.ContainerIndex,
@@ -292,6 +316,15 @@ func (r *AllocationProbeRunner) Start(dfs *dataframe.DataFrames) error {
 			r.finish("apply_failed")
 			return err
 		}
+	} else if first.L3Ways <= 0 && first.MemBandwidth <= 0 {
+		logger.WithFields(logrus.Fields{
+			"container":        r.target.ContainerName,
+			"container_index":  r.target.ContainerIndex,
+			"socket":           r.rangeCfg.SocketID,
+			"allocation":       1,
+			"total":            len(r.candidates),
+			"candidate_dur_ms": int(r.candidateDur / time.Millisecond),
+		}).Debug("Testing baseline (no allocation change)")
 	}
 
 	return nil
@@ -319,6 +352,7 @@ func (r *AllocationProbeRunner) Step(dfs *dataframe.DataFrames) (done bool, err 
 	}
 
 	cand := r.candidates[r.candidateIdx]
+	isBaseline := (cand.L3Ways <= 0 && cand.MemBandwidth <= 0)
 	allocRes := AllocationResult{
 		L3Ways:         cand.L3Ways,
 		MemBandwidth:   cand.MemBandwidth,
@@ -328,7 +362,19 @@ func (r *AllocationProbeRunner) Step(dfs *dataframe.DataFrames) (done bool, err 
 		Duration:       time.Since(r.startedAt),
 		DataFrameSteps: make([]int, 0),
 	}
-	if r.candidateDur > 0 {
+	if isBaseline {
+		// Baseline is a pre-allocation precheck. We intentionally compute from the latest
+		// available samples (no time-window filtering) so we can skip allocating even when
+		// the collector frequency is lower than candidateDur (and no new steps arrive).
+		//
+		// We look back a small number of steps to smooth noise.
+		baselineLookbackSteps := 3
+		start := endStep - baselineLookbackSteps
+		if start < -1 {
+			start = -1
+		}
+		ComputeAllocationMetricsWithOutlierDrop(&allocRes, dfs, r.target.ContainerIndex, start, endStep, r.opts.OutlierDrop)
+	} else if r.candidateDur > 0 {
 		ComputeAllocationMetricsWithOutlierDropAndWindow(
 			&allocRes,
 			dfs,
@@ -380,6 +426,28 @@ func (r *AllocationProbeRunner) Step(dfs *dataframe.DataFrames) (done bool, err 
 		}
 	}
 
+	// For the initial baseline candidate (no RDT changes), we may use additional
+	// break conditions to avoid expensive probing for containers that are already
+	// "not worth probing" (e.g., idle/low LLC usage). After baseline, only IPCE
+	// (and diminishing-returns logic) governs early stopping.
+	if isBaseline {
+		// Break: low CPU usage
+		if thr := r.breaks.MaxCPUUsagePercent; thr != nil {
+			if *thr >= 0 && allocRes.AvgCPUUsagePercent >= 0 && allocRes.AvgCPUUsagePercent <= *thr {
+				r.finish("break_condition_cpu")
+				return true, nil
+			}
+		}
+
+		// Break: low LLC/L3 utilization
+		if thr := r.breaks.MaxL3UtilizationPct; thr != nil {
+			if *thr >= 0 && allocRes.AvgL3UtilizationPct >= 0 && allocRes.AvgL3UtilizationPct <= *thr {
+				r.finish("break_condition_llc")
+				return true, nil
+			}
+		}
+	}
+
 	// Break: diminishing returns (relative improvement)
 	// Greedy mode: stop early when diminishing returns are detected.
 	// Non-greedy mode: run full probe and classify diminishing returns post-mortem.
@@ -413,7 +481,8 @@ func (r *AllocationProbeRunner) Step(dfs *dataframe.DataFrames) (done bool, err 
 	if r.cb.LatestStepNumber != nil {
 		r.startStep = r.cb.LatestStepNumber(dfs, r.target.ContainerIndex)
 	}
-	if r.cb.ApplyAllocation != nil {
+	if r.cb.ApplyAllocation != nil && !(next.L3Ways <= 0 && next.MemBandwidth <= 0) {
+		r.startedAlloc = true
 		logger.WithFields(logrus.Fields{
 			"container":        r.target.ContainerName,
 			"container_index":  r.target.ContainerIndex,
@@ -428,6 +497,15 @@ func (r *AllocationProbeRunner) Step(dfs *dataframe.DataFrames) (done bool, err 
 			r.finish("apply_failed")
 			return true, err
 		}
+	} else if next.L3Ways <= 0 && next.MemBandwidth <= 0 {
+		logger.WithFields(logrus.Fields{
+			"container":        r.target.ContainerName,
+			"container_index":  r.target.ContainerIndex,
+			"socket":           r.rangeCfg.SocketID,
+			"allocation":       r.candidateIdx + 1,
+			"total":            len(r.candidates),
+			"candidate_dur_ms": int(r.candidateDur / time.Millisecond),
+		}).Debug("Testing baseline (no allocation change)")
 	}
 
 	return false, nil
@@ -463,6 +541,7 @@ func (r *AllocationProbeRunner) finish(reason string) {
 			"container":       r.target.ContainerName,
 			"container_index": r.target.ContainerIndex,
 			"socket":          r.rangeCfg.SocketID,
+			"precheck":        !r.startedAlloc,
 			"reason":          r.stopReason,
 			"total_ms":        int(r.result.TotalProbeTime / time.Millisecond),
 		}).Info("Allocation probe finished")
@@ -496,6 +575,7 @@ func (r *AllocationProbeRunner) finish(reason string) {
 		"container":       r.target.ContainerName,
 		"container_index": r.target.ContainerIndex,
 		"socket":          r.rangeCfg.SocketID,
+		"precheck":        !r.startedAlloc,
 		"reason":          r.stopReason,
 		"aborted":         r.result.Aborted,
 		"unbound":         r.unbound,

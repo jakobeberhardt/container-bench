@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"container-bench/internal/logging"
+	"container-bench/internal/rdtguard"
 
 	"github.com/intel/goresctrl/pkg/rdt"
 	"github.com/sirupsen/logrus"
@@ -38,7 +39,10 @@ func NewDefaultRDTAllocator() *DefaultRDTAllocator {
 
 func (a *DefaultRDTAllocator) Initialize() error {
 	// Check if RDT is supported
-	if !rdt.MonSupported() {
+	rdtguard.Lock()
+	supported := rdt.MonSupported()
+	rdtguard.Unlock()
+	if !supported {
 		return fmt.Errorf("RDT not supported on this system")
 	}
 
@@ -81,7 +85,10 @@ func (a *DefaultRDTAllocator) CreateRDTClass(className string, socket0, socket1 
 		return fmt.Errorf("failed to create RDT class %s: %w", className, err)
 	}
 
-	if ctrlGroup, exists := rdt.GetClass(className); exists {
+	rdtguard.Lock()
+	ctrlGroup, exists := rdt.GetClass(className)
+	rdtguard.Unlock()
+	if exists {
 		a.managedClasses[className] = ctrlGroup
 	}
 
@@ -107,7 +114,10 @@ func (a *DefaultRDTAllocator) UpdateRDTClass(className string, socket0, socket1 
 		return fmt.Errorf("failed to update RDT class %s: %w", className, err)
 	}
 
-	if ctrlGroup, exists := rdt.GetClass(className); exists {
+	rdtguard.Lock()
+	ctrlGroup, exists := rdt.GetClass(className)
+	rdtguard.Unlock()
+	if exists {
 		a.managedClasses[className] = ctrlGroup
 	}
 
@@ -146,7 +156,10 @@ func (a *DefaultRDTAllocator) CreateAllRDTClasses(classes map[string]struct {
 	// Refresh managed class handles.
 	a.managedClasses = make(map[string]rdt.CtrlGroup)
 	for className := range a.managedConfigs {
-		if ctrlGroup, exists := rdt.GetClass(className); exists {
+		rdtguard.Lock()
+		ctrlGroup, exists := rdt.GetClass(className)
+		rdtguard.Unlock()
+		if exists {
 			a.managedClasses[className] = ctrlGroup
 		}
 	}
@@ -237,7 +250,10 @@ func (a *DefaultRDTAllocator) applyManagedConfigLocked(force bool) error {
 		},
 	}
 
-	if err := rdt.SetConfig(config, force); err != nil {
+	rdtguard.Lock()
+	err := rdt.SetConfig(config, force)
+	rdtguard.Unlock()
+	if err != nil {
 		return fmt.Errorf("failed to create RDT classes: %v", err)
 	}
 
@@ -251,7 +267,9 @@ func (a *DefaultRDTAllocator) AssignContainerToClass(pid int, className string) 
 	}
 
 	// Get the target class
+	rdtguard.Lock()
 	ctrlGroup, exists := rdt.GetClass(className)
+	rdtguard.Unlock()
 	if !exists {
 		return fmt.Errorf("RDT class %s not found", className)
 	}
@@ -270,7 +288,10 @@ func (a *DefaultRDTAllocator) AssignContainerToClass(pid int, className string) 
 	}
 
 	// Add to new class (this implicitly moves it from old class)
-	if err := ctrlGroup.AddPids(pidStr); err != nil {
+	rdtguard.Lock()
+	err = ctrlGroup.AddPids(pidStr)
+	rdtguard.Unlock()
+	if err != nil {
 		return fmt.Errorf("failed to assign PID %d to RDT class %s: %v", pid, className, err)
 	}
 
@@ -299,10 +320,14 @@ func (a *DefaultRDTAllocator) RemoveContainerFromClass(pid int) error {
 	// Note: goresctrl doesn't provide a direct "remove PID" method
 	// PIDs are typically moved to another class rather than removed
 	// Move to the default class
+	rdtguard.Lock()
 	defaultClass, exists := rdt.GetClass("system/default")
+	rdtguard.Unlock()
 	if !exists {
 		// Use the first available class as fallback
+		rdtguard.Lock()
 		classes := rdt.GetClasses()
+		rdtguard.Unlock()
 		if len(classes) > 0 {
 			defaultClass = classes[0]
 		} else {
@@ -311,7 +336,10 @@ func (a *DefaultRDTAllocator) RemoveContainerFromClass(pid int) error {
 	}
 
 	pidStr := strconv.Itoa(pid)
-	if err := defaultClass.AddPids(pidStr); err != nil {
+	rdtguard.Lock()
+	err = defaultClass.AddPids(pidStr)
+	rdtguard.Unlock()
+	if err != nil {
 		return fmt.Errorf("failed to move PID %d to default class: %v", pid, err)
 	}
 
@@ -331,10 +359,14 @@ func (a *DefaultRDTAllocator) GetContainerClass(pid int) (string, error) {
 
 	// Query the RDT system
 	pidStr := strconv.Itoa(pid)
+	rdtguard.Lock()
 	classes := rdt.GetClasses()
+	rdtguard.Unlock()
 
 	for _, class := range classes {
+		rdtguard.Lock()
 		pids, err := class.GetPids()
+		rdtguard.Unlock()
 		if err != nil {
 			continue // Skip this class if we can't get PIDs
 		}
@@ -355,7 +387,9 @@ func (a *DefaultRDTAllocator) ListAvailableClasses() []string {
 		return nil
 	}
 
+	rdtguard.Lock()
 	classes := rdt.GetClasses()
+	rdtguard.Unlock()
 	classNames := make([]string, len(classes))
 	for i, class := range classes {
 		classNames[i] = class.Name()
@@ -373,13 +407,17 @@ func (a *DefaultRDTAllocator) DeleteRDTClass(className string) error {
 	defer a.mu.Unlock()
 
 	// First, move all PIDs from this class to the default class
+	rdtguard.Lock()
 	ctrlGroup, exists := rdt.GetClass(className)
+	rdtguard.Unlock()
 	if !exists {
 		a.logger.WithField("class", className).Debug("RDT class not found, nothing to delete")
 		return nil
 	}
 
+	rdtguard.Lock()
 	pids, err := ctrlGroup.GetPids()
+	rdtguard.Unlock()
 	if err != nil {
 		a.logger.WithError(err).WithField("class", className).Warn("Failed to get PIDs from class")
 	} else {
@@ -431,11 +469,15 @@ func (a *DefaultRDTAllocator) Cleanup() error {
 
 	// Move all PIDs from managed classes to default
 	for _, className := range classNames {
+		rdtguard.Lock()
 		ctrlGroup, exists := rdt.GetClass(className)
+		rdtguard.Unlock()
 		if !exists {
 			continue
 		}
+		rdtguard.Lock()
 		pids, err := ctrlGroup.GetPids()
+		rdtguard.Unlock()
 		if err != nil {
 			continue
 		}

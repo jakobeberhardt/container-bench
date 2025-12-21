@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"container-bench/internal/logging"
+	"container-bench/internal/rdtguard"
 
 	"github.com/intel/goresctrl/pkg/rdt"
 	"github.com/klauspost/cpuid/v2"
@@ -413,7 +414,10 @@ func (hc *HostConfig) initCacheInfo() error {
 	}
 	hc.L3Cache.LineSize = cpu.CacheLine
 
-	if rdt.MonSupported() {
+	rdtguard.Lock()
+	supported := rdt.MonSupported()
+	rdtguard.Unlock()
+	if supported {
 		if err := hc.initRDTCacheInfo(); err != nil {
 			hc.logger.WithError(err).Warn("Failed to initialize RDT cache info from resctrl, RDT-specific fields will be unset")
 			// Leave RDT-specific fields at their zero values
@@ -476,15 +480,19 @@ func (hc *HostConfig) initRDTCacheInfo() error {
 
 // initRDTInfo initializes Intel RDT information
 func (hc *HostConfig) initRDTInfo() error {
+	rdtguard.Lock()
 	hc.RDT.Supported = rdt.MonSupported()
 	hc.RDT.MonitoringSupported = rdt.MonSupported()
+	rdtguard.Unlock()
 
 	if !hc.RDT.Supported {
 		return nil
 	}
 
 	// Get available RDT classes
+	rdtguard.Lock()
 	classes := rdt.GetClasses()
+	rdtguard.Unlock()
 	for _, class := range classes {
 		hc.RDT.AvailableClasses = append(hc.RDT.AvailableClasses, class.Name())
 	}

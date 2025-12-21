@@ -1,0 +1,7 @@
+workloads:
+  hdd:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --hdd 1 --timeout 0"
+    num_cores: 1
+    kind: iobound
+    sensitivity: low

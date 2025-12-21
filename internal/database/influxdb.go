@@ -86,6 +86,7 @@ type ContainerTimingMetadata struct {
 	ContainerIndex   int
 	ContainerName    string
 	StartTSeconds    int
+	WaitTSeconds     *int
 	StopTSeconds     int
 	ExpectedTSeconds *int
 	ExitTSeconds     *int
@@ -545,9 +546,13 @@ func (idb *InfluxDBClient) WriteContainerTimingMetadata(containerMetadata []*Con
 
 			fields := map[string]interface{}{
 				"start_t":     m.StartTSeconds,
+				"wait_t":      0,
 				"stop_t":      m.StopTSeconds,
 				"actual_t":    m.ActualTSeconds,
 				"job_aborted": m.JobAborted,
+			}
+			if m.WaitTSeconds != nil {
+				fields["wait_t"] = *m.WaitTSeconds
 			}
 			if m.ExpectedTSeconds != nil {
 				fields["expected_t"] = *m.ExpectedTSeconds
@@ -792,16 +797,29 @@ func CollectContainerTimingMetadata(benchmarkID int, cfg *config.BenchmarkConfig
 	results := make([]*ContainerTimingMetadata, 0, len(containers))
 
 	for _, c := range containers {
-		startT := c.GetStartSeconds()
-		if c.Command != "" && startTimes != nil {
+		scheduledStartT := c.GetStartSeconds()
+		admittedStartT := -1
+		if startTimes != nil {
 			if t, ok := startTimes[c.Index]; ok {
 				startSec := int(t.Sub(benchmarkStart).Seconds())
 				if startSec < 0 {
 					startSec = 0
 				}
-				startT = startSec
+				admittedStartT = startSec
 			}
 		}
+
+		var waitPtr *int
+		if admittedStartT >= 0 {
+			waitSec := admittedStartT - scheduledStartT
+			if waitSec < 0 {
+				waitSec = 0
+			}
+			waitPtr = &waitSec
+		}
+
+		// Persist start_t as the configured schedule start; use admission for actual runtime.
+		startT := scheduledStartT
 		stopT := c.GetStopSeconds(cfg.Benchmark.MaxT)
 		jobAborted := false
 		if aborted != nil {
@@ -831,7 +849,11 @@ func CollectContainerTimingMetadata(benchmarkID int, cfg *config.BenchmarkConfig
 		if exitPtr != nil {
 			endSec = *exitPtr
 		}
-		actualSec := endSec - startT
+		runtimeStart := startT
+		if admittedStartT >= 0 {
+			runtimeStart = admittedStartT
+		}
+		actualSec := endSec - runtimeStart
 		if actualSec < 0 {
 			actualSec = 0
 		}
@@ -847,6 +869,7 @@ func CollectContainerTimingMetadata(benchmarkID int, cfg *config.BenchmarkConfig
 			ContainerIndex:   c.Index,
 			ContainerName:    c.GetContainerName(benchmarkID),
 			StartTSeconds:    startT,
+			WaitTSeconds:     waitPtr,
 			StopTSeconds:     stopT,
 			ExpectedTSeconds: expectedPtr,
 			ExitTSeconds:     exitPtr,

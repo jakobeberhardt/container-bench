@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -94,6 +95,7 @@ type ContainerBench struct {
 	scheduler     scheduler.Scheduler
 	hostConfig    *host.HostConfig
 	collectors    map[int]*collectors.ContainerCollector
+	collectorsMu  sync.Mutex
 	prober        *probe.Probe
 	benchmarkID   int
 	startTime     time.Time
@@ -116,6 +118,15 @@ type ContainerBench struct {
 	networkID     string
 }
 
+const (
+	// Teardown should finish quickly even if Docker/DB are unhealthy.
+	teardownTimeout          = 25 * time.Second
+	dockerStopCallTimeout    = 10 * time.Second
+	dockerRemoveCallTimeout  = 8 * time.Second
+	dockerNetworkCallTimeout = 6 * time.Second
+	dbWriteTimeout           = 25 * time.Second
+)
+
 type dockerCpusetApplier struct {
 	client *client.Client
 }
@@ -131,11 +142,17 @@ func (d dockerCpusetApplier) UpdateCpuset(ctx context.Context, containerID strin
 }
 
 func (cb *ContainerBench) cleanup() {
-
+	cb.collectorsMu.Lock()
+	collectorsSnapshot := make([]*collectors.ContainerCollector, 0, len(cb.collectors))
 	for _, collector := range cb.collectors {
 		if collector != nil {
-			collector.Stop()
+			collectorsSnapshot = append(collectorsSnapshot, collector)
 		}
+	}
+	cb.collectorsMu.Unlock()
+
+	for _, collector := range collectorsSnapshot {
+		_ = collector.Stop()
 	}
 }
 
@@ -168,7 +185,18 @@ func (cb *ContainerBench) cleanupContainers(ctx context.Context) {
 		}
 	}
 
-	wg.Wait()
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		// all removed
+	case <-ctx.Done():
+		logger.WithError(ctx.Err()).Warn("Container cleanup timed out; skipping remaining removals")
+		return
+	}
 	logger.Info("All containers stopped and removed")
 }
 
@@ -186,7 +214,9 @@ func (cb *ContainerBench) stopAndRemoveContainer(ctx context.Context, containerI
 		RemoveVolumes: true,
 	}
 
-	if err := cb.dockerClient.ContainerRemove(ctx, containerID, removeOptions); err != nil {
+	rmCtx, cancel := context.WithTimeout(ctx, dockerRemoveCallTimeout)
+	defer cancel()
+	if err := cb.dockerClient.ContainerRemove(rmCtx, containerID, removeOptions); err != nil {
 		if !client.IsErrNotFound(err) {
 			logger.WithField("container_id", containerID[:12]).WithError(err).Warn("Failed to force remove container")
 		}
@@ -522,7 +552,8 @@ func runBenchmark(configFile string) error {
 		"rdt_supported":  hostConfig.RDT.Supported,
 	}).Info("Host configuration initialized")
 
-	// Initialize Docker client
+	// Initialize Docker client. Keep Docker's default HTTP transport because it
+	// correctly supports unix sockets (e.g. DOCKER_HOST=unix:///var/run/docker.sock).
 	bench.dockerClient, err = client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		logger.WithError(err).Error("Failed to create Docker client")
@@ -746,6 +777,10 @@ func (cb *ContainerBench) executeBenchmark() error {
 
 // cleanupInOrder executes cleanup in the correct sequence
 func (cb *ContainerBench) cleanupInOrder(ctx context.Context) error {
+	// Always use a bounded context for teardown so we never hang indefinitely.
+	teardownCtx, cancel := context.WithTimeout(context.Background(), teardownTimeout)
+	defer cancel()
+
 	// Stop scheduler
 	cb.stopScheduler()
 
@@ -755,13 +790,32 @@ func (cb *ContainerBench) cleanupInOrder(ctx context.Context) error {
 	// RDT cleanup happens automatically when collectors stop
 
 	// Stop and cleanup containers
-	cb.cleanupContainers(ctx)
+	cb.cleanupContainers(teardownCtx)
 
 	// Cleanup Docker network
-	cb.cleanupNetwork(ctx)
+	cb.cleanupNetwork(teardownCtx)
 
-	// Write data to database (last step)
-	return cb.writeDatabaseData()
+	// Close Docker client / idle connections after docker teardown.
+	if cb.dockerClient != nil {
+		_ = cb.dockerClient.Close()
+		cb.dockerClient = nil
+	}
+
+	// Write data to database (last step, best-effort with timeout)
+	writeErrCh := make(chan error, 1)
+	go func() {
+		writeErrCh <- cb.writeDatabaseData()
+	}()
+	select {
+	case err := <-writeErrCh:
+		return err
+	case <-time.After(dbWriteTimeout):
+		logging.GetLogger().WithField("timeout", dbWriteTimeout.String()).Warn("Database write timed out; skipping remaining writes")
+		if cb.dbClient != nil {
+			cb.dbClient.Close()
+		}
+		return nil
+	}
 }
 
 // Pull all container images
@@ -807,7 +861,7 @@ func (cb *ContainerBench) pullImages(ctx context.Context) error {
 	logger.WithFields(logrus.Fields{
 		"total_containers": len(containers),
 		"unique_images":    len(uniqueImages),
-	}).Info("Preparing to pull images")
+	}).Debug("Preparing to pull images")
 
 	var authString string
 	var err error
@@ -844,7 +898,7 @@ func (cb *ContainerBench) pullImages(ctx context.Context) error {
 			logger.WithFields(logrus.Fields{
 				"image":      info.image,
 				"containers": info.containerCount,
-			}).Info("Pulling image")
+			}).Debug("Pulling image")
 
 			pullResp, err := cb.dockerClient.ImagePull(ctx, info.image, pullOptions)
 			if err != nil {
@@ -865,7 +919,7 @@ func (cb *ContainerBench) pullImages(ctx context.Context) error {
 			logger.WithFields(logrus.Fields{
 				"image":      info.image,
 				"containers": info.containerCount,
-			}).Info("Image pulled successfully")
+			}).Debug("Image pulled successfully")
 			resultChan <- pullResult{image: info.image, err: nil}
 		}(imgInfo)
 	}
@@ -887,7 +941,11 @@ func (cb *ContainerBench) pullImages(ctx context.Context) error {
 		return fmt.Errorf("failed to pull %d images: %v", len(pullErrors), pullErrors[0])
 	}
 
-	logger.Info("All images pulled successfully")
+	logger.WithFields(logrus.Fields{
+		"unique_images":    len(uniqueImages),
+		"total_containers": len(containers),
+		"precheck":         false,
+	}).Info("Images prepared")
 	return nil
 }
 
@@ -926,7 +984,7 @@ func (cb *ContainerBench) createContainers(ctx context.Context) error {
 		logger.WithFields(logrus.Fields{
 			"index": containerConfig.Index,
 			"image": containerConfig.Image,
-		}).Info("Creating container")
+		}).Debug("Creating container")
 
 		// Create container
 		containerName := containerConfig.GetContainerName(cb.benchmarkID)
@@ -1008,9 +1066,13 @@ func (cb *ContainerBench) createContainers(ctx context.Context) error {
 		logger.WithFields(logrus.Fields{
 			"index":        containerConfig.Index,
 			"container_id": resp.ID[:12],
-		}).Info("Container created")
+		}).Debug("Container created")
 	}
 
+	logger.WithFields(logrus.Fields{
+		"total_containers": len(containers),
+		"precheck":         false,
+	}).Info("Containers prepared")
 	return nil
 }
 
@@ -1024,7 +1086,9 @@ func (cb *ContainerBench) cleanupNetwork(ctx context.Context) {
 
 	logger.WithField("network_id", cb.networkID[:12]).Info("Removing Docker network")
 
-	if err := cb.dockerClient.NetworkRemove(ctx, cb.networkID); err != nil {
+	netCtx, cancel := context.WithTimeout(ctx, dockerNetworkCallTimeout)
+	defer cancel()
+	if err := cb.dockerClient.NetworkRemove(netCtx, cb.networkID); err != nil {
 		logger.WithField("network_id", cb.networkID[:12]).WithError(err).Warn("Failed to remove Docker network")
 	} else {
 		logger.WithField("network_id", cb.networkID[:12]).Info("Docker network removed")
@@ -1347,11 +1411,22 @@ func (cb *ContainerBench) stopContainer(ctx context.Context, containerConfig *co
 		return fmt.Errorf("containerConfig is nil")
 	}
 	containerID := cb.containerIDs[containerConfig.Index]
+	if containerID == "" {
+		// Nothing to stop.
+		return nil
+	}
 	stopTimeout := 2
+	if aborted {
+		// More aggressive teardown when we are aborting due to max_t/timeout.
+		killCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		_ = cb.dockerClient.ContainerKill(killCtx, containerID, "SIGKILL")
+		cancel()
+		stopTimeout = 1
+	}
 	stopRequestedAt := time.Now()
 
-	cb.containerStopTimes[containerConfig.Index] = stopRequestedAt
 	cb.timingsMu.Lock()
+	cb.containerStopTimes[containerConfig.Index] = stopRequestedAt
 	if _, exists := cb.containerExitTimes[containerConfig.Index]; !exists {
 		cb.containerExitTimes[containerConfig.Index] = stopRequestedAt
 	}
@@ -1365,15 +1440,50 @@ func (cb *ContainerBench) stopContainer(ctx context.Context, containerConfig *co
 	}
 	cb.timingsMu.Unlock()
 
-	if err := cb.dockerClient.ContainerStop(ctx, containerID, container.StopOptions{Timeout: &stopTimeout}); err != nil {
+	// The Docker API call itself can take longer than the configured stop grace period
+	// when the daemon is busy. Ensure the call timeout is always comfortably above the grace.
+	callTimeout := dockerStopCallTimeout
+	minTimeout := time.Duration(stopTimeout+2) * time.Second
+	if callTimeout < minTimeout {
+		callTimeout = minTimeout
+	}
+	stopCtx, cancel := context.WithTimeout(ctx, callTimeout)
+	defer cancel()
+	if err := cb.dockerClient.ContainerStop(stopCtx, containerID, container.StopOptions{Timeout: &stopTimeout}); err != nil {
 		logger.WithFields(logrus.Fields{
 			"index":        containerConfig.Index,
 			"container_id": containerID[:12],
 		}).WithError(err).Warn("Failed to stop container")
+
+		// Best-effort recovery: force-remove the container so we don't fail the whole run just
+		// because the daemon didn't respond to the stop request in time.
+		rmCtx, rmCancel := context.WithTimeout(ctx, dockerRemoveCallTimeout)
+		defer rmCancel()
+		rmErr := cb.dockerClient.ContainerRemove(rmCtx, containerID, types.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
+		if rmErr == nil || client.IsErrNotFound(rmErr) {
+			cb.timingsMu.Lock()
+			cb.containerPIDs[containerConfig.Index] = 0
+			cb.timingsMu.Unlock()
+			if listener, ok := cb.scheduler.(scheduler.ContainerLifecycleListener); ok {
+				_ = listener.OnContainerStop(containerConfig.Index)
+			}
+			logger.WithFields(logrus.Fields{
+				"index":        containerConfig.Index,
+				"container_id": containerID[:12],
+			}).WithError(err).Warn("Container stop failed; force-removed container")
+			return nil
+		}
+
+		logger.WithFields(logrus.Fields{
+			"index":        containerConfig.Index,
+			"container_id": containerID[:12],
+		}).WithError(rmErr).Warn("Failed to force remove container after stop failure")
 		return fmt.Errorf("failed to stop container %d: %w", containerConfig.Index, err)
 	}
 
+	cb.timingsMu.Lock()
 	cb.containerPIDs[containerConfig.Index] = 0
+	cb.timingsMu.Unlock()
 	// Note: stop/exit timestamps were recorded at stop request time
 
 	// Notify scheduler about the container stop (optional)
@@ -1423,7 +1533,9 @@ func (cb *ContainerBench) startCollectorForContainer(ctx context.Context, contai
 		return fmt.Errorf("failed to start collector for container %d: %w", containerConfig.Index, err)
 	}
 
+	cb.collectorsMu.Lock()
 	cb.collectors[containerConfig.Index] = collector
+	cb.collectorsMu.Unlock()
 
 	logger.WithFields(logrus.Fields{
 		"index":        containerConfig.Index,
@@ -1434,14 +1546,18 @@ func (cb *ContainerBench) startCollectorForContainer(ctx context.Context, contai
 
 func (cb *ContainerBench) stopCollectorForContainer(containerIndex int) {
 	logger := logging.GetLogger()
+	cb.collectorsMu.Lock()
 	collector, ok := cb.collectors[containerIndex]
+	if ok {
+		delete(cb.collectors, containerIndex)
+	}
+	cb.collectorsMu.Unlock()
 	if !ok || collector == nil {
 		return
 	}
 	if err := collector.Stop(); err != nil {
 		logger.WithError(err).WithField("index", containerIndex).Warn("Error stopping collector")
 	}
-	delete(cb.collectors, containerIndex)
 }
 
 func (cb *ContainerBench) executeContainerCommand(ctx context.Context, containerConfig *config.ContainerConfig) (string, error) {
@@ -1482,7 +1598,10 @@ func (cb *ContainerBench) executeContainerCommand(ctx context.Context, container
 	cb.timingsMu.Unlock()
 
 	// Sync RDT PIDs for this container after docker exec
-	if collector := cb.collectors[containerConfig.Index]; collector != nil {
+	cb.collectorsMu.Lock()
+	collector := cb.collectors[containerConfig.Index]
+	cb.collectorsMu.Unlock()
+	if collector != nil {
 		if err := collector.SyncRDTPIDs(); err != nil {
 			logger.WithError(err).WithField("index", containerConfig.Index).Warn("Failed to sync RDT PIDs after command exec")
 		}
@@ -1535,6 +1654,11 @@ func (cb *ContainerBench) syncRDTPIDs() error {
 // Run benchmark main loop
 func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 	logger := logging.GetLogger()
+	drain := cb.config != nil && cb.config.Benchmark.Drain
+	maxT := 0
+	if cb.config != nil {
+		maxT = cb.config.Benchmark.MaxT
+	}
 
 	type runtimeState struct {
 		cfg            *config.ContainerConfig
@@ -1578,11 +1702,20 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 	scheduleTicker := time.NewTicker(100 * time.Millisecond)
 	defer scheduleTicker.Stop()
 
-	// Set up timeout
-	timeoutCtx, timeoutCancel := context.WithTimeout(ctx, cb.config.GetMaxDuration())
-	defer timeoutCancel()
+	// Benchmark context: in hard-stop mode we enforce max_t as a deadline.
+	// In drain mode we only stop admitting new arrivals at max_t and wait for running jobs to finish.
+	benchCtx := ctx
+	benchCancel := func() {}
+	if !drain {
+		benchCtx, benchCancel = context.WithTimeout(ctx, cb.config.GetMaxDuration())
+	}
+	defer benchCancel()
 
-	logger.WithField("duration", cb.config.GetMaxDuration()).Info("Benchmark running")
+	if drain {
+		logger.WithField("max_t", maxT).Info("Benchmark running (drain enabled)")
+	} else {
+		logger.WithField("duration", cb.config.GetMaxDuration()).Info("Benchmark running")
+	}
 
 	checkExpected := func(containerIndex int) error {
 		st := states[containerIndex]
@@ -1596,13 +1729,8 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 			// expected_t is only enforced for aborted jobs (max_t)
 			return nil
 		}
-		var startT time.Time
-		var okStart bool
-		if st.cfg.Command != "" {
-			cb.timingsMu.Lock()
-			startT, okStart = cb.containerCommandStartTimes[containerIndex]
-			cb.timingsMu.Unlock()
-		} else {
+		startT, okStart := cb.containerStartTimes[containerIndex]
+		if !okStart {
 			startT = cb.startTime.Add(time.Duration(st.startSec) * time.Second)
 			okStart = true
 		}
@@ -1693,6 +1821,13 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 			if st.stopped {
 				continue
 			}
+			if drain && maxT > 0 && st.startSec >= maxT {
+				// Arrival horizon reached; jobs scheduled after max_t are never admitted.
+				if elapsedSec >= maxT {
+					st.stopped = true
+				}
+				continue
+			}
 			if !st.queued && !st.started && elapsedSec >= st.startSec {
 				st.queued = true
 				pending = append(pending, idx)
@@ -1704,7 +1839,7 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 			// If a container never got admitted before its stop time, mark as stopped.
 			if st.started && !st.stopped && elapsedSec >= st.stopSec {
 				cb.stopCollectorForContainer(idx)
-				aborted := cb.config.Benchmark.MaxT > 0 && st.stopSec == cb.config.Benchmark.MaxT && elapsedSec >= cb.config.Benchmark.MaxT
+				aborted := !drain && cb.config.Benchmark.MaxT > 0 && st.stopSec == cb.config.Benchmark.MaxT && elapsedSec >= cb.config.Benchmark.MaxT
 				if err := cb.stopContainer(ctx, st.cfg, aborted); err != nil {
 					return err
 				}
@@ -1756,11 +1891,11 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 				return err
 			}
 			if execID != "" {
-				cb.startExecWatcher(timeoutCtx, st.cfg.Index, execID, execEvents)
+				cb.startExecWatcher(benchCtx, st.cfg.Index, execID, execEvents)
 			}
 			st.commandStarted = true
 			if !st.exitWatch {
-				cb.startExitWatcher(timeoutCtx, st.cfg, exitEvents)
+				cb.startExitWatcher(benchCtx, st.cfg, exitEvents)
 				st.exitWatch = true
 			}
 
@@ -1783,30 +1918,111 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 				cb.endTime = time.Now()
 				return err
 			}
+			if drain {
+				now := time.Now()
+				elapsed := int(now.Sub(cb.startTime).Seconds())
+				if maxT > 0 && elapsed >= maxT {
+					allDone := len(pending) == 0
+					if allDone {
+						for _, st := range states {
+							if st.started && !st.stopped {
+								allDone = false
+								break
+							}
+							if !st.started && !st.stopped && st.startSec < maxT {
+								allDone = false
+								break
+							}
+						}
+					}
+					if allDone {
+						cb.endTime = now
+						return nil
+					}
+				}
+			}
 		case ev := <-execEvents:
 			if err := handleExecFinished(ev); err != nil {
 				cb.endTime = time.Now()
 				return err
 			}
-		case <-timeoutCtx.Done():
-			if timeoutCtx.Err() == context.DeadlineExceeded {
+			if drain {
+				now := time.Now()
+				elapsed := int(now.Sub(cb.startTime).Seconds())
+				if maxT > 0 && elapsed >= maxT {
+					allDone := len(pending) == 0
+					if allDone {
+						for _, st := range states {
+							if st.started && !st.stopped {
+								allDone = false
+								break
+							}
+							if !st.started && !st.stopped && st.startSec < maxT {
+								allDone = false
+								break
+							}
+						}
+					}
+					if allDone {
+						cb.endTime = now
+						return nil
+					}
+				}
+			}
+		case <-benchCtx.Done():
+			if !drain && benchCtx.Err() == context.DeadlineExceeded {
 				logger.Info("Benchmark timeout reached")
 			} else {
 				logger.Info("Benchmark interrupted")
 			}
 			cb.endTime = time.Now()
 
-			// Stop any still-running containers and collectors
+			// Stop any still-running containers and collectors (parallel, bounded)
+			aborted := !drain && benchCtx.Err() == context.DeadlineExceeded
+			running := make([]int, 0, len(states))
 			for idx, st := range states {
 				if st.started && !st.stopped {
-					cb.stopCollectorForContainer(idx)
-					_ = cb.stopContainer(ctx, st.cfg, timeoutCtx.Err() == context.DeadlineExceeded)
-					st.stopped = true
-					if timeoutCtx.Err() == context.DeadlineExceeded {
-						if err := checkExpected(idx); err != nil {
-							return err
+					running = append(running, idx)
+				}
+			}
+
+			parallelism := runtime.GOMAXPROCS(0) * 4
+			if parallelism < 4 {
+				parallelism = 4
+			}
+			if parallelism > 32 {
+				parallelism = 32
+			}
+
+			sem := make(chan struct{}, parallelism)
+			var wg sync.WaitGroup
+			errCh := make(chan error, len(running))
+			for _, idx := range running {
+				cfg := states[idx].cfg
+				wg.Add(1)
+				sem <- struct{}{}
+				go func(containerIndex int, containerCfg *config.ContainerConfig) {
+					defer wg.Done()
+					defer func() { <-sem }()
+					cb.stopCollectorForContainer(containerIndex)
+					stopCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+					_ = cb.stopContainer(stopCtx, containerCfg, aborted)
+					cancel()
+					if aborted {
+						if err := checkExpected(containerIndex); err != nil {
+							errCh <- err
 						}
 					}
+				}(idx, cfg)
+			}
+			wg.Wait()
+			close(errCh)
+			for _, idx := range running {
+				states[idx].stopped = true
+			}
+			for err := range errCh {
+				if err != nil {
+					return err
 				}
 			}
 
@@ -1815,6 +2031,29 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 			if err := processSchedule(time.Now()); err != nil {
 				cb.endTime = time.Now()
 				return err
+			}
+			if drain {
+				now := time.Now()
+				elapsed := int(now.Sub(cb.startTime).Seconds())
+				if maxT > 0 && elapsed >= maxT {
+					allDone := len(pending) == 0
+					if allDone {
+						for _, st := range states {
+							if st.started && !st.stopped {
+								allDone = false
+								break
+							}
+							if !st.started && !st.stopped && st.startSec < maxT {
+								allDone = false
+								break
+							}
+						}
+					}
+					if allDone {
+						cb.endTime = now
+						return nil
+					}
+				}
 			}
 		case <-schedulerTicker.C:
 			// Update scheduler with current data
@@ -1830,7 +2069,18 @@ func (cb *ContainerBench) stopScheduler() {
 	logger := logging.GetLogger()
 	logger.Info("Stopping scheduler")
 	if cb.scheduler != nil {
-		cb.scheduler.Shutdown()
+		done := make(chan struct{})
+		go func() {
+			cb.scheduler.Shutdown()
+			close(done)
+		}()
+		select {
+		case <-done:
+			return
+		case <-time.After(5 * time.Second):
+			logger.Warn("Scheduler shutdown timed out; continuing teardown")
+			return
+		}
 	}
 }
 
@@ -1838,8 +2088,51 @@ func (cb *ContainerBench) stopScheduler() {
 func (cb *ContainerBench) stopCollectors() {
 	logger := logging.GetLogger()
 	logger.Info("Stopping collectors")
+	// Collector Stop() does not accept a context; keep teardown bounded.
+	defer func() {
+		if r := recover(); r != nil {
+			logger.WithField("panic", r).Warn("Recovered panic during collector stop")
+		}
+	}()
+
+	cb.collectorsMu.Lock()
+	indices := make([]int, 0, len(cb.collectors))
 	for idx := range cb.collectors {
-		cb.stopCollectorForContainer(idx)
+		indices = append(indices, idx)
+	}
+	cb.collectorsMu.Unlock()
+
+	parallelism := runtime.GOMAXPROCS(0) * 4
+	if parallelism < 4 {
+		parallelism = 4
+	}
+	if parallelism > 32 {
+		parallelism = 32
+	}
+
+	sem := make(chan struct{}, parallelism)
+	var wg sync.WaitGroup
+	for _, idx := range indices {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(containerIndex int) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			cb.stopCollectorForContainer(containerIndex)
+		}(idx)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return
+	case <-time.After(10 * time.Second):
+		logger.Warn("Collector shutdown timed out; continuing teardown")
+		return
 	}
 }
 
@@ -1880,8 +2173,8 @@ func (cb *ContainerBench) writeDatabaseData() error {
 	for k, v := range cb.containerExitTimes {
 		exitTimes[k] = v
 	}
-	startTimes := make(map[int]time.Time, len(cb.containerCommandStartTimes))
-	for k, v := range cb.containerCommandStartTimes {
+	startTimes := make(map[int]time.Time, len(cb.containerStartTimes))
+	for k, v := range cb.containerStartTimes {
 		startTimes[k] = v
 	}
 	aborted := make(map[int]bool, len(cb.containerAborted))

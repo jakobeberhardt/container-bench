@@ -14,6 +14,7 @@ import (
 	"container-bench/internal/dataframe"
 	"container-bench/internal/host"
 	"container-bench/internal/logging"
+	"container-bench/internal/rdtguard"
 
 	"github.com/intel/goresctrl/pkg/rdt"
 	"github.com/sirupsen/logrus"
@@ -53,7 +54,10 @@ func newRDTCollectorBase(pid int, cgroupPath string) (*RDTCollector, error) {
 	logger := logging.GetLogger()
 
 	// Check if RDT is supported and initialized
-	if !rdt.MonSupported() {
+	rdtguard.Lock()
+	supported := rdt.MonSupported()
+	rdtguard.Unlock()
+	if !supported {
 		return nil, fmt.Errorf("RDT monitoring not supported on this system")
 	}
 
@@ -74,10 +78,14 @@ func newRDTCollectorBase(pid int, cgroupPath string) (*RDTCollector, error) {
 	if err != nil {
 		logger.WithError(err).WithField("pid", pid).Warn("Could not find RDT class for PID, using default")
 		// Fall back to default class
+		rdtguard.Lock()
 		ctrlGroup, exists := rdt.GetClass("system/default")
+		rdtguard.Unlock()
 		if !exists {
 			// Try to get any available control group
+			rdtguard.Lock()
 			classes := rdt.GetClasses()
+			rdtguard.Unlock()
 			if len(classes) == 0 {
 				return nil, fmt.Errorf("no RDT control groups available")
 			}
@@ -90,10 +98,12 @@ func newRDTCollectorBase(pid int, cgroupPath string) (*RDTCollector, error) {
 	}
 
 	// Create monitoring group for this container
+	rdtguard.Lock()
 	monGroup, err := ctrlGroup.CreateMonGroup(monGroupName, map[string]string{
 		"container-bench": "true",
 		"pid":             pidStr,
 	})
+	rdtguard.Unlock()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create RDT monitoring group: %v", err)
 	}
@@ -129,10 +139,14 @@ func newRDTCollectorBase(pid int, cgroupPath string) (*RDTCollector, error) {
 
 // searches all RDT classes to find which one contains the given PID
 func findRDTClassForPID(pidStr string) (rdt.CtrlGroup, string, error) {
+	rdtguard.Lock()
 	classes := rdt.GetClasses()
+	rdtguard.Unlock()
 
 	for _, class := range classes {
+		rdtguard.Lock()
 		pids, err := class.GetPids()
+		rdtguard.Unlock()
 		if err != nil {
 			continue // Skip this class if we cant get PIDs
 		}
@@ -371,7 +385,9 @@ func (rc *RDTCollector) syncCGroupPIDs() error {
 	ctrlName := ctrlGroup.Name()
 	monName := monGroup.Name()
 
+	rdtguard.Lock()
 	pidsBefore, err := monGroup.GetPids()
+	rdtguard.Unlock()
 	if err != nil {
 		rc.logger.WithError(err).WithFields(logrus.Fields{
 			"pid":        rc.pid,
@@ -384,7 +400,10 @@ func (rc *RDTCollector) syncCGroupPIDs() error {
 	// PIDs must be added to the control group BEFORE adding to monitoring group
 	// The monitoring group is a subdivision within the control group
 	// Step 1: Add all PIDs to the parent control group first
-	if err := ctrlGroup.AddPids(pids...); err != nil {
+	rdtguard.Lock()
+	err = ctrlGroup.AddPids(pids...)
+	rdtguard.Unlock()
+	if err != nil {
 		return fmt.Errorf("failed to add PIDs to RDT control group %s: %v", ctrlName, err)
 	}
 
@@ -395,12 +414,17 @@ func (rc *RDTCollector) syncCGroupPIDs() error {
 	}).Trace("Added PIDs to RDT control group")
 
 	// Step 2: Now add PIDs to the monitoring group (which is within the control group)
-	if err := monGroup.AddPids(pids...); err != nil {
+	rdtguard.Lock()
+	err = monGroup.AddPids(pids...)
+	rdtguard.Unlock()
+	if err != nil {
 		return fmt.Errorf("failed to add PIDs to RDT monitoring group: %v", err)
 	}
 
 	// Get PIDs after sync
+	rdtguard.Lock()
 	pidsAfter, err := monGroup.GetPids()
+	rdtguard.Unlock()
 	if err != nil {
 		// This can happen benignly if the underlying mon_group disappears (e.g., external
 		// cleanup or class churn). Avoid spamming Error logs.
@@ -570,7 +594,10 @@ func (rc *RDTCollector) detectAndHandleClassMigration() error {
 
 	// Delete the old monitoring group from the old class
 	if rc.ctrlGroup != nil && rc.monGroupName != "" {
-		if err := rc.ctrlGroup.DeleteMonGroup(rc.monGroupName); err != nil {
+		rdtguard.Lock()
+		err := rc.ctrlGroup.DeleteMonGroup(rc.monGroupName)
+		rdtguard.Unlock()
+		if err != nil {
 			msg := strings.ToLower(err.Error())
 			fields := logrus.Fields{
 				"pid":       rc.pid,
@@ -595,10 +622,12 @@ func (rc *RDTCollector) detectAndHandleClassMigration() error {
 	}
 
 	// Create new monitoring group in the new class
+	rdtguard.Lock()
 	newMonGroup, err := currentCtrlGroup.CreateMonGroup(rc.monGroupName, map[string]string{
 		"container-bench": "true",
 		"pid":             rc.pidStr,
 	})
+	rdtguard.Unlock()
 	if err != nil {
 		rc.logger.WithError(err).WithFields(logrus.Fields{
 			"pid":       rc.pid,
@@ -758,17 +787,22 @@ func (rc *RDTCollector) recreateMonitoringGroup() error {
 	}
 
 	// Attach to existing mon group if it exists, otherwise create it.
-	if mg, ok := currentCtrlGroup.GetMonGroup(monGroupName); ok {
+	rdtguard.Lock()
+	mg, ok := currentCtrlGroup.GetMonGroup(monGroupName)
+	rdtguard.Unlock()
+	if ok {
 		rc.mu.Lock()
 		rc.ctrlGroup = currentCtrlGroup
 		rc.className = currentClassName
 		rc.monGroup = mg
 		rc.mu.Unlock()
 	} else {
+		rdtguard.Lock()
 		mg, err := currentCtrlGroup.CreateMonGroup(monGroupName, map[string]string{
 			"container-bench": "true",
 			"pid":             rc.pidStr,
 		})
+		rdtguard.Unlock()
 		if err != nil {
 			return err
 		}
@@ -976,7 +1010,10 @@ func (rc *RDTCollector) Close() {
 		}
 
 		// Delete the monitoring group
-		if err := rc.ctrlGroup.DeleteMonGroup(rc.monGroupName); err != nil {
+		rdtguard.Lock()
+		err := rc.ctrlGroup.DeleteMonGroup(rc.monGroupName)
+		rdtguard.Unlock()
+		if err != nil {
 			rc.logger.WithFields(logrus.Fields{
 				"pid":       rc.pid,
 				"mon_group": rc.monGroupName,

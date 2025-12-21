@@ -1,0 +1,14 @@
+workloads:
+  qsort:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --qsort 1 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  qsort-ops:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --qsort 1 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low

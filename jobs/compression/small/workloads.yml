@@ -1,0 +1,63 @@
+workloads:
+  7z-1-small:
+    image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+    num_cores: 1
+    command: "sh -lc 'wget -O /data/data.bin http://lfs.jakob-eberhardt.de/blob/25mb/data.bin && while :; do rm -f /data/dummy.7z && 7z a -mx=1 -mmt=1 /data/dummy.7z /data/data.bin; done'"
+    kind: single-thread
+    sensitivity: low
+
+  7z-2-small:
+    image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+    num_cores: 1
+    command: "sh -lc 'wget -O /data/data.bin http://lfs.jakob-eberhardt.de/blob/25mb/data.bin && while :; do rm -f /data/dummy.7z && 7z a -mx=2 -mmt=1 /data/dummy.7z /data/data.bin; done'"
+    kind: single-thread
+    sensitivity: low
+
+  7z-3-small:
+    image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+    num_cores: 1
+    command: "sh -lc 'wget -O /data/data.bin http://lfs.jakob-eberhardt.de/blob/25mb/data.bin && while :; do rm -f /data/dummy.7z && 7z a -mx=3 -mmt=1 /data/dummy.7z /data/data.bin; done'"
+    kind: single-thread
+    sensitivity: low
+
+  7z-4-small:
+    image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+    num_cores: 1
+    command: "sh -lc 'wget -O /data/data.bin http://lfs.jakob-eberhardt.de/blob/25mb/data.bin && while :; do rm -f /data/dummy.7z && 7z a -mx=4 -mmt=1 /data/dummy.7z /data/data.bin; done'"
+    kind: single-thread
+    sensitivity: low
+
+  7z-5-small:
+    image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+    num_cores: 1
+    command: "sh -lc 'wget -O /data/data.bin http://lfs.jakob-eberhardt.de/blob/25mb/data.bin && while :; do rm -f /data/dummy.7z && 7z a -mx=5 -mmt=1 /data/dummy.7z /data/data.bin; done'"
+    kind: single-thread
+    sensitivity: low
+
+  7z-6-small:
+    image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+    num_cores: 1
+    command: "sh -lc 'wget -O /data/data.bin http://lfs.jakob-eberhardt.de/blob/25mb/data.bin && while :; do rm -f /data/dummy.7z && 7z a -mx=6 -mmt=1 /data/dummy.7z /data/data.bin; done'"
+    kind: single-thread
+    sensitivity: low
+
+  7z-7-small:
+    image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+    num_cores: 1
+    command: "sh -lc 'wget -O /data/data.bin http://lfs.jakob-eberhardt.de/blob/25mb/data.bin && while :; do rm -f /data/dummy.7z && 7z a -mx=7 -mmt=1 /data/dummy.7z /data/data.bin; done'"
+    kind: single-thread
+    sensitivity: low
+
+  7z-8-small:
+    image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+    num_cores: 1
+    command: "sh -lc 'wget -O /data/data.bin http://lfs.jakob-eberhardt.de/blob/25mb/data.bin && while :; do rm -f /data/dummy.7z && 7z a -mx=8 -mmt=1 /data/dummy.7z /data/data.bin; done'"
+    kind: single-thread
+    sensitivity: low
+
+  7z-9-small:
+    image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+    num_cores: 1
+    command: "sh -lc 'wget -O /data/data.bin http://lfs.jakob-eberhardt.de/blob/25mb/data.bin && while :; do rm -f /data/dummy.7z && 7z a -mx=9 -mmt=1 /data/dummy.7z /data/data.bin; done'"
+    kind: single-thread
+    sensitivity: low

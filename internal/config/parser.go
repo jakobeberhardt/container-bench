@@ -5,6 +5,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -33,6 +34,14 @@ func LoadConfigWithContent(filepath string) (*BenchmarkConfig, string, error) {
 
 	// Expand environment variables
 	expanded := expandEnvVars(originalContent)
+
+	// Support importing workload templates from external YAML files/directories.
+	// This must happen before unmarshalling into BenchmarkConfig because `workloads.input` is not a WorkloadConfig.
+	if rewritten, err := expandWorkloadsInput(expanded, filepath); err != nil {
+		return nil, "", err
+	} else {
+		expanded = rewritten
+	}
 
 	var config BenchmarkConfig
 	if err := yaml.Unmarshal([]byte(expanded), &config); err != nil {
@@ -99,6 +108,240 @@ func LoadConfigWithContent(filepath string) (*BenchmarkConfig, string, error) {
 	}
 
 	return &config, originalContent, nil
+}
+
+func expandWorkloadsInput(expandedYAML string, configPath string) (string, error) {
+	baseDir := filepath.Dir(configPath)
+
+	var root yaml.Node
+	if err := yaml.Unmarshal([]byte(expandedYAML), &root); err != nil {
+		return expandedYAML, nil
+	}
+	if len(root.Content) == 0 {
+		return expandedYAML, nil
+	}
+	m := root.Content[0]
+	if m == nil || m.Kind != yaml.MappingNode {
+		return expandedYAML, nil
+	}
+
+	var workloadsNode *yaml.Node
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		k := m.Content[i]
+		v := m.Content[i+1]
+		if k != nil && k.Value == "workloads" {
+			workloadsNode = v
+			break
+		}
+	}
+	if workloadsNode == nil {
+		return expandedYAML, nil
+	}
+	if workloadsNode.Kind != yaml.MappingNode {
+		return expandedYAML, nil
+	}
+
+	inputPaths, cleaned, err := extractAndRemoveWorkloadsInput(workloadsNode)
+	if err != nil {
+		return "", err
+	}
+	if !cleaned || len(inputPaths) == 0 {
+		return expandedYAML, nil
+	}
+
+	imported, err := loadWorkloadsFromInputs(inputPaths, baseDir)
+	if err != nil {
+		return "", err
+	}
+	mergeWorkloadsIntoNode(workloadsNode, imported)
+
+	out, err := yaml.Marshal(m)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+func extractAndRemoveWorkloadsInput(workloadsNode *yaml.Node) ([]string, bool, error) {
+	if workloadsNode == nil || workloadsNode.Kind != yaml.MappingNode {
+		return nil, false, nil
+	}
+
+	paths := make([]string, 0)
+	removed := false
+	newContent := make([]*yaml.Node, 0, len(workloadsNode.Content))
+	for i := 0; i+1 < len(workloadsNode.Content); i += 2 {
+		k := workloadsNode.Content[i]
+		v := workloadsNode.Content[i+1]
+		if k != nil && k.Value == "input" {
+			removed = true
+			switch v.Kind {
+			case yaml.ScalarNode:
+				if strings.TrimSpace(v.Value) != "" {
+					paths = append(paths, v.Value)
+				}
+			case yaml.SequenceNode:
+				for _, item := range v.Content {
+					if item == nil || item.Kind != yaml.ScalarNode {
+						return nil, false, fmt.Errorf("workloads.input must be a string or list of strings")
+					}
+					if strings.TrimSpace(item.Value) != "" {
+						paths = append(paths, item.Value)
+					}
+				}
+			default:
+				return nil, false, fmt.Errorf("workloads.input must be a string or list of strings")
+			}
+			continue
+		}
+		newContent = append(newContent, k, v)
+	}
+	if removed {
+		workloadsNode.Content = newContent
+	}
+	return paths, removed, nil
+}
+
+func loadWorkloadsFromInputs(inputs []string, baseDir string) (map[string]WorkloadConfig, error) {
+	files, err := resolveWorkloadInputFiles(inputs, baseDir)
+	if err != nil {
+		return nil, err
+	}
+
+	merged := make(map[string]WorkloadConfig)
+	for _, filePath := range files {
+		b, err := os.ReadFile(filePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read workloads file %q: %w", filePath, err)
+		}
+		content := expandEnvVars(string(b))
+
+		// Support both a raw map (key -> WorkloadConfig) and a wrapped {workloads: ...} file.
+		var wrapped struct {
+			Workloads map[string]WorkloadConfig `yaml:"workloads"`
+		}
+		_ = yaml.Unmarshal([]byte(content), &wrapped)
+		var m map[string]WorkloadConfig
+		if len(wrapped.Workloads) > 0 {
+			m = wrapped.Workloads
+		} else {
+			if err := yaml.Unmarshal([]byte(content), &m); err != nil {
+				return nil, fmt.Errorf("failed to parse workloads file %q: %w", filePath, err)
+			}
+		}
+
+		keys := make([]string, 0, len(m))
+		for k := range m {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			if _, exists := merged[k]; exists {
+				return nil, fmt.Errorf("duplicate workload key %q while importing %q", k, filePath)
+			}
+			merged[k] = m[k]
+		}
+	}
+	return merged, nil
+}
+
+func resolveWorkloadInputFiles(inputs []string, baseDir string) ([]string, error) {
+	all := make([]string, 0)
+	seen := make(map[string]struct{})
+
+	for _, in := range inputs {
+		p := strings.TrimSpace(in)
+		if p == "" {
+			continue
+		}
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(baseDir, p)
+		}
+		p = filepath.Clean(p)
+
+		st, err := os.Stat(p)
+		if err != nil {
+			return nil, fmt.Errorf("workloads.input path %q not found: %w", p, err)
+		}
+
+		if st.IsDir() {
+			var dirFiles []string
+			err := filepath.WalkDir(p, func(path string, d os.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				if d == nil || d.IsDir() {
+					return nil
+				}
+				ext := strings.ToLower(filepath.Ext(d.Name()))
+				if ext != ".yml" && ext != ".yaml" {
+					return nil
+				}
+				dirFiles = append(dirFiles, path)
+				return nil
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to list workloads in dir %q: %w", p, err)
+			}
+			sort.Strings(dirFiles)
+			for _, f := range dirFiles {
+				if _, ok := seen[f]; ok {
+					continue
+				}
+				seen[f] = struct{}{}
+				all = append(all, f)
+			}
+			continue
+		}
+
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		all = append(all, p)
+	}
+
+	sort.Strings(all)
+	return all, nil
+}
+
+func mergeWorkloadsIntoNode(workloadsNode *yaml.Node, imported map[string]WorkloadConfig) {
+	if workloadsNode == nil || workloadsNode.Kind != yaml.MappingNode || len(imported) == 0 {
+		return
+	}
+
+	existing := make(map[string]struct{})
+	for i := 0; i+1 < len(workloadsNode.Content); i += 2 {
+		k := workloadsNode.Content[i]
+		if k != nil {
+			existing[k.Value] = struct{}{}
+		}
+	}
+
+	keys := make([]string, 0, len(imported))
+	for k := range imported {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if _, ok := existing[k]; ok {
+			// Inline workloads override imported ones.
+			continue
+		}
+		wn := yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: k}
+
+		b, err := yaml.Marshal(imported[k])
+		if err != nil {
+			continue
+		}
+		var doc yaml.Node
+		if err := yaml.Unmarshal(b, &doc); err != nil {
+			continue
+		}
+		val := doc.Content[0]
+		workloadsNode.Content = append(workloadsNode.Content, &wn, val)
+		existing[k] = struct{}{}
+	}
 }
 
 func getContainerKeysInYAMLOrder(expandedYAML string) []string {
@@ -299,8 +542,10 @@ func expandGeneratedTrace(cfg *BenchmarkConfig) (map[string]ContainerConfig, []s
 		}
 
 		stopSec := startSec + durSec
-		if stopSec > cfg.Benchmark.MaxT {
-			stopSec = cfg.Benchmark.MaxT
+		if !cfg.Benchmark.Drain {
+			if stopSec > cfg.Benchmark.MaxT {
+				stopSec = cfg.Benchmark.MaxT
+			}
 		}
 		if stopSec <= startSec {
 			break
@@ -470,8 +715,10 @@ func validateConfig(config *BenchmarkConfig) error {
 		if stopT <= 0 {
 			return fmt.Errorf("container %s: stop_t must be > 0", name)
 		}
-		if stopT > config.Benchmark.MaxT {
-			return fmt.Errorf("container %s: stop_t (%d) must be <= max_t (%d)", name, stopT, config.Benchmark.MaxT)
+		if !config.Benchmark.Drain {
+			if stopT > config.Benchmark.MaxT {
+				return fmt.Errorf("container %s: stop_t (%d) must be <= max_t (%d)", name, stopT, config.Benchmark.MaxT)
+			}
 		}
 		if startT >= stopT {
 			return fmt.Errorf("container %s: start_t (%d) must be < stop_t (%d)", name, startT, stopT)

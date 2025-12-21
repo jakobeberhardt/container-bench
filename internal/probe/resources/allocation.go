@@ -60,7 +60,9 @@ type AllocationResult struct {
 	AvgStalledCycles       float64 `json:"avg_stalled_cycles,omitempty"`
 	AvgStallsL3MissPercent float64 `json:"avg_stalls_l3_miss_percent,omitempty"`
 	AvgL3Occupancy         uint64  `json:"avg_l3_occupancy,omitempty"`
+	AvgL3UtilizationPct    float64 `json:"avg_l3_utilization_pct,omitempty"`
 	AvgMemBandwidthUsed    uint64  `json:"avg_mem_bandwidth_used,omitempty"`
+	AvgCPUUsagePercent     float64 `json:"avg_cpu_usage_percent,omitempty"`
 
 	// Raw data frames for this allocation period
 	DataFrameSteps []int `json:"dataframe_steps"` // Step numbers captured during this allocation
@@ -678,6 +680,7 @@ func computeAllocationMetricsFromContainerDF(
 	windowStart, windowEnd *time.Time,
 ) {
 	var ipcEffValues, ipcValues, theoreticalIPCValues, cacheMissRateValues, stalledCyclesValues, stallsL3MissPercentValues []float64
+	var cpuUsagePercentValues, l3UtilizationPctValues []float64
 	var l3OccupancyValues, memBandwidthValues []uint64
 
 	steps := containerDF.GetAllSteps()
@@ -724,10 +727,21 @@ func computeAllocationMetricsFromContainerDF(
 					l3OccupancyValues = append(l3OccupancyValues, occ)
 				}
 			}
+			if step.RDT.L3UtilizationPctPerSocket != nil {
+				if pct, ok := step.RDT.L3UtilizationPctPerSocket[result.SocketID]; ok {
+					l3UtilizationPctValues = append(l3UtilizationPctValues, pct)
+				}
+			}
 			if step.RDT.MemoryBandwidthTotalPerSocket != nil {
 				if bw, ok := step.RDT.MemoryBandwidthTotalPerSocket[result.SocketID]; ok {
 					memBandwidthValues = append(memBandwidthValues, bw)
 				}
+			}
+		}
+
+		if step.Docker != nil {
+			if step.Docker.CPUUsagePercent != nil {
+				cpuUsagePercentValues = append(cpuUsagePercentValues, *step.Docker.CPUUsagePercent)
 			}
 		}
 	}
@@ -741,6 +755,8 @@ func computeAllocationMetricsFromContainerDF(
 	cacheMissRateValues = removeOutliers(cacheMissRateValues, outlierDrop)
 	stalledCyclesValues = removeOutliers(stalledCyclesValues, outlierDrop)
 	stallsL3MissPercentValues = removeOutliers(stallsL3MissPercentValues, outlierDrop)
+	cpuUsagePercentValues = removeOutliers(cpuUsagePercentValues, outlierDrop)
+	l3UtilizationPctValues = removeOutliers(l3UtilizationPctValues, outlierDrop)
 
 	if logger := logging.GetProberLogger(); logger != nil && logger.IsLevelEnabled(logrus.DebugLevel) {
 		fields := logrus.Fields{
@@ -774,6 +790,10 @@ func computeAllocationMetricsFromContainerDF(
 	} else {
 		result.IPCEfficiency = -1
 	}
+
+	// Default to -1 when absent
+	result.AvgCPUUsagePercent = -1
+	result.AvgL3UtilizationPct = -1
 
 	// Calculate averages from filtered values
 	if len(ipcValues) > 0 {
@@ -814,6 +834,22 @@ func computeAllocationMetricsFromContainerDF(
 			sum += v
 		}
 		result.AvgStallsL3MissPercent = sum / float64(len(stallsL3MissPercentValues))
+	}
+
+	if len(cpuUsagePercentValues) > 0 {
+		var sum float64
+		for _, v := range cpuUsagePercentValues {
+			sum += v
+		}
+		result.AvgCPUUsagePercent = sum / float64(len(cpuUsagePercentValues))
+	}
+
+	if len(l3UtilizationPctValues) > 0 {
+		var sum float64
+		for _, v := range l3UtilizationPctValues {
+			sum += v
+		}
+		result.AvgL3UtilizationPct = sum / float64(len(l3UtilizationPctValues))
 	}
 
 	if len(l3OccupancyValues) > 0 {
