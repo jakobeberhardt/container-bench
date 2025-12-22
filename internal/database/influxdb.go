@@ -36,6 +36,7 @@ type BenchmarkMetadata struct {
 	BenchmarkID            int     `json:"benchmark_id"`
 	BenchmarkName          string  `json:"benchmark_name"`
 	Description            string  `json:"description"`
+	TraceChecksum          string  `json:"trace_checksum"`
 	DurationSeconds        int64   `json:"duration_seconds"`
 	BenchmarkStarted       string  `json:"benchmark_started"`
 	BenchmarkFinished      string  `json:"benchmark_finished"`
@@ -469,6 +470,7 @@ func (idb *InfluxDBClient) WriteMetadata(metadata *BenchmarkMetadata) error {
 		map[string]interface{}{
 			"benchmark_name":            metadata.BenchmarkName,
 			"description":               metadata.Description,
+			"trace_checksum":            metadata.TraceChecksum,
 			"duration_seconds":          metadata.DurationSeconds,
 			"benchmark_started":         metadata.BenchmarkStarted,
 			"benchmark_finished":        metadata.BenchmarkFinished,
@@ -882,7 +884,7 @@ func CollectContainerTimingMetadata(benchmarkID int, cfg *config.BenchmarkConfig
 	return results
 }
 
-func CollectBenchmarkMetadata(benchmarkID int, config *config.BenchmarkConfig, configContent string, dataframes *dataframe.DataFrames, startTime, endTime time.Time, driverVersion string) (*BenchmarkMetadata, error) {
+func CollectBenchmarkMetadata(benchmarkID int, benchmarkConfig *config.BenchmarkConfig, configContent string, dataframes *dataframe.DataFrames, startTime, endTime time.Time, driverVersion string) (*BenchmarkMetadata, error) {
 	// Get host configuration (unified system info)
 	hostConfig, err := host.GetHostConfig()
 	if err != nil {
@@ -918,12 +920,12 @@ func CollectBenchmarkMetadata(benchmarkID int, config *config.BenchmarkConfig, c
 
 	// Calculate average sampling frequency
 	avgFrequency := 0
-	if len(config.Containers) > 0 {
+	if len(benchmarkConfig.Containers) > 0 {
 		totalFreq := 0
-		for _, container := range config.Containers {
+		for _, container := range benchmarkConfig.Containers {
 			totalFreq += container.Data.Frequency
 		}
-		avgFrequency = totalFreq / len(config.Containers)
+		avgFrequency = totalFreq / len(benchmarkConfig.Containers)
 	}
 
 	// Determine feature flags from containers
@@ -931,7 +933,7 @@ func CollectBenchmarkMetadata(benchmarkID int, config *config.BenchmarkConfig, c
 	dockerStatsEnabled := false
 	rdtEnabled := false
 
-	for _, container := range config.Containers {
+	for _, container := range benchmarkConfig.Containers {
 		if container.Data.GetPerfConfig() != nil {
 			perfEnabled = true
 		}
@@ -949,26 +951,36 @@ func CollectBenchmarkMetadata(benchmarkID int, config *config.BenchmarkConfig, c
 	proberAbortable := false
 	proberIsolated := false
 
-	if config.Benchmark.Scheduler.Prober != nil {
+	if benchmarkConfig.Benchmark.Scheduler.Prober != nil {
 		proberEnabled = true
-		proberImplementation = config.Benchmark.Scheduler.Prober.Implementation
-		proberAbortable = config.Benchmark.Scheduler.Prober.Abortable
-		proberIsolated = config.Benchmark.Scheduler.Prober.Isolated
+		proberImplementation = benchmarkConfig.Benchmark.Scheduler.Prober.Implementation
+		proberAbortable = benchmarkConfig.Benchmark.Scheduler.Prober.Abortable
+		proberIsolated = benchmarkConfig.Benchmark.Scheduler.Prober.Isolated
 	}
 
 	// Estimate data size
 	estimatedDataSize := int64(totalMeasurements * 16)
 
+	traceChecksum := ""
+	if benchmarkConfig != nil {
+		if cs, err := config.TraceChecksum(benchmarkConfig); err == nil {
+			traceChecksum = cs
+		} else {
+			logging.GetLogger().WithError(err).Warn("Failed to compute trace checksum")
+		}
+	}
+
 	metadata := &BenchmarkMetadata{
 		BenchmarkID:            benchmarkID,
-		BenchmarkName:          config.Benchmark.Name,
-		Description:            config.Benchmark.Description,
+		BenchmarkName:          benchmarkConfig.Benchmark.Name,
+		Description:            benchmarkConfig.Benchmark.Description,
+		TraceChecksum:          traceChecksum,
 		DurationSeconds:        int64(endTime.Sub(startTime).Seconds()),
 		BenchmarkStarted:       startTime.Format(time.RFC3339),
 		BenchmarkFinished:      endTime.Format(time.RFC3339),
-		TotalContainers:        len(config.Containers),
+		TotalContainers:        len(benchmarkConfig.Containers),
 		DriverVersion:          driverVersion,
-		UsedScheduler:          config.Benchmark.Scheduler.Implementation,
+		UsedScheduler:          benchmarkConfig.Benchmark.Scheduler.Implementation,
 		SchedulerVersion:       "1.0.0",
 		Hostname:               hostConfig.Hostname,
 		ExecutionHost:          hostConfig.Hostname,
@@ -988,7 +1000,7 @@ func CollectBenchmarkMetadata(benchmarkID int, config *config.BenchmarkConfig, c
 		RDTMonitoringSupported: hostConfig.RDT.MonitoringSupported,
 		RDTAllocationSupported: hostConfig.RDT.AllocationSupported,
 		MaxMemoryBandwidthMBps: 0, // NYI: No reliable source for memory bandwidth
-		MaxDurationSeconds:     config.Benchmark.MaxT,
+		MaxDurationSeconds:     benchmarkConfig.Benchmark.MaxT,
 		SamplingFrequencyMS:    avgFrequency,
 		TotalSamplingSteps:     totalSteps,
 		TotalMeasurements:      totalMeasurements,

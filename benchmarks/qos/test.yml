@@ -1,8 +1,8 @@
 benchmark:
-  name: Trace Generated
+  name: Trace Test
   description: Seed-based generated trace (arrival + length distributions)
   drain: false
-  max_t: 1800
+  max_t: 60
   log_level: info
   accounting:
     log_level: info
@@ -20,7 +20,7 @@ benchmark:
       greedy_allocation: false
       probing_frequency: 50
       drop_outliers: 5
-    break_condition: 80
+    break_condition: 70
     break_cpu_load: 20
     break_llc_occupancy: -1
     break_improvement: -1
@@ -47,12 +47,12 @@ benchmark:
 # Generated trace parameters
 arrival:
   seed: 1
-  mean: 30
-  sigma: 10
+  mean: 5
+  sigma: 0
   length:
-    mean: 600
-    sigma: 100
-    min: 300
+    mean: 90
+    sigma: 0
+    min: 90
   split:
     random: true
     single-thread: 50
@@ -66,7 +66,7 @@ arrival:
     high: 25
 
 data:
-  frequency: 2000
+  frequency: 10000
   perf:
     instructions: true
     cycles: true

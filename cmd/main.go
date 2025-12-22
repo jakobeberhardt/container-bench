@@ -47,6 +47,22 @@ const Version = "1.0.1"
 
 var errAdmissionDeferred = errors.New("admission deferred")
 
+func normalizeSchedulerImplementation(input string) (string, error) {
+	impl := strings.TrimSpace(strings.ToLower(input))
+	if impl == "" {
+		return "", nil
+	}
+	// Allow either hyphen or underscore style from CLI.
+	impl = strings.NewReplacer("-", "_", " ", "_").Replace(impl)
+
+	switch impl {
+	case "default", "least_loaded", "probe", "allocation", "probe_allocation", "interference_aware":
+		return impl, nil
+	default:
+		return "", fmt.Errorf("unknown scheduler %q (allowed: default, least_loaded, probe, allocation, probe_allocation, interference_aware)", input)
+	}
+}
+
 func isInsufficientCPUCapacity(err error) bool {
 	if err == nil {
 		return false
@@ -116,6 +132,9 @@ type ContainerBench struct {
 	containerIDs  map[int]string
 	containerPIDs map[int]int
 	networkID     string
+
+	// If DB upload fails, data is spooled locally and this points to the artifact.
+	dbSpoolPath string
 }
 
 const (
@@ -124,7 +143,8 @@ const (
 	dockerStopCallTimeout    = 10 * time.Second
 	dockerRemoveCallTimeout  = 8 * time.Second
 	dockerNetworkCallTimeout = 6 * time.Second
-	dbWriteTimeout           = 25 * time.Second
+	// DB writing is allowed to take as long as needed; Influx client has its own per-request timeouts.
+	dbWriteTimeout = 0 * time.Second
 )
 
 type dockerCpusetApplier struct {
@@ -298,6 +318,7 @@ func main() {
 	var onlyPlot, onlyWrapper bool
 	var outputDir string
 	var logLevel string
+	var schedulerOverride string
 
 	rootCmd := &cobra.Command{
 		Use:   "container-bench",
@@ -323,7 +344,7 @@ func main() {
 			if err := validateEnvironment(); err != nil {
 				return err
 			}
-			return runBenchmark(configFile)
+			return runBenchmark(configFile, schedulerOverride)
 		},
 	}
 
@@ -385,6 +406,7 @@ func main() {
 	}
 
 	runCmd.Flags().StringVarP(&configFile, "config", "c", "", "Path to benchmark configuration file")
+	runCmd.Flags().StringVar(&schedulerOverride, "scheduler", "", "Override scheduler implementation (default, least_loaded, probe, allocation, probe_allocation, interference_aware; hyphens also accepted)")
 	runCmd.MarkFlagRequired("config")
 
 	validateCmd.Flags().StringVarP(&configFile, "config", "c", "", "Path to benchmark configuration file")
@@ -447,7 +469,7 @@ func validateConfig(configFile string) error {
 	return nil
 }
 
-func runBenchmark(configFile string) error {
+func runBenchmark(configFile string, schedulerOverride string) error {
 	logger := logging.GetLogger()
 
 	// Load configuration first to determine RDT requirements
@@ -468,6 +490,17 @@ func runBenchmark(configFile string) error {
 	if err != nil {
 		logger.WithField("config_file", configFile).WithError(err).Error("Failed to load configuration")
 		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	if schedulerOverride != "" {
+		normalized, err := normalizeSchedulerImplementation(schedulerOverride)
+		if err != nil {
+			return err
+		}
+		if normalized != "" {
+			bench.config.Benchmark.Scheduler.Implementation = normalized
+			logger.WithFields(logrus.Fields{"scheduler": normalized, "source": "cli"}).Info("Scheduler overridden")
+		}
 	}
 
 	// Build stable runtime container configs (so scheduler assignments are visible everywhere)
@@ -801,21 +834,12 @@ func (cb *ContainerBench) cleanupInOrder(ctx context.Context) error {
 		cb.dockerClient = nil
 	}
 
-	// Write data to database (last step, best-effort with timeout)
-	writeErrCh := make(chan error, 1)
-	go func() {
-		writeErrCh <- cb.writeDatabaseData()
-	}()
-	select {
-	case err := <-writeErrCh:
-		return err
-	case <-time.After(dbWriteTimeout):
-		logging.GetLogger().WithField("timeout", dbWriteTimeout.String()).Warn("Database write timed out; skipping remaining writes")
-		if cb.dbClient != nil {
-			cb.dbClient.Close()
-		}
-		return nil
+	// Write data to database (last step). This may take minutes; do not cut it off.
+	err := cb.writeDatabaseData()
+	if cb.dbClient != nil {
+		cb.dbClient.Close()
 	}
+	return err
 }
 
 // Pull all container images
@@ -2149,23 +2173,12 @@ func (cb *ContainerBench) writeDatabaseData() error {
 		return fmt.Errorf("failed to process dataframes: %w", err)
 	}
 
-	// Export processed data to database
-	if err := cb.dbClient.WriteBenchmarkMetrics(cb.benchmarkID, cb.config, processedMetrics, cb.startTime, cb.endTime); err != nil {
-		logger.WithError(err).Error("Failed to export data")
-		return fmt.Errorf("failed to export data: %w", err)
-	}
-
 	// Collect and export metadata
 	logger.Info("Collecting and exporting metadata")
 	metadata, err := database.CollectBenchmarkMetadata(cb.benchmarkID, cb.config, cb.configContent, cb.dataframes, cb.startTime, cb.endTime, Version)
 	if err != nil {
 		logger.WithError(err).Error("Failed to collect metadata")
 		return fmt.Errorf("failed to collect metadata: %w", err)
-	}
-
-	if err := cb.dbClient.WriteMetadata(metadata); err != nil {
-		logger.WithError(err).Error("Failed to export metadata")
-		return fmt.Errorf("failed to export metadata: %w", err)
 	}
 
 	cb.timingsMu.Lock()
@@ -2184,32 +2197,68 @@ func (cb *ContainerBench) writeDatabaseData() error {
 	cb.timingsMu.Unlock()
 
 	containerMeta := database.CollectContainerTimingMetadata(cb.benchmarkID, cb.config, cb.startTime, startTimes, exitTimes, aborted)
-	if err := cb.dbClient.WriteContainerTimingMetadata(containerMeta); err != nil {
-		logger.WithError(err).Error("Failed to export container timing metadata")
-		return fmt.Errorf("failed to export container timing metadata: %w", err)
-	}
 
-	// Export probe results if prober was used
+	var probeResults []*probe.ProbeResult
 	if cb.prober != nil {
-		probeResults := cb.prober.GetResults()
-		if len(probeResults) > 0 {
-			logger.WithField("probe_count", len(probeResults)).Info("Exporting probe results")
-			if err := cb.dbClient.WriteProbeResults(probeResults); err != nil {
-				logger.WithError(err).Error("Failed to export probe results")
-				return fmt.Errorf("failed to export probe results: %w", err)
-			}
+		probeResults = cb.prober.GetResults()
+	}
+	var allocProbeResults []*resources.AllocationProbeResult
+	if allocProvider, ok := cb.scheduler.(resources.AllocationProbeResultsProvider); ok {
+		if allocProvider.HasAllocationProbeResults() {
+			allocProbeResults = allocProvider.GetAllocationProbeResults()
 		}
 	}
 
-	// Export allocation probe results if scheduler provides them
-	if allocProvider, ok := cb.scheduler.(resources.AllocationProbeResultsProvider); ok {
-		if allocProvider.HasAllocationProbeResults() {
-			allocProbeResults := allocProvider.GetAllocationProbeResults()
-			logger.WithField("allocation_probe_count", len(allocProbeResults)).Info("Exporting allocation probe results")
-			if err := cb.dbClient.WriteAllocationProbeResults(allocProbeResults); err != nil {
-				logger.WithError(err).Error("Failed to export allocation probe results")
-				return fmt.Errorf("failed to export allocation probe results: %w", err)
-			}
+	spool := func(reason string, writeErr error) error {
+		if cb.dbSpoolPath != "" {
+			return writeErr
+		}
+		artifact := database.BuildSpoolArtifact(
+			cb.benchmarkID,
+			cb.config,
+			cb.configContent,
+			processedMetrics,
+			metadata,
+			containerMeta,
+			probeResults,
+			allocProbeResults,
+			cb.startTime,
+			cb.endTime,
+		)
+		path, err := database.WriteSpoolArtifact(database.DefaultSpoolDir(), artifact)
+		if err != nil {
+			logger.WithFields(logrus.Fields{"reason": reason}).WithError(err).Error("Failed to spool results")
+			return writeErr
+		}
+		cb.dbSpoolPath = path
+		logger.WithFields(logrus.Fields{"reason": reason, "path": path}).Warn("Results spooled to disk")
+		return writeErr
+	}
+
+	if err := cb.dbClient.WriteBenchmarkMetrics(cb.benchmarkID, cb.config, processedMetrics, cb.startTime, cb.endTime); err != nil {
+		logger.WithError(err).Error("Failed to export data")
+		return spool("db_write_error", fmt.Errorf("failed to export data: %w", err))
+	}
+	if err := cb.dbClient.WriteMetadata(metadata); err != nil {
+		logger.WithError(err).Error("Failed to export metadata")
+		return spool("db_write_error", fmt.Errorf("failed to export metadata: %w", err))
+	}
+	if err := cb.dbClient.WriteContainerTimingMetadata(containerMeta); err != nil {
+		logger.WithError(err).Error("Failed to export container timing metadata")
+		return spool("db_write_error", fmt.Errorf("failed to export container timing metadata: %w", err))
+	}
+	if len(probeResults) > 0 {
+		logger.WithField("probe_count", len(probeResults)).Info("Exporting probe results")
+		if err := cb.dbClient.WriteProbeResults(probeResults); err != nil {
+			logger.WithError(err).Error("Failed to export probe results")
+			return spool("db_write_error", fmt.Errorf("failed to export probe results: %w", err))
+		}
+	}
+	if len(allocProbeResults) > 0 {
+		logger.WithField("allocation_probe_count", len(allocProbeResults)).Info("Exporting allocation probe results")
+		if err := cb.dbClient.WriteAllocationProbeResults(allocProbeResults); err != nil {
+			logger.WithError(err).Error("Failed to export allocation probe results")
+			return spool("db_write_error", fmt.Errorf("failed to export allocation probe results: %w", err))
 		}
 	}
 
