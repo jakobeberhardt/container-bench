@@ -1,13 +1,13 @@
 benchmark:
-  name: Trace Test
+  name: Trace Generated
   description: Seed-based generated trace (arrival + length distributions)
   drain: false
-  max_t: 100
+  max_t: 1800
   log_level: info
   accounting:
     log_level: info
   scheduler:
-    implementation: default
+    implementation: interference_aware
     prober:
       log_level: info
       min_l3: 1
@@ -24,7 +24,7 @@ benchmark:
     break_cpu_load: 20
     break_llc_occupancy: -1
     break_improvement: -1
-    warmup_t: 5
+    warmup_t: 30
     cooldown_t: 5
     skip_allocation_after_probing: true
     allocate_unbound: false
@@ -47,12 +47,12 @@ benchmark:
 # Generated trace parameters
 arrival:
   seed: 1
-  mean: 1
-  sigma: 0
+  mean: 30
+  sigma: 10
   length:
-    mean: 900
-    sigma: 0
-    min: 900
+    mean: 600
+    sigma: 100
+    min: 300
   split:
     random: true
     single-thread: 50
@@ -76,18 +76,10 @@ data:
     cpu_usage_total: true
   rdt: true
 
-# workloads:
-#   input:
-#     - ../../jobs/stress-ng
-#     - ../../jobs/compression
-#     - ../../jobs/ffmpeg
-#     - ../../jobs/compile
-#     #- ../../jobs/tealeaf
-
 workloads:
-  matrix-3d:
-    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-    command: "stress-ng --matrix-3d 1 --timeout 0"
-    num_cores: 1
-    kind: multi-programmed
-    sensitivity: high
+  input:
+    - ../../jobs/stress-ng
+    - ../../jobs/compression
+    - ../../jobs/ffmpeg
+    - ../../jobs/compile
+    #- ../../jobs/tealeaf
