@@ -535,46 +535,62 @@ func (idb *InfluxDBClient) WriteContainerTimingMetadata(containerMetadata []*Con
 
 	logger.WithField("container_count", len(containerMetadata)).Info("Writing container timing metadata to InfluxDB")
 
-	operation := func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
+	now := time.Now()
+	points := make([]*write.Point, 0, len(containerMetadata))
 
-		for _, m := range containerMetadata {
-			tags := map[string]string{
-				"benchmark_id":    fmt.Sprintf("%d", m.BenchmarkID),
-				"container_index": fmt.Sprintf("%d", m.ContainerIndex),
-				"container_name":  m.ContainerName,
-			}
-
-			fields := map[string]interface{}{
-				"start_t":     m.StartTSeconds,
-				"wait_t":      0,
-				"stop_t":      m.StopTSeconds,
-				"actual_t":    m.ActualTSeconds,
-				"job_aborted": m.JobAborted,
-			}
-			if m.WaitTSeconds != nil {
-				fields["wait_t"] = *m.WaitTSeconds
-			}
-			if m.ExpectedTSeconds != nil {
-				fields["expected_t"] = *m.ExpectedTSeconds
-			}
-			if m.ExitTSeconds != nil {
-				fields["exit_t"] = *m.ExitTSeconds
-			}
-			if m.DeltaTSeconds != nil {
-				fields["delta_t"] = *m.DeltaTSeconds
-			}
-
-			point := influxdb2.NewPoint("benchmark_container_meta", tags, fields, time.Now())
-			if err := idb.writeAPI.WritePoint(ctx, point); err != nil {
-				return err
-			}
+	for _, m := range containerMetadata {
+		tags := map[string]string{
+			"benchmark_id":    fmt.Sprintf("%d", m.BenchmarkID),
+			"container_index": fmt.Sprintf("%d", m.ContainerIndex),
+			"container_name":  m.ContainerName,
 		}
-		return nil
+
+		fields := map[string]interface{}{
+			"start_t":     m.StartTSeconds,
+			"wait_t":      0,
+			"stop_t":      m.StopTSeconds,
+			"actual_t":    m.ActualTSeconds,
+			"job_aborted": m.JobAborted,
+		}
+		if m.WaitTSeconds != nil {
+			fields["wait_t"] = *m.WaitTSeconds
+		}
+		if m.ExpectedTSeconds != nil {
+			fields["expected_t"] = *m.ExpectedTSeconds
+		}
+		if m.ExitTSeconds != nil {
+			fields["exit_t"] = *m.ExitTSeconds
+		}
+		if m.DeltaTSeconds != nil {
+			fields["delta_t"] = *m.DeltaTSeconds
+		}
+
+		points = append(points, influxdb2.NewPoint("benchmark_container_meta", tags, fields, now))
 	}
 
-	return idb.retryWithBackoff(operation, "write_container_timing_metadata")
+	// Split into batches (reuse shared batch+retry logic)
+	totalBatches := (len(points) + idb.batchSize - 1) / idb.batchSize
+	logger.WithFields(logrus.Fields{
+		"total_points":  len(points),
+		"batch_size":    idb.batchSize,
+		"total_batches": totalBatches,
+	}).Info("Writing container timing metadata in batches")
+
+	for i := 0; i < len(points); i += idb.batchSize {
+		end := i + idb.batchSize
+		if end > len(points) {
+			end = len(points)
+		}
+
+		batch := points[i:end]
+		batchNum := (i / idb.batchSize) + 1
+		if err := idb.writePointsBatch(batch, batchNum, totalBatches); err != nil {
+			return fmt.Errorf("failed to write container timing metadata batch %d/%d: %w", batchNum, totalBatches, err)
+		}
+	}
+
+	logger.WithField("container_count", len(containerMetadata)).Info("Container timing metadata written successfully")
+	return nil
 }
 
 // WriteProbeResults writes probe results to the benchmark_probes table

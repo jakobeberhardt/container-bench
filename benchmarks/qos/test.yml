@@ -7,7 +7,7 @@ benchmark:
   accounting:
     log_level: info
   scheduler:
-    implementation: default
+    implementation: interference_aware
     prober:
       log_level: info
       min_l3: 1
@@ -76,18 +76,20 @@ data:
     cpu_usage_total: true
   rdt: true
 
-# workloads:
-#   input:
-#     - ../../jobs/stress-ng
-#     - ../../jobs/compression
-#     - ../../jobs/ffmpeg
-#     - ../../jobs/compile
-#     #- ../../jobs/tealeaf
-
 workloads:
-  matrix-3d:
-    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-    command: "stress-ng --matrix-3d 1 --timeout 0"
-    num_cores: 1
-    kind: multi-programmed
-    sensitivity: high
+  input:
+    #- ../../jobs/test
+    #- ../../jobs/stress-ng
+   - ../../jobs/compression
+    # - ../../jobs/ffmpeg
+    # - ../../jobs/compile
+    # #- ../../jobs/tealeaf
+
+# workloads:
+#   matrix-3d:
+#     image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+#     command: "stress-ng --matrix-3d 1 --timeout 0"
+#     num_cores: 1
+#     kind: multi-programmed
+#     sensitivity: high
+    
