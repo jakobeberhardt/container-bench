@@ -2,7 +2,7 @@ benchmark:
   name: Trace Test
   description: Seed-based generated trace (arrival + length distributions)
   drain: false
-  max_t: 100
+  max_t: 1800
   log_level: info
   accounting:
     log_level: info
@@ -20,11 +20,12 @@ benchmark:
       greedy_allocation: false
       probing_frequency: 50
       drop_outliers: 5
+      allocate: false
     break_condition: 70
     break_cpu_load: 20
     break_llc_occupancy: -1
     break_improvement: -1
-    warmup_t: 5
+    warmup_t: 60
     cooldown_t: 5
     skip_allocation_after_probing: true
     allocate_unbound: false
@@ -47,12 +48,12 @@ benchmark:
 # Generated trace parameters
 arrival:
   seed: 1
-  mean: 1
-  sigma: 0
+  mean: 60
+  sigma: 10
   length:
-    mean: 900
-    sigma: 0
-    min: 900
+    mean: 600
+    sigma: 100
+    min: 300
   split:
     random: true
     single-thread: 50
@@ -71,6 +72,8 @@ data:
     instructions: true
     cycles: true
     stalls_total: true
+    stalls_l3_miss: true
+    stalls_l3_miss_percent: true
   docker:
     assigned_cores: true
     cpu_usage_total: true
@@ -78,12 +81,11 @@ data:
 
 workloads:
   input:
-    #- ../../jobs/test
-    #- ../../jobs/stress-ng
-   - ../../jobs/compression
-    # - ../../jobs/ffmpeg
-    # - ../../jobs/compile
-    # #- ../../jobs/tealeaf
+    - ../../jobs/stress-ng
+    - ../../jobs/compression
+    - ../../jobs/ffmpeg
+    - ../../jobs/compile
+    #- ../../jobs/tealeaf
 
 # workloads:
 #   matrix-3d:

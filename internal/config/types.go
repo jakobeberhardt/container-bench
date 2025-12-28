@@ -139,6 +139,18 @@ type ProberConfig struct {
 	// Log level for the prober subsystem (allocation probing + optional kernel probing)
 	LogLevel string `yaml:"log_level,omitempty"`
 
+	// Allocate controls whether the prober actually allocates RDT resources during probing.
+	// If true (default): full allocation probing is performed, taking/releasing L3 cache ways
+	// and memory bandwidth, which may impact other containers on the socket.
+	// If false: lightweight sampling-only probing using StallsL3MissPercent to estimate
+	// interference potential without allocating any RDT resources.
+	Allocate *bool `yaml:"allocate,omitempty"`
+
+	// GreedyAllocation controls whether probing stops early on diminishing returns.
+	// If true: stop probe early when improvement is below threshold.
+	// If false: run full probe and classify diminishing returns post-mortem.
+	GreedyAllocation bool `yaml:"greedy_allocation,omitempty"`
+
 	// Allocation prober parameters (used by schedulers doing allocation probing).
 	MinL3Ways        int     `yaml:"min_l3,omitempty"`
 	MaxL3Ways        int     `yaml:"max_l3,omitempty"`

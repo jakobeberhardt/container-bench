@@ -1,8 +1,8 @@
 benchmark:
-  name: Trace Generated
+  name: Trace Test
   description: Seed-based generated trace (arrival + length distributions)
   drain: false
-  max_t: 1800
+  max_t: 1200
   log_level: info
   accounting:
     log_level: info
@@ -17,15 +17,17 @@ benchmark:
       max_mem: 10
       mem_step: 10
       probing_t: 1
+      cooldown_t: 5
+      warmup_t: 20
       greedy_allocation: false
       probing_frequency: 50
       drop_outliers: 5
+      allocate: false
     break_condition: 70
     break_cpu_load: 20
     break_llc_occupancy: -1
     break_improvement: -1
-    warmup_t: 30
-    cooldown_t: 5
+
     skip_allocation_after_probing: true
     allocate_unbound: false
     reallocate: true
@@ -48,7 +50,7 @@ benchmark:
 arrival:
   seed: 1
   mean: 30
-  sigma: 10
+  sigma: 0
   length:
     mean: 600
     sigma: 100
@@ -60,10 +62,10 @@ arrival:
     multi-thread: 30
     iobound: 10
   sensitivities:
-    random: true
+    random: false
     low: 50
-    medium: 25
-    high: 25
+    medium: 0
+    high: 50
 
 data:
   frequency: 10000
@@ -71,15 +73,32 @@ data:
     instructions: true
     cycles: true
     stalls_total: true
+    stalls_l3_miss: true
+    stalls_l3_miss_percent: true
   docker:
     assigned_cores: true
     cpu_usage_total: true
   rdt: true
 
+# workloads:
+#   input:
+#     - ../../jobs/stress-ng
+#     - ../../jobs/compression
+#     - ../../jobs/ffmpeg
+#     - ../../jobs/compile
+#     #- ../../jobs/tealeaf
+
 workloads:
-  input:
-    - ../../jobs/stress-ng
-    - ../../jobs/compression
-    - ../../jobs/ffmpeg
-    - ../../jobs/compile
-    #- ../../jobs/tealeaf
+  high:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --matrix-3d 1 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: high
+    
+  low:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low

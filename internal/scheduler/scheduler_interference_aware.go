@@ -46,12 +46,39 @@ type containerProfile struct {
 	className string
 	l3Mask    uint64
 	memAlloc  float64
+
+	// Non-allocating interference estimation (used when prober.allocate=false)
+	// StallsL3MissPercent is the percentage of stalled cycles caused by L3 cache misses.
+	// This is a key indicator of how much interference a container experiences/causes.
+	stallsL3MissPercent     float64 // Latest measured StallsL3MissPercent
+	stallsL3MissProbed      bool    // Whether we have a valid StallsL3MissPercent measurement
+	stallsL3MissProbedAt    time.Time
+	stallsL3MissSampleCount int // Number of samples used for the measurement
 }
 
 type activeProbe struct {
 	containerIndex int
 	originalSocket int
 	runner         *proberesources.AllocationProbeRunner
+
+	stepCtx    context.Context
+	stepCancel context.CancelFunc
+	stepDone   chan struct{}
+}
+
+// activeSamplingProbe is a lightweight probe that doesn't allocate RDT resources.
+// It samples StallsL3MissPercent over time to estimate interference potential.
+type activeSamplingProbe struct {
+	containerIndex int
+	startedAt      time.Time
+	startStep      int
+	samplingDur    time.Duration
+
+	// Frequency override for faster sampling
+	restoreFrequency func()
+
+	// Collected samples
+	samples []float64
 
 	stepCtx    context.Context
 	stepCancel context.CancelFunc
@@ -83,7 +110,9 @@ type InterferenceAwareScheduler struct {
 	sockets        int
 
 	probing           *activeProbe
+	samplingProbe     *activeSamplingProbe // Non-allocating probe for StallsL3MissPercent
 	lastProbeFinished time.Time
+	lastRebalanceAt   time.Time // Cooldown for rebalancing to prevent thrashing
 
 	allocationProbeResults []*proberesources.AllocationProbeResult
 
@@ -281,10 +310,16 @@ func (s *InterferenceAwareScheduler) ProcessDataFrames(dfs *dataframe.DataFrames
 	warmupSeconds := 5
 	cooldownSeconds := 2
 	if s.config != nil {
-		if s.config.WarmupT > 0 {
+		// Prober-specific warmup takes precedence over scheduler-level warmup
+		if s.config.Prober != nil && s.config.Prober.WarmupT > 0 {
+			warmupSeconds = s.config.Prober.WarmupT
+		} else if s.config.WarmupT > 0 {
 			warmupSeconds = s.config.WarmupT
 		}
-		if s.config.CooldownT > 0 {
+		// Prober-specific cooldown takes precedence over scheduler-level cooldown
+		if s.config.Prober != nil && s.config.Prober.CooldownT > 0 {
+			cooldownSeconds = s.config.Prober.CooldownT
+		} else if s.config.CooldownT > 0 {
 			cooldownSeconds = s.config.CooldownT
 		}
 	}
@@ -296,6 +331,11 @@ func (s *InterferenceAwareScheduler) ProcessDataFrames(dfs *dataframe.DataFrames
 
 	// Active probe is stepped asynchronously (see startProbeLocked).
 	if s.probing != nil {
+		return nil
+	}
+
+	// Active sampling probe (non-allocating mode).
+	if s.samplingProbe != nil {
 		return nil
 	}
 
@@ -346,6 +386,18 @@ func (s *InterferenceAwareScheduler) Shutdown() error {
 		_ = s.resetContainerToBenchmarkLocked(ap.containerIndex)
 		s.lastProbeFinished = time.Now()
 		s.probing = nil
+	}
+	// Abort any active sampling probe.
+	if s.samplingProbe != nil {
+		sp := s.samplingProbe
+		if sp.stepCancel != nil {
+			sp.stepCancel()
+		}
+		if sp.restoreFrequency != nil {
+			sp.restoreFrequency()
+		}
+		s.lastProbeFinished = time.Now()
+		s.samplingProbe = nil
 	}
 	s.mu.Unlock()
 
@@ -546,6 +598,11 @@ func (s *InterferenceAwareScheduler) OnContainerStart(info ContainerInfo) error 
 	p.demandWays = 0
 	p.demandMem = 0
 
+	// Clear interference sampling data on restart.
+	p.stallsL3MissProbed = false
+	p.stallsL3MissPercent = 0
+	p.stallsL3MissSampleCount = 0
+
 	// Best-effort: place new container into benchmark pool immediately.
 	if s.rdtAccountant != nil && info.PID != 0 {
 		_ = s.moveContainerCgroupLocked(info.Index, s.benchmarkClass)
@@ -590,6 +647,11 @@ func (s *InterferenceAwareScheduler) OnContainerStop(containerIndex int) error {
 	}
 	if s.config != nil && s.config.Reallocate {
 		_ = s.relocateYoungestIfImprovesLocked("container_stop")
+	}
+
+	// Trigger interference-based rebalancing when using non-allocating probe mode.
+	if !s.isAllocatingProbeEnabled() {
+		s.rebalanceByInterferenceLocked("container_stop")
 	}
 
 	return nil
@@ -811,6 +873,18 @@ func (s *InterferenceAwareScheduler) ensureBenchmarkClassLocked() error {
 	return nil
 }
 
+// isAllocatingProbeEnabled returns true if the prober should perform full RDT allocation
+// probing (default), or false if it should use lightweight sampling-only probing.
+func (s *InterferenceAwareScheduler) isAllocatingProbeEnabled() bool {
+	if s.config == nil || s.config.Prober == nil {
+		return true // Default: allocate
+	}
+	if s.config.Prober.Allocate == nil {
+		return true // Default: allocate
+	}
+	return *s.config.Prober.Allocate
+}
+
 func (s *InterferenceAwareScheduler) startProbeLocked(dfs *dataframe.DataFrames, containerIndex int) error {
 	p := s.profiles[containerIndex]
 	if p == nil || p.pid == 0 {
@@ -819,6 +893,11 @@ func (s *InterferenceAwareScheduler) startProbeLocked(dfs *dataframe.DataFrames,
 
 	// Ensure container starts in benchmark class.
 	_ = s.moveContainerCgroupLocked(containerIndex, s.benchmarkClass)
+
+	// Check if we should use non-allocating (sampling-only) probe mode.
+	if !s.isAllocatingProbeEnabled() {
+		return s.startSamplingProbeLocked(dfs, containerIndex)
+	}
 
 	cfg := s.config
 	minL3 := 1
@@ -1892,4 +1971,457 @@ func countBits(mask uint64) float64 {
 		mask >>= 1
 	}
 	return float64(cnt)
+}
+
+// ============================================================================
+// Non-allocating (sampling-only) probe implementation
+// ============================================================================
+
+// startSamplingProbeLocked starts a lightweight sampling probe that collects
+// StallsL3MissPercent metrics without allocating any RDT resources.
+// This is used when prober.allocate=false to avoid the overhead of full allocation probing.
+func (s *InterferenceAwareScheduler) startSamplingProbeLocked(dfs *dataframe.DataFrames, containerIndex int) error {
+	p := s.profiles[containerIndex]
+	if p == nil || p.pid == 0 {
+		return nil
+	}
+
+	cfg := s.config
+	budgetSeconds := defaultProbeTotalSeconds
+	var probingFrequency time.Duration
+	if cfg != nil {
+		if cfg.Prober != nil {
+			if cfg.Prober.ProbingT > 0 {
+				budgetSeconds = cfg.Prober.ProbingT
+			}
+			if cfg.Prober.ProbingFrequency > 0 {
+				probingFrequency = time.Duration(cfg.Prober.ProbingFrequency) * time.Millisecond
+			}
+		}
+		if cfg.ProbingT > 0 {
+			budgetSeconds = cfg.ProbingT
+		}
+	}
+
+	sp := &activeSamplingProbe{
+		containerIndex: containerIndex,
+		startedAt:      time.Now(),
+		samplingDur:    time.Duration(float64(time.Second) * budgetSeconds),
+		samples:        make([]float64, 0, 100),
+	}
+
+	// Record starting step for sample collection.
+	sp.startStep = latestStepNumber(dfs, containerIndex)
+
+	// Override collector frequency if configured.
+	if probingFrequency > 0 && s.collectorFreq != nil {
+		restore, err := s.collectorFreq.OverrideContainerFrequency(containerIndex, probingFrequency)
+		if err != nil {
+			s.schedulerLogger.WithFields(logrus.Fields{
+				"container":       containerIndex,
+				"freq_ms":         int(probingFrequency / time.Millisecond),
+			}).WithError(err).Warn("Failed to override collector frequency for sampling probe")
+		} else {
+			sp.restoreFrequency = restore
+		}
+	}
+
+	s.samplingProbe = sp
+
+	// Start asynchronous stepping.
+	s.startSamplingProbeStepperLocked(dfs, sp)
+
+	s.schedulerLogger.WithFields(logrus.Fields{
+		"container":        containerIndex,
+		"sampling_dur_s":   budgetSeconds,
+		"probing_freq_ms":  int(probingFrequency / time.Millisecond),
+	}).Info("Started non-allocating sampling probe for StallsL3MissPercent")
+
+	return nil
+}
+
+// startSamplingProbeStepperLocked starts an async goroutine that periodically steps the sampling probe.
+func (s *InterferenceAwareScheduler) startSamplingProbeStepperLocked(dfs *dataframe.DataFrames, sp *activeSamplingProbe) {
+	if sp == nil {
+		return
+	}
+	if sp.stepCancel != nil {
+		return // Already started.
+	}
+
+	stepEvery := 100 * time.Millisecond
+	sp.stepCtx, sp.stepCancel = context.WithCancel(context.Background())
+	sp.stepDone = make(chan struct{})
+
+	go func() {
+		defer close(sp.stepDone)
+		ticker := time.NewTicker(stepEvery)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-sp.stepCtx.Done():
+				return
+			case <-ticker.C:
+				s.mu.Lock()
+				if s.samplingProbe != sp {
+					s.mu.Unlock()
+					return
+				}
+				done := s.stepSamplingProbeLocked(dfs)
+				s.mu.Unlock()
+				if done {
+					return
+				}
+			}
+		}
+	}()
+}
+
+// stepSamplingProbeLocked collects samples and checks if sampling is complete.
+// Returns true if the probe is finished.
+func (s *InterferenceAwareScheduler) stepSamplingProbeLocked(dfs *dataframe.DataFrames) bool {
+	sp := s.samplingProbe
+	if sp == nil {
+		return true
+	}
+
+	// Check if sampling duration has elapsed.
+	if time.Since(sp.startedAt) >= sp.samplingDur {
+		s.finalizeSamplingProbeLocked()
+		return true
+	}
+
+	// Collect samples from dataframes.
+	containerIndex := sp.containerIndex
+	cdf := dfs.GetContainer(containerIndex)
+	if cdf == nil {
+		return false
+	}
+
+	endStep := latestStepNumber(dfs, containerIndex)
+	steps := cdf.GetAllSteps()
+
+	// Collect StallsL3MissPercent from new steps.
+	for stepNum := sp.startStep + 1; stepNum <= endStep; stepNum++ {
+		step := steps[stepNum]
+		if step == nil || step.Perf == nil {
+			continue
+		}
+		if step.Perf.StallsL3MissPercent != nil {
+			sp.samples = append(sp.samples, *step.Perf.StallsL3MissPercent)
+		}
+	}
+	sp.startStep = endStep
+
+	return false
+}
+
+// finalizeSamplingProbeLocked computes the average StallsL3MissPercent from collected samples
+// and updates the container profile.
+func (s *InterferenceAwareScheduler) finalizeSamplingProbeLocked() {
+	sp := s.samplingProbe
+	if sp == nil {
+		return
+	}
+
+	containerIndex := sp.containerIndex
+	p := s.profiles[containerIndex]
+
+	// Cleanup.
+	if sp.stepCancel != nil {
+		sp.stepCancel()
+	}
+	if sp.restoreFrequency != nil {
+		sp.restoreFrequency()
+	}
+
+	// Compute average StallsL3MissPercent.
+	samples := sp.samples
+	sampleCount := len(samples)
+
+	// Apply outlier dropping if configured.
+	outlierDrop := 0
+	if s.config != nil && s.config.Prober != nil && s.config.Prober.DropOutliers > 0 {
+		outlierDrop = s.config.Prober.DropOutliers
+	}
+	if outlierDrop > 0 && len(samples) > 2*outlierDrop {
+		sort.Float64s(samples)
+		samples = samples[outlierDrop : len(samples)-outlierDrop]
+	}
+
+	avgStallsL3Miss := 0.0
+	if len(samples) > 0 {
+		sum := 0.0
+		for _, v := range samples {
+			sum += v
+		}
+		avgStallsL3Miss = sum / float64(len(samples))
+	}
+
+	// Update profile with sampling result.
+	if p != nil {
+		p.stallsL3MissPercent = avgStallsL3Miss
+		p.stallsL3MissProbed = true
+		p.stallsL3MissProbedAt = time.Now()
+		p.stallsL3MissSampleCount = sampleCount
+
+		// Mark as evaluated (no allocation demand since we didn't probe for it).
+		// For non-allocating mode, we consider all containers "unbound" since we
+		// don't know their actual resource demand.
+		p.evaluated = true
+		p.unbound = true
+		p.demandWays = 0
+		p.demandMem = 0
+	}
+
+	s.schedulerLogger.WithFields(logrus.Fields{
+		"container":              containerIndex,
+		"avg_stalls_l3_miss_pct": fmt.Sprintf("%.2f", avgStallsL3Miss),
+		"sample_count":           sampleCount,
+		"samples_after_trim":     len(samples),
+		"sampling_dur_ms":        int(time.Since(sp.startedAt) / time.Millisecond),
+	}).Info("Sampling probe completed")
+
+	// Trigger interference-based socket rebalancing.
+	s.rebalanceByInterferenceLocked("sampling_probe_finished")
+
+	s.lastProbeFinished = time.Now()
+	s.samplingProbe = nil
+}
+
+// ============================================================================
+// Socket load balancing based on StallsL3MissPercent
+// ============================================================================
+
+// socketInterferenceLoadLocked computes the sum of StallsL3MissPercent for all
+// running containers on a given socket, excluding a specific container.
+// For containers that haven't been probed yet, assumes worst-case (100%) interference.
+func (s *InterferenceAwareScheduler) socketInterferenceLoadLocked(socket int, excludeIndex int) float64 {
+	const worstCaseStalls = 100.0 // Worst-case assumption for unprobed containers
+
+	load := 0.0
+	for idx, p := range s.profiles {
+		if p == nil || p.pid == 0 {
+			continue
+		}
+		if idx == excludeIndex {
+			continue
+		}
+		curSock := p.socket
+		if curSock < 0 || curSock >= s.sockets {
+			curSock = s.currentSocketForContainerLocked(idx)
+		}
+		if curSock != socket {
+			continue
+		}
+		if p.stallsL3MissProbed {
+			load += p.stallsL3MissPercent
+		} else {
+			// Unprobed containers assumed to have worst-case interference
+			load += worstCaseStalls
+		}
+	}
+	return load
+}
+
+// allContainersProbedLocked returns true if all running containers have a valid
+// StallsL3MissPercent measurement. This prevents rebalancing before we have
+// complete information about the interference profile of all containers.
+func (s *InterferenceAwareScheduler) allContainersProbedLocked() bool {
+	for idx, p := range s.profiles {
+		if p == nil || p.pid == 0 {
+			continue
+		}
+		// Skip if this container is currently being probed.
+		if s.samplingProbe != nil && s.samplingProbe.containerIndex == idx {
+			continue
+		}
+		if s.probing != nil && s.probing.containerIndex == idx {
+			continue
+		}
+		if !p.stallsL3MissProbed && !p.evaluated {
+			return false
+		}
+	}
+	return true
+}
+
+// rebalanceByInterferenceLocked attempts to balance containers across sockets
+// by minimizing the maximum sum of StallsL3MissPercent on any socket.
+// It only moves containers when there's a significant improvement (> threshold).
+func (s *InterferenceAwareScheduler) rebalanceByInterferenceLocked(trigger string) {
+	if s.sockets <= 1 || s.cpuAllocator == nil {
+		return
+	}
+
+	// Minimum improvement threshold to avoid unnecessary moves (in percentage points).
+	const minImprovementThreshold = 5.0
+
+	// Cooldown period after a rebalance to prevent rapid successive moves (thrashing).
+	const rebalanceCooldownSeconds = 2.0
+
+	// Note: We no longer require all containers to be probed before rebalancing.
+	// socketInterferenceLoadLocked now assumes worst-case (100%) for unprobed containers,
+	// so we can make decisions even with incomplete information.
+
+	// Check cooldown - don't rebalance too frequently.
+	if !s.lastRebalanceAt.IsZero() {
+		elapsed := time.Since(s.lastRebalanceAt).Seconds()
+		if elapsed < rebalanceCooldownSeconds {
+			s.schedulerLogger.WithFields(logrus.Fields{
+				"trigger":            trigger,
+				"cooldown_remaining": fmt.Sprintf("%.1fs", rebalanceCooldownSeconds-elapsed),
+			}).Debug("Skipping rebalance: cooldown period")
+			return
+		}
+	}
+
+	// Calculate current interference load per socket.
+	currentLoad := make([]float64, s.sockets)
+	for sock := 0; sock < s.sockets; sock++ {
+		currentLoad[sock] = s.socketInterferenceLoadLocked(sock, -1)
+	}
+
+	// Find the current max load (objective to minimize).
+	currentMaxLoad := 0.0
+	for _, load := range currentLoad {
+		if load > currentMaxLoad {
+			currentMaxLoad = load
+		}
+	}
+
+	s.schedulerLogger.WithFields(logrus.Fields{
+		"trigger":      trigger,
+		"load_socket0": fmt.Sprintf("%.2f", currentLoad[0]),
+		"load_socket1": fmt.Sprintf("%.2f", func() float64 {
+			if s.sockets > 1 {
+				return currentLoad[1]
+			}
+			return 0
+		}()),
+		"max_load": fmt.Sprintf("%.2f", currentMaxLoad),
+	}).Debug("Evaluating interference-based rebalancing")
+
+	// Try to find a container move that improves balance.
+	type moveCandidate struct {
+		idx        int
+		srcSock    int
+		dstSock    int
+		newMaxLoad float64
+		startAt    time.Time
+		stalls     float64
+	}
+
+	candidates := make([]moveCandidate, 0)
+
+	for idx, p := range s.profiles {
+		if p == nil || p.pid == 0 || p.containerID == "" {
+			continue
+		}
+		// Only move containers that don't have a pinned RDT allocation.
+		if p.l3Mask != 0 || p.memAlloc != 0 {
+			continue
+		}
+		if !p.stallsL3MissProbed {
+			continue
+		}
+
+		srcSock := p.socket
+		if srcSock < 0 || srcSock >= s.sockets {
+			srcSock = s.currentSocketForContainerLocked(idx)
+		}
+		if srcSock < 0 || srcSock >= s.sockets {
+			srcSock = 0
+		}
+
+		stalls := p.stallsL3MissPercent
+
+		// Try moving to each other socket.
+		for dstSock := 0; dstSock < s.sockets; dstSock++ {
+			if dstSock == srcSock {
+				continue
+			}
+
+			// Compute new loads after the move.
+			newLoad := make([]float64, s.sockets)
+			copy(newLoad, currentLoad)
+			newLoad[srcSock] -= stalls
+			newLoad[dstSock] += stalls
+
+			// Compute new max load.
+			newMaxLoad := 0.0
+			for _, load := range newLoad {
+				if load > newMaxLoad {
+					newMaxLoad = load
+				}
+			}
+
+			// Check if this is an improvement.
+			if newMaxLoad+minImprovementThreshold < currentMaxLoad {
+				candidates = append(candidates, moveCandidate{
+					idx:        idx,
+					srcSock:    srcSock,
+					dstSock:    dstSock,
+					newMaxLoad: newMaxLoad,
+					startAt:    p.startedAt,
+					stalls:     stalls,
+				})
+			}
+		}
+	}
+
+	if len(candidates) == 0 {
+		return
+	}
+
+	// Sort by: best improvement first, then youngest container.
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].newMaxLoad != candidates[j].newMaxLoad {
+			return candidates[i].newMaxLoad < candidates[j].newMaxLoad
+		}
+		if !candidates[i].startAt.Equal(candidates[j].startAt) {
+			return candidates[i].startAt.After(candidates[j].startAt)
+		}
+		return candidates[i].idx < candidates[j].idx
+	})
+
+	// Execute at most one move per rebalancing call.
+	for _, c := range candidates {
+		p := s.profiles[c.idx]
+		if p == nil || p.containerID == "" {
+			continue
+		}
+
+		moved, err := s.cpuAllocator.Move(c.idx, p.containerID, c.dstSock)
+		if err != nil {
+			s.schedulerLogger.WithError(err).WithFields(logrus.Fields{
+				"container": c.idx,
+				"src_sock":  c.srcSock,
+				"dst_sock":  c.dstSock,
+			}).Debug("Failed to move container for interference rebalancing")
+			continue
+		}
+
+		p.socket = c.dstSock
+		if s.rdtAccountant != nil {
+			_ = s.moveContainerCgroupLocked(c.idx, s.benchmarkClass)
+		}
+
+		// Record rebalance time for cooldown.
+		s.lastRebalanceAt = time.Now()
+
+		s.schedulerLogger.WithFields(logrus.Fields{
+			"trigger":          trigger,
+			"container":        c.idx,
+			"src_sock":         c.srcSock,
+			"dst_sock":         c.dstSock,
+			"stalls_l3_miss":   fmt.Sprintf("%.2f", c.stalls),
+			"current_max_load": fmt.Sprintf("%.2f", currentMaxLoad),
+			"new_max_load":     fmt.Sprintf("%.2f", c.newMaxLoad),
+			"improvement":      fmt.Sprintf("%.2f", currentMaxLoad-c.newMaxLoad),
+			"assigned_cpus":    moved,
+		}).Info("Rebalanced container based on interference load")
+
+		return // Only move one container per call.
+	}
 }

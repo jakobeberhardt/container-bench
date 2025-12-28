@@ -1,0 +1,109 @@
+benchmark:
+  name: Trace
+  description: Test which starts a baseline, a victim and multiple neighbors
+  max_t: 80
+  log_level: warn
+  accounting:
+    log_level: warn
+  scheduler:
+    implementation: interference_aware
+    prober:
+      log_level: info
+      min_l3: 1
+      max_l3: 1
+      step_l3: 1
+      min_mem: 10
+      max_mem: 10
+      mem_step: 10
+      probing_t: 1
+      greedy_allocation: false
+      probing_frequency: 50
+      drop_outliers: 5
+      allocate: false
+    break_condition: 70
+    break_cpu_load: 20
+    break_llc_occupancy: -1
+    break_improvement: -1
+    warmup_t: 2
+    cooldown_t: 1
+    skip_allocation_after_probing: true
+    allocate_unbound: false
+    reallocate: true
+    rdt: true
+    log_level: info
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+
+first:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --matrix-3d 1 --timeout 0 "
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+
+second:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --matrix-3d 1 --timeout 20"
+  start_t: 1
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+third:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --matrix-3d 1 --timeout 0 "
+  start_t: 2
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+
+four:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --matrix-3d 1 --timeout 0 "
+  start_t: 3
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+
+five:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --matrix-3d 1 --timeout 60 "
+  start_t: 4
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+
+six:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --matrix-3d 1 --timeout 0 "
+  start_t: 40
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
