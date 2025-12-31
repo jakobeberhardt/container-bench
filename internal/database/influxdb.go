@@ -1426,6 +1426,14 @@ func (idb *InfluxDBClient) createFieldsFromMetricStep(step *datahandeling.Metric
 			fields["rdt_l3_bitmask_socket1"] = bitmask
 		}
 	}
+	if step.RDTL3BitmaskBinPerSocket != nil {
+		if bitmask, ok := step.RDTL3BitmaskBinPerSocket[0]; ok {
+			fields["rdt_l3_bitmask_bin_socket0"] = bitmask
+		}
+		if bitmask, ok := step.RDTL3BitmaskBinPerSocket[1]; ok {
+			fields["rdt_l3_bitmask_bin_socket1"] = bitmask
+		}
+	}
 	if step.RDTL3WaysPerSocket != nil {
 		if ways, ok := step.RDTL3WaysPerSocket[0]; ok {
 			fields["rdt_l3_ways_socket0"] = ways

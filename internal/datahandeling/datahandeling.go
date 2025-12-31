@@ -1,7 +1,9 @@
 package datahandeling
 
 import (
+	"math/big"
 	"sort"
+	"strings"
 	"time"
 
 	"container-bench/internal/config"
@@ -99,6 +101,7 @@ type MetricStep struct {
 
 	// Per-socket allocation details
 	RDTL3BitmaskPerSocket       map[int]string  `json:"rdt_l3_bitmask_per_socket,omitempty"`
+	RDTL3BitmaskBinPerSocket    map[int]string  `json:"rdt_l3_bitmask_bin_per_socket,omitempty"`
 	RDTL3WaysPerSocket          map[int]uint64  `json:"rdt_l3_ways_per_socket,omitempty"`
 	RDTL3AllocationPctPerSocket map[int]float64 `json:"rdt_l3_allocation_pct_per_socket,omitempty"`
 	RDTMBAPercentPerSocket      map[int]uint64  `json:"rdt_mba_percent_per_socket,omitempty"`
@@ -342,6 +345,7 @@ func (h *DefaultDataHandler) processRDTMetrics(rdt *dataframe.RDTMetrics, step *
 
 	// Copy per-socket allocation details
 	step.RDTL3BitmaskPerSocket = rdt.L3BitmaskPerSocket
+	step.RDTL3BitmaskBinPerSocket = deriveBinaryBitmaskPerSocket(rdt.L3BitmaskPerSocket)
 	step.RDTL3WaysPerSocket = rdt.L3WaysPerSocket
 	step.RDTL3AllocationPctPerSocket = rdt.L3AllocationPctPerSocket
 	step.RDTMBAPercentPerSocket = rdt.MBAPercentPerSocket
@@ -349,6 +353,53 @@ func (h *DefaultDataHandler) processRDTMetrics(rdt *dataframe.RDTMetrics, step *
 	// Copy full allocation strings
 	step.RDTL3AllocationString = rdt.L3AllocationString
 	step.RDTMBAAllocationString = rdt.MBAAllocationString
+}
+
+func deriveBinaryBitmaskPerSocket(hexBitmaskPerSocket map[int]string) map[int]string {
+	if hexBitmaskPerSocket == nil {
+		return nil
+	}
+	out := make(map[int]string, len(hexBitmaskPerSocket))
+	for socketID, hexMask := range hexBitmaskPerSocket {
+		if bin, ok := hexBitmaskToBinaryString(hexMask); ok {
+			out[socketID] = bin
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// hexBitmaskToBinaryString converts a hex bitmask string (e.g. "007") to a binary string
+// with fixed width based on the number of hex digits (3 hex digits -> 12 bits: "000000000111").
+// Leading zeros are preserved. The input may optionally be prefixed with "0x".
+func hexBitmaskToBinaryString(hexMask string) (string, bool) {
+	s := strings.TrimSpace(hexMask)
+	if s == "" {
+		return "", false
+	}
+	if strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0X") {
+		s = s[2:]
+	}
+	if s == "" {
+		return "", false
+	}
+	width := len(s) * 4
+	if width == 0 {
+		return "", false
+	}
+
+	v := new(big.Int)
+	if _, ok := v.SetString(s, 16); !ok {
+		return "", false
+	}
+
+	bin := v.Text(2)
+	if len(bin) < width {
+		bin = strings.Repeat("0", width-len(bin)) + bin
+	}
+	return bin, true
 }
 
 // returns the container configuration for a given index
