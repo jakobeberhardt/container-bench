@@ -100,19 +100,19 @@ type SchedulerConfig struct {
 	LogLevel       string `yaml:"log_level,omitempty"`
 
 	// Interference-aware scheduler (implementation: "interference_aware")
-	MaxL3                      int     `yaml:"max_l3,omitempty"`                        // max exclusive cache ways to probe/allocate
-	MaxMem                     float64 `yaml:"max_mem,omitempty"`                       // max memory bandwidth percentage to probe/allocate
-	ProbingT                   float64 `yaml:"probing_t,omitempty"`                     // total probing time budget (seconds)
-	BreakCondition             float64 `yaml:"break_condition,omitempty"`               // stop probing when avg IPCE (Perf.IPCEfficancy) >= this
-	BreakCPULoad               *float64 `yaml:"break_cpu_load,omitempty"`               // stop probing when avg Docker CPU usage percent <= this (-1 or nil disables)
-	BreakLLCOccupancy          *float64 `yaml:"break_llc_occupancy,omitempty"`          // stop probing when avg LLC utilization percent <= this (-1 or nil disables)
-	BreakImprovement           float64 `yaml:"break_improvement,omitempty"`             // stop when relative improvement below this
-	GreedyAllocation           bool    `yaml:"greedy_allocation,omitempty"`             // if true, stop probe early on diminishing returns; if false, classify diminishing returns post-mortem
-	Reallocate                 bool    `yaml:"reallocate,omitempty"`                    // opportunistic reallocation when jobs finish
-	SkipAllocationAfterProbing *bool   `yaml:"skip_allocation_after_probing,omitempty"` // if true, never keep allocations after probing (default: true)
-	AllocateUnbound            bool    `yaml:"allocate_unbound,omitempty"`              // keep allocation for unbound containers even if skip_allocation_after_probing is true
-	WarmupT                    int     `yaml:"warmup_t,omitempty"`                      // seconds after container start before it can be probed (default: 5)
-	CooldownT                  int     `yaml:"cooldown_t,omitempty"`                    // minimum seconds between probes (default: 2)
+	MaxL3                      int      `yaml:"max_l3,omitempty"`                        // max exclusive cache ways to probe/allocate
+	MaxMem                     float64  `yaml:"max_mem,omitempty"`                       // max memory bandwidth percentage to probe/allocate
+	ProbingT                   float64  `yaml:"probing_t,omitempty"`                     // total probing time budget (seconds)
+	BreakCondition             float64  `yaml:"break_condition,omitempty"`               // stop probing when avg IPCE (Perf.IPCEfficancy) >= this
+	BreakCPULoad               *float64 `yaml:"break_cpu_load,omitempty"`                // stop probing when avg Docker CPU usage percent <= this (-1 or nil disables)
+	BreakLLCOccupancy          *float64 `yaml:"break_llc_occupancy,omitempty"`           // stop probing when avg LLC utilization percent <= this (-1 or nil disables)
+	BreakImprovement           float64  `yaml:"break_improvement,omitempty"`             // stop when relative improvement below this
+	GreedyAllocation           bool     `yaml:"greedy_allocation,omitempty"`             // if true, stop probe early on diminishing returns; if false, classify diminishing returns post-mortem
+	Reallocate                 bool     `yaml:"reallocate,omitempty"`                    // opportunistic reallocation when jobs finish
+	SkipAllocationAfterProbing *bool    `yaml:"skip_allocation_after_probing,omitempty"` // if true, never keep allocations after probing (default: true)
+	AllocateUnbound            bool     `yaml:"allocate_unbound,omitempty"`              // keep allocation for unbound containers even if skip_allocation_after_probing is true
+	WarmupT                    int      `yaml:"warmup_t,omitempty"`                      // seconds after container start before it can be probed (default: 5)
+	CooldownT                  int      `yaml:"cooldown_t,omitempty"`                    // minimum seconds between probes (default: 2)
 
 	Prober    *ProberConfig    `yaml:"prober,omitempty"`
 	Allocator *AllocatorConfig `yaml:"allocator,omitempty"`

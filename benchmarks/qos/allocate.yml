@@ -1,0 +1,97 @@
+benchmark:
+  #name: Huge 4 No allocate
+  name: reversed Huge Allocate 2 Exclusive 2 Parwise Share
+  #name:  Huge Allocate 1 Exclusive 4 Parwise Share
+  #name:  Huge Share 6 Pairwise
+  #name:  Huge allocate 3 Exclusive
+  description: Allocates 2 ways to each container and one which is shared pairwise
+  max_t: 120
+  log_level: info
+  scheduler:
+    implementation: default
+    rdt: false
+    log_level: warn
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+
+c0:
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  core: 16
+  command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
+  #command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  data:
+    frequency: 2000
+    perf: 
+      cycles: true
+      cache_references: true 
+      instructions: true 
+      stalls_total: true 
+      cache_misses: true
+      cache_miss_rate: true 
+      instructions_per_cycle: true
+    docker: false
+    rdt: true
+
+c1:
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  core: 17
+  command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
+  #command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  data:
+    frequency: 2000
+    perf: 
+      cycles: true
+      cache_references: true 
+      instructions: true 
+      stalls_total: true 
+      cache_misses: true
+      cache_miss_rate: true 
+      instructions_per_cycle: true
+    docker: false
+    rdt: true
+c2:
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  core: 18
+  command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
+  #command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  data:
+    frequency: 2000
+    perf: 
+      cycles: true
+      cache_references: true 
+      instructions: true 
+      stalls_total: true 
+      cache_misses: true
+      cache_miss_rate: true 
+      instructions_per_cycle: true
+    docker: false
+    rdt: true
+
+c3:
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  core: 19
+  command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
+  #command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  data:
+    frequency: 2000
+    perf: 
+      cycles: true
+      cache_references: true 
+      instructions: true 
+      stalls_total: true 
+      cache_misses: true
+      cache_miss_rate: true 
+      instructions_per_cycle: true
+    docker: false
+    rdt: true

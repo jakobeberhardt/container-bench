@@ -1,5 +1,5 @@
 benchmark:
-  name: Trace
+  name: Container Stop
   description: Test which starts a baseline, a victim and multiple neighbors
   max_t: 80
   log_level: warn

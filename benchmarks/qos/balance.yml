@@ -48,13 +48,13 @@ benchmark:
 
 # Generated trace parameters
 arrival:
-  seed: 1
-  mean: 30
+  seed: 2
+  mean: 75
   sigma: 0
   length:
     mean: 600
-    sigma: 100
-    min: 300
+    sigma: 200
+    min: 0
   split:
     random: true
     single-thread: 50
@@ -63,9 +63,9 @@ arrival:
     iobound: 10
   sensitivities:
     random: false
-    low: 50
+    low: 60
     medium: 0
-    high: 50
+    high: 40
 
 data:
   frequency: 10000
@@ -92,13 +92,13 @@ workloads:
   high:
     image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
     command: "stress-ng --matrix-3d 1 --timeout 0"
-    num_cores: 1
+    num_cores: 4
     kind: single-thread
     sensitivity: high
     
   low:
     image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
     command: "stress-ng --cpu 1 --timeout 0"
-    num_cores: 1
+    num_cores: 4
     kind: single-thread
     sensitivity: low

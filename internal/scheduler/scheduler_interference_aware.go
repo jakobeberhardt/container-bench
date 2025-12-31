@@ -2018,8 +2018,8 @@ func (s *InterferenceAwareScheduler) startSamplingProbeLocked(dfs *dataframe.Dat
 		restore, err := s.collectorFreq.OverrideContainerFrequency(containerIndex, probingFrequency)
 		if err != nil {
 			s.schedulerLogger.WithFields(logrus.Fields{
-				"container":       containerIndex,
-				"freq_ms":         int(probingFrequency / time.Millisecond),
+				"container": containerIndex,
+				"freq_ms":   int(probingFrequency / time.Millisecond),
 			}).WithError(err).Warn("Failed to override collector frequency for sampling probe")
 		} else {
 			sp.restoreFrequency = restore
@@ -2032,9 +2032,9 @@ func (s *InterferenceAwareScheduler) startSamplingProbeLocked(dfs *dataframe.Dat
 	s.startSamplingProbeStepperLocked(dfs, sp)
 
 	s.schedulerLogger.WithFields(logrus.Fields{
-		"container":        containerIndex,
-		"sampling_dur_s":   budgetSeconds,
-		"probing_freq_ms":  int(probingFrequency / time.Millisecond),
+		"container":       containerIndex,
+		"sampling_dur_s":  budgetSeconds,
+		"probing_freq_ms": int(probingFrequency / time.Millisecond),
 	}).Info("Started non-allocating sampling probe for StallsL3MissPercent")
 
 	return nil
