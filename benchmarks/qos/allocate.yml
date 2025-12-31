@@ -1,11 +1,14 @@
 benchmark:
-  #name: Huge 4 No allocate
-  name: reversed Huge Allocate 2 Exclusive 2 Parwise Share
-  #name:  Huge Allocate 1 Exclusive 4 Parwise Share
-  #name:  Huge Share 6 Pairwise
-  #name:  Huge allocate 3 Exclusive
-  description: Allocates 2 ways to each container and one which is shared pairwise
-  max_t: 120
+  #name:  Normal 4 No allocate
+  #name:   Reversed Normal Allocate 2 Exclusive 2 Parwise Share
+  #name:  Normal Allocate 1 Exclusive 4 Parwise Share
+  #name:   Normal Share 6 Pairwise
+  #name:  Normal Allocate 3 Exclusive
+  #name:  Huge Noise Allocate 3 Exclusive
+  name:  Huge No Noise Allocate 3 Exclusive
+
+  description: Allocates
+  max_t: 60
   log_level: info
   scheduler:
     implementation: default
@@ -78,20 +81,20 @@ c2:
     docker: false
     rdt: true
 
-c3:
-  image: registry.jakob-eberhardt.de/neighbor:default  
-  core: 19
-  command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
-  #command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random"
-  data:
-    frequency: 2000
-    perf: 
-      cycles: true
-      cache_references: true 
-      instructions: true 
-      stalls_total: true 
-      cache_misses: true
-      cache_miss_rate: true 
-      instructions_per_cycle: true
-    docker: false
-    rdt: true
+# c3:
+#   image: registry.jakob-eberhardt.de/neighbor:default  
+#   core: 19
+#   command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
+#   #command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random"
+#   data:
+#     frequency: 2000
+#     perf: 
+#       cycles: true
+#       cache_references: true 
+#       instructions: true 
+#       stalls_total: true 
+#       cache_misses: true
+#       cache_miss_rate: true 
+#       instructions_per_cycle: true
+#     docker: false
+#     rdt: true
