@@ -89,6 +89,7 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 	// 2. LLC
 	llcIPC, llcSCP, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
 		cores, "stress-ng --cache 0 --cache-level 3", segmentTime)
+
 	if err == nil && baselineIPC > 0 {
 		ipcSensitivity := (baselineIPC - llcIPC) / baselineIPC
 		ipcVal := clampSensitivity(ipcSensitivity)
@@ -99,6 +100,7 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 			"sensitivity":  ipcVal,
 		}).Info("LLC IPC sensitivity calculated")
 	}
+
 	if err == nil && baselineSCP > 0 {
 		scpSensitivity := (llcSCP - baselineSCP) / (100.0 - baselineSCP)
 		scpVal := clampSensitivity(scpSensitivity)
