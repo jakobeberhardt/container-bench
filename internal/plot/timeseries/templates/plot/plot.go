@@ -51,6 +51,7 @@ const PlotTemplate = `% Generated on {{.GeneratedDate}}
 
 {{range .Plots}}
 % Container: {{.ContainerName}} (index {{.ContainerIndex}}, image: {{.ContainerImage}}, core: {{.ContainerCore}})
+% addplot source: benchmark_id={{$.BenchmarkID}} field={{$.Fieldname}} container_index={{.ContainerIndex}}
 \addplot+[{{.Style}}]
   coordinates {
 {{range .Coordinates}}    {{.}}

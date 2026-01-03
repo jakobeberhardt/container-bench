@@ -37,6 +37,7 @@ every axis legend/.code={\let\addlegendentry\relax},{{end}}
 
 {{range .Plots}}
 % Memory Bandwidth: {{.MemBandwidth}}%
+% addplot source: benchmark_id={{$.BenchmarkID}} allocation_probe_index={{$.AllocationProbeIndex}} mem_bandwidth={{.MemBandwidth}}
 \addplot+[{{.Style}}]
   coordinates {
 {{range .Coordinates}}    {{.}}
@@ -45,6 +46,7 @@ every axis legend/.code={\let\addlegendentry\relax},{{end}}
 
 {{end}}{{if .BaselineValue}}
 % Baseline reference (90% of max allocation)
+% addplot source: benchmark_id={{.BenchmarkID}} allocation_probe_index={{.AllocationProbeIndex}} baseline=true
 \addplot[black,dashed,thick,forget plot]
   coordinates {({{.XMin}},{{.BaselineValue}}) ({{.XMax}},{{.BaselineValue}})};
 {{end}}

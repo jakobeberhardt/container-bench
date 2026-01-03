@@ -31,6 +31,7 @@ const PlotTemplate = `% Generated on {{.GeneratedDate}}
 % Container Image: {{.ContainerImage}}
 % Container Command: {{.ContainerCommand}}
 % Container Cores: {{.ContainerCores}}
+% addplot source: benchmark_id={{.BenchmarkID}} probe_container_index={{.ContainerIndex}} metric={{$.MetricName}}
 \addplot+[{{.Style}}] coordinates {
   (0,   {{.LLC}})      % LLC sensitivity
   (72,  {{.MemRead}})  % Mem Read sensitivity

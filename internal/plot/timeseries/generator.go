@@ -36,6 +36,7 @@ type PlotOptions struct {
 	Interval    float64
 	MinOverride *float64
 	MaxOverride *float64
+	Style       int
 }
 
 func (g *TimeseriesPlotGenerator) Generate(ctx context.Context, opts PlotOptions) (string, string, error) {
@@ -109,6 +110,10 @@ func (g *TimeseriesPlotGenerator) preparePlotData(
 	}
 	sort.Ints(containerIndices)
 
+	if opts.Style >= 0 && len(containerIndices) != 1 {
+		return nil, fmt.Errorf("--style can only be used when exactly one container is plotted (got %d containers)", len(containerIndices))
+	}
+
 	var plotSeries []plotTemplate.PlotSeries
 	yMin := math.Inf(1)
 	yMax := math.Inf(-1)
@@ -121,7 +126,11 @@ func (g *TimeseriesPlotGenerator) preparePlotData(
 			continue
 		}
 
-		style := mappings.GetContainerStyle(containerIdx)
+		styleIndex := containerIdx
+		if opts.Style >= 0 {
+			styleIndex = opts.Style
+		}
+		style := mappings.GetContainerStyle(styleIndex)
 		series := plotTemplate.PlotSeries{
 			ContainerIndex: containerIdx,
 			ContainerName:  dataPoints[0].ContainerName,
@@ -144,6 +153,11 @@ func (g *TimeseriesPlotGenerator) preparePlotData(
 
 			xFloat := g.toFloat64(xVal)
 			yFloat := g.toFloat64(yVal)
+
+			// perf_cache_miss_rate is collected as a ratio (0..1) but plotted as percent.
+			if opts.YField == "perf_cache_miss_rate" {
+				yFloat = yFloat * 100.0
+			}
 
 			if opts.XField == "relative_time" {
 				xFloat = xFloat / 1e9

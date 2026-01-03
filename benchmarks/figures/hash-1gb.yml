@@ -1,0 +1,40 @@
+benchmark:
+  name:  3 ways 1gb 
+  description: Debugging RDT class allocation
+  max_t: 45
+  log_level: info
+  scheduler:
+    implementation: default
+    rdt: false
+    log_level: warn
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+
+c0:
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  core: 1
+  command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
+  data:
+    frequency: 100
+    perf: 
+      cycles: true
+      cache_references: true 
+      instructions: true 
+      stalls_total: true 
+      cache_misses: true
+      cache_miss_rate: true 
+      instructions_per_cycle: true
+    docker: false
+    rdt: true
+

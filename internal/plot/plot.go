@@ -60,6 +60,7 @@ func (pm *PlotManager) GenerateTimeseriesPlot(
 	xField, yField string,
 	interval float64,
 	minOverride, maxOverride *float64,
+	style int,
 ) (plotTikz, wrapperTex string, err error) {
 	ctx := context.Background()
 
@@ -70,6 +71,7 @@ func (pm *PlotManager) GenerateTimeseriesPlot(
 		Interval:    interval,
 		MinOverride: minOverride,
 		MaxOverride: maxOverride,
+		Style:       style,
 	}
 
 	return pm.timeseriesGenerator.Generate(ctx, opts)

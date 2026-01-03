@@ -1,5 +1,10 @@
 package mappings
 
+import (
+	"fmt"
+	"regexp"
+)
+
 type FieldMapping struct {
 	Label      string
 	ShortLabel string
@@ -226,6 +231,65 @@ var FieldMappings = map[string]FieldMapping{
 		Max:        "auto",
 		NullValue:  0,
 	},
+
+	"rdt_l3_occupancy": {
+		Label:      "LLC Cache Occupancy (Bytes)",
+		ShortLabel: "LLC Occ",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"rdt_l3_utilization_pct": {
+		Label:      "LLC Utilization (\\%)",
+		ShortLabel: "LLC Util \\%",
+		Min:        0.0,
+		Max:        100.0,
+		NullValue:  0,
+	},
+	"rdt_memory_bandwidth_local": {
+		Label:      "Local Memory Bandwidth (Bytes/s)",
+		ShortLabel: "Local BW",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"rdt_memory_bandwidth_total": {
+		Label:      "Total Memory Bandwidth (Bytes/s)",
+		ShortLabel: "Total BW",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"rdt_mem_bandwidth_mbps": {
+		Label:      "Memory Bandwidth (MB/s)",
+		ShortLabel: "BW (MB/s)",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"rdt_l3_ways": {
+		Label:      "LLC Cache Ways",
+		ShortLabel: "LLC Ways",
+		Min:        0.0,
+		Max:        "auto",
+		NullValue:  0,
+	},
+	"rdt_l3_allocation_pct": {
+		Label:      "LLC Cache Allocation (\\%)",
+		ShortLabel: "LLC Alloc \\%",
+		Min:        0.0,
+		Max:        100.0,
+		NullValue:  0,
+	},
+	"rdt_mba_percent": {
+		Label:      "Memory Bandwidth Allocation (\\%)",
+		ShortLabel: "MBA \\%",
+		Min:        0.0,
+		Max:        100.0,
+		NullValue:  0,
+	},
+
+	// RDT (legacy schema / aliases)
 	"rdt_l3_cache_occupancy": {
 		Label:      "LLC Cache Occupancy (Bytes)",
 		ShortLabel: "LLC Occ",
@@ -254,23 +318,27 @@ var FieldMappings = map[string]FieldMapping{
 		Max:        100.0,
 		NullValue:  0,
 	},
-	"rdt_memory_bandwidth_local": {
-		Label:      "Local Memory Bandwidth (Bytes/s)",
-		ShortLabel: "Local BW",
-		Min:        0.0,
-		Max:        "auto",
-		NullValue:  0,
-	},
-	"rdt_memory_bandwidth_total": {
-		Label:      "Total Memory Bandwidth (Bytes/s)",
-		ShortLabel: "Total BW",
-		Min:        0.0,
-		Max:        "auto",
-		NullValue:  0,
-	},
 }
 
+var socketSuffixRegex = regexp.MustCompile(`^(.*)_socket(\d+)$`)
+
 func GetFieldMapping(fieldName string) (FieldMapping, bool) {
-	mapping, exists := FieldMappings[fieldName]
-	return mapping, exists
+	if mapping, exists := FieldMappings[fieldName]; exists {
+		return mapping, true
+	}
+
+	// Handle per-socket fields like rdt_l3_occupancy_socket0 by reusing the base
+	// mapping and appending the socket ID to the label.
+	if matches := socketSuffixRegex.FindStringSubmatch(fieldName); len(matches) == 3 {
+		baseField := matches[1]
+		socketID := matches[2]
+		if baseMapping, exists := FieldMappings[baseField]; exists {
+			m := baseMapping
+			m.Label = fmt.Sprintf("%s (Socket %s)", baseMapping.Label, socketID)
+			m.ShortLabel = fmt.Sprintf("%s S%s", baseMapping.ShortLabel, socketID)
+			return m, true
+		}
+	}
+
+	return FieldMapping{}, false
 }

@@ -716,7 +716,6 @@ func (rc *RDTCollector) Collect() *dataframe.RDTMetrics {
 		}
 	}
 
-	// Get monitoring data - may fail if monitoring group was deleted during class update
 	// Hold the lock during GetMonData so the PID-sync ticker can't migrate/delete
 	// the monitoring group concurrently (which can cause transient mon_data ENOENT).
 	rc.mu.RLock()
@@ -867,13 +866,11 @@ func (rc *RDTCollector) processL3MonitoringData(monData *rdt.MonData, metrics *d
 	}
 
 	if !rc.firstCollection {
-		// Compute delta from last collection - total bandwidth has already been aggregated
 		// We can't split it back to per-socket, so we only store if there's a single socket
 		// For per-socket bandwidth, we need to track per-socket cumulative values
 		if totalBandwidthTotal >= rc.lastBandwidthTotal {
 			delta := totalBandwidthTotal - rc.lastBandwidthTotal
 			if delta > 0 && len(socketBandwidthTotal) == 1 {
-				// Single socket - attribute to that socket
 				for socketID := range socketBandwidthTotal {
 					metrics.MemoryBandwidthTotalPerSocket[socketID] = delta
 				}
@@ -883,7 +880,6 @@ func (rc *RDTCollector) processL3MonitoringData(monData *rdt.MonData, metrics *d
 		if totalBandwidthLocal >= rc.lastBandwidthLocal {
 			delta := totalBandwidthLocal - rc.lastBandwidthLocal
 			if delta > 0 && len(socketBandwidthLocal) == 1 {
-				// Single socket - attribute to that socket
 				for socketID := range socketBandwidthLocal {
 					metrics.MemoryBandwidthLocalPerSocket[socketID] = delta
 				}

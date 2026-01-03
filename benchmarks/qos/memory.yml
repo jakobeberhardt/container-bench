@@ -1,0 +1,65 @@
+benchmark:
+  name:  Memory Test
+
+  description: Allocates
+  max_t: 90
+  log_level: info
+  scheduler:
+    implementation: default
+    rdt: false
+    log_level: warn
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+
+# Generated trace parameters
+arrival:
+  seed: 2
+  mean: 1
+  sigma: 0
+  length:
+    mean: 600
+    sigma: 200
+    min: 200
+  split:
+    random: true
+    single-thread: 50
+    multi-programmed: 10
+    multi-thread: 30
+    iobound: 10
+  sensitivities:
+    random: false
+    low: 60
+    medium: 0
+    high: 40
+
+data:
+  frequency: 50
+  perf: true
+  docker: true
+  rdt: true
+
+workloads:
+  high:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --matrix-3d 1 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: high
+    
+  low:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --cpu 1 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low

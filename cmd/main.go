@@ -308,6 +308,8 @@ func main() {
 	var configFile string
 	var benchmarkID int
 	var xField, yField string
+	var socketID int
+	var styleIndex int
 	var interval float64
 	var minVal, maxVal float64
 	var minSet, maxSet bool
@@ -377,7 +379,7 @@ func main() {
 			if maxSet {
 				maxPtr = &maxVal
 			}
-			return generateTimeseriesPlot(benchmarkID, xField, yField, interval, minPtr, maxPtr, onlyPlot, onlyWrapper)
+			return generateTimeseriesPlot(benchmarkID, xField, yField, interval, minPtr, maxPtr, socketID, styleIndex, onlyPlot, onlyWrapper)
 		},
 	}
 
@@ -415,6 +417,8 @@ func main() {
 	timeseriesCmd.Flags().IntVar(&benchmarkID, "benchmark-id", 0, "Benchmark ID to plot")
 	timeseriesCmd.Flags().StringVar(&xField, "x", "relative_time", "X-axis field")
 	timeseriesCmd.Flags().StringVar(&yField, "y", "", "Y-axis field")
+	timeseriesCmd.Flags().IntVar(&socketID, "socket", -1, "Socket ID for per-socket RDT metrics (-1 = use y-field as given)")
+	timeseriesCmd.Flags().IntVar(&styleIndex, "style", -1, "Override plot style index (0..N). Only allowed if exactly one container is plotted")
 	timeseriesCmd.Flags().Float64Var(&interval, "interval", 0, "Aggregation interval in seconds (0 = no aggregation)")
 	timeseriesCmd.Flags().Float64Var(&minVal, "min", 0, "Minimum Y-axis value")
 	timeseriesCmd.Flags().Float64Var(&maxVal, "max", 0, "Maximum Y-axis value")
@@ -2271,12 +2275,30 @@ func (cb *ContainerBench) writeDatabaseData() error {
 	return nil
 }
 
-func generateTimeseriesPlot(benchmarkID int, xField, yField string, interval float64, minPtr, maxPtr *float64, onlyPlot, onlyWrapper bool) error {
+func generateTimeseriesPlot(benchmarkID int, xField, yField string, interval float64, minPtr, maxPtr *float64, socketID int, styleIndex int, onlyPlot, onlyWrapper bool) error {
 	logger := logging.GetLogger()
+
+	resolvedYField := yField
+	// If a socket is provided, allow selecting per-socket RDT metrics without
+	// spelling out the full *_socketN field name.
+	if socketID >= 0 && !strings.Contains(yField, "_socket") {
+		// Map legacy/alias names to the current stored field prefixes.
+		base := yField
+		switch yField {
+		case "rdt_l3_cache_occupancy":
+			base = "rdt_l3_occupancy"
+		case "rdt_cache_llc_utilization_percent":
+			base = "rdt_l3_utilization_pct"
+		}
+		if strings.HasPrefix(base, "rdt_") {
+			resolvedYField = fmt.Sprintf("%s_socket%d", base, socketID)
+		}
+	}
+
 	logger.WithFields(logrus.Fields{
 		"benchmark_id": benchmarkID,
 		"x_field":      xField,
-		"y_field":      yField,
+		"y_field":      resolvedYField,
 		"interval":     interval,
 	}).Debug("Generating timeseries plot")
 
@@ -2287,7 +2309,7 @@ func generateTimeseriesPlot(benchmarkID int, xField, yField string, interval flo
 	}
 	defer plotMgr.Close()
 
-	plotTikz, wrapperTex, err := plotMgr.GenerateTimeseriesPlot(benchmarkID, xField, yField, interval, minPtr, maxPtr)
+	plotTikz, wrapperTex, err := plotMgr.GenerateTimeseriesPlot(benchmarkID, xField, resolvedYField, interval, minPtr, maxPtr, styleIndex)
 	if err != nil {
 		logger.WithError(err).Error("Failed to generate plot")
 		return fmt.Errorf("failed to generate plot: %w", err)
