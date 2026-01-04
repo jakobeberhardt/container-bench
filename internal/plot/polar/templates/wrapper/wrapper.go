@@ -9,7 +9,7 @@ const WrapperTemplate = `% Generated on {{.GeneratedDate}}
     
 	\vspace{0.5em}
     
-	\resizebox{1\linewidth}{!}{\input{{"{"}}\currfiledir/{{.PlotFileName}}{{"}"}} }
+	\resizebox{1\linewidth}{!}{\input{{"{"}}\currfiledir/{{.PlotFileName}}{{"}"}} } % chktex 27
     \caption[{{.ShortCaption}}]{ {{.Caption}} }
     \label{fig:sensitivity-{{.ProbeKernel}}-{{.LabelID}}}
 \end{figure}
