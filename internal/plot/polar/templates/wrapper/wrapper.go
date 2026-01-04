@@ -5,7 +5,7 @@ const WrapperTemplate = `% Generated on {{.GeneratedDate}}
 % Metric Type: {{.MetricName}} ({{.MetricFullName}})
 \begin{figure}[H]
     \centering
-    \resizebox{1\linewidth}{!}{\input{ {{.PlotFilePath}} }}
+	\resizebox{1\linewidth}{!}{\input{{"{"}}\currfiledir/{{.PlotFileName}}{{"}"}} }
     % \vspace{0.5em}
     % \pgfplotslegendfromname{polar-legend-{{.LabelID}}}
     \caption[{{.ShortCaption}}]{ {{.Caption}} }
@@ -17,7 +17,7 @@ type WrapperData struct {
 	GeneratedDate  string
 	ProbeKernel    string
 	ProbeVersion   string
-	PlotFilePath   string
+	PlotFileName   string
 	ShortCaption   string
 	Caption        string
 	LabelID        string

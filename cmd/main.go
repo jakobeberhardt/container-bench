@@ -316,6 +316,7 @@ func main() {
 	var probeIndices []int
 	var probeMetric string
 	var polarBenchmarkID int
+	var polarOutputDir string
 	var allocationProbeIndex int
 	var allocationMetrics []string
 	var onlyPlot, onlyWrapper bool
@@ -392,7 +393,7 @@ func main() {
 			if err := validateEnvironment(); err != nil {
 				return err
 			}
-			return generatePolarPlot(polarBenchmarkID, probeIndices, probeMetric, onlyPlot, onlyWrapper)
+			return generatePolarPlot(polarBenchmarkID, probeIndices, probeMetric, onlyPlot, onlyWrapper, polarOutputDir)
 		},
 	}
 
@@ -437,6 +438,7 @@ func main() {
 	polarCmd.Flags().IntSliceVar(&probeIndices, "probes", []int{}, "Comma-separated list of probe indices")
 	polarCmd.Flags().IntVar(&polarBenchmarkID, "benchmark-id", 0, "Optional benchmark ID to scope probe indices (0 = all benchmarks)")
 	polarCmd.Flags().StringVar(&probeMetric, "metric", "ipc", "Metric type to plot (ipc, scp, ipce)")
+	polarCmd.Flags().StringVar(&polarOutputDir, "files", "", "Output directory to save plot files (creates wrapper.tex and probe-sensitivity.tikz)")
 	polarCmd.Flags().BoolVar(&onlyPlot, "plot", false, "Print only the plot file (TikZ)")
 	polarCmd.Flags().BoolVar(&onlyWrapper, "wrapper", false, "Print only the wrapper file (LaTeX)")
 	polarCmd.MarkFlagRequired("probes")
@@ -2336,12 +2338,13 @@ func generateTimeseriesPlot(benchmarkID int, xField, yField string, interval flo
 	return nil
 }
 
-func generatePolarPlot(benchmarkID int, probeIndices []int, metricType string, onlyPlot, onlyWrapper bool) error {
+func generatePolarPlot(benchmarkID int, probeIndices []int, metricType string, onlyPlot, onlyWrapper bool, outputDir string) error {
 	logger := logging.GetLogger()
 	logger.WithFields(logrus.Fields{
 		"benchmark_id":  benchmarkID,
 		"probe_indices": probeIndices,
 		"metric_type":   metricType,
+		"output_dir":    outputDir,
 	}).Debug("Generating polar plot")
 
 	if len(probeIndices) == 0 {
@@ -2359,6 +2362,27 @@ func generatePolarPlot(benchmarkID int, probeIndices []int, metricType string, o
 	if err != nil {
 		logger.WithError(err).Error("Failed to generate plot")
 		return fmt.Errorf("failed to generate plot: %w", err)
+	}
+
+	// Save to files if output directory specified
+	if outputDir != "" {
+		if err := os.MkdirAll(outputDir, 0755); err != nil {
+			return fmt.Errorf("failed to create output directory: %w", err)
+		}
+
+		plotFile := filepath.Join(outputDir, "probe-sensitivity.tikz")
+		if err := os.WriteFile(plotFile, []byte(plotTikz), 0644); err != nil {
+			return fmt.Errorf("failed to write plot file: %w", err)
+		}
+		logger.WithField("file", plotFile).Info("Saved plot file")
+
+		wrapperFile := filepath.Join(outputDir, "wrapper.tex")
+		if err := os.WriteFile(wrapperFile, []byte(wrapperTex), 0644); err != nil {
+			return fmt.Errorf("failed to write wrapper file: %w", err)
+		}
+		logger.WithField("file", wrapperFile).Info("Saved wrapper file")
+
+		return nil
 	}
 
 	// Determine what to print

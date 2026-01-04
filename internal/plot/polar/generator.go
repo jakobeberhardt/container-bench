@@ -169,7 +169,7 @@ func (g *PolarPlotGenerator) prepareWrapperData(probes []database.ProbeData, opt
 		GeneratedDate:  time.Now().Format("2006-01-02 15:04:05"),
 		ProbeKernel:    probeKernel,
 		ProbeVersion:   probeVersion,
-		PlotFilePath:   fmt.Sprintf("probe-sensitivity-%s-%s.tikz.tex", probeKernel, labelID),
+		PlotFileName:   "probe-sensitivity.tikz",
 		ShortCaption:   fmt.Sprintf("Probe Sensitivity (%s)", metricInfo.Name),
 		Caption:        fmt.Sprintf("%s using the \\texttt{%s} probe kernel.", metricInfo.Description, probeKernel),
 		LabelID:        labelID,
