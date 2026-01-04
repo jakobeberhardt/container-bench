@@ -3,11 +3,13 @@ package templates
 const WrapperTemplate = `% Generated on {{.GeneratedDate}}
 % Probe Kernel: {{.ProbeKernel}} {{.ProbeVersion}}
 % Metric Type: {{.MetricName}} ({{.MetricFullName}})
-\begin{figure}[H]
+\begin{figure}[htbp]
     \centering
+	\pgfplotslegendfromname{polar-legend-{{.LabelID}}} % chktex 8
+    
+	\vspace{0.5em}
+    
 	\resizebox{1\linewidth}{!}{\input{{"{"}}\currfiledir/{{.PlotFileName}}{{"}"}} }
-    % \vspace{0.5em}
-    % \pgfplotslegendfromname{polar-legend-{{.LabelID}}}
     \caption[{{.ShortCaption}}]{ {{.Caption}} }
     \label{fig:sensitivity-{{.ProbeKernel}}-{{.LabelID}}}
 \end{figure}

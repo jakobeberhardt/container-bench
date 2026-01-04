@@ -16,10 +16,10 @@ const PlotTemplate = `% Generated on {{.GeneratedDate}}
     Syscall,
     Prefetch
   },
-  legend columns=2,
-  % legend style={font=\scriptsize, column sep=6pt},
-  % legend to name=polar-legend-{{.LabelID}},
-  every axis legend/.code={\let\addlegendentry\relax},
+	legend columns=3,
+	% legend style={font=\scriptsize, column sep=6pt},
+	legend to name=polar-legend-{{.LabelID}},
+	% every axis legend/.code={\let\addlegendentry\relax},
 ]
 
 {{range .Probes}}
