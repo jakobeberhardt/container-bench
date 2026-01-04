@@ -31,6 +31,7 @@ func NewPolarPlotGenerator(dbClient *database.PlotDBClient, logger *logrus.Logge
 }
 
 type PlotOptions struct {
+	BenchmarkID  int
 	ProbeIndices []int
 	MetricType   string // e.g., "ipc", "scp"
 }
@@ -50,7 +51,7 @@ func (g *PolarPlotGenerator) Generate(ctx context.Context, opts PlotOptions) (st
 		return "", "", fmt.Errorf("no probe indices specified")
 	}
 
-	probes, err := g.dbClient.QueryProbes(ctx, opts.ProbeIndices, metricType)
+	probes, err := g.dbClient.QueryProbes(ctx, opts.ProbeIndices, metricType, opts.BenchmarkID)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to query probes: %w", err)
 	}

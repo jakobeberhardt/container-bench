@@ -315,6 +315,7 @@ func main() {
 	var minSet, maxSet bool
 	var probeIndices []int
 	var probeMetric string
+	var polarBenchmarkID int
 	var allocationProbeIndex int
 	var allocationMetrics []string
 	var onlyPlot, onlyWrapper bool
@@ -391,7 +392,7 @@ func main() {
 			if err := validateEnvironment(); err != nil {
 				return err
 			}
-			return generatePolarPlot(probeIndices, probeMetric, onlyPlot, onlyWrapper)
+			return generatePolarPlot(polarBenchmarkID, probeIndices, probeMetric, onlyPlot, onlyWrapper)
 		},
 	}
 
@@ -434,6 +435,7 @@ func main() {
 	}
 
 	polarCmd.Flags().IntSliceVar(&probeIndices, "probes", []int{}, "Comma-separated list of probe indices")
+	polarCmd.Flags().IntVar(&polarBenchmarkID, "benchmark-id", 0, "Optional benchmark ID to scope probe indices (0 = all benchmarks)")
 	polarCmd.Flags().StringVar(&probeMetric, "metric", "ipc", "Metric type to plot (ipc, scp, ipce)")
 	polarCmd.Flags().BoolVar(&onlyPlot, "plot", false, "Print only the plot file (TikZ)")
 	polarCmd.Flags().BoolVar(&onlyWrapper, "wrapper", false, "Print only the wrapper file (LaTeX)")
@@ -2334,9 +2336,10 @@ func generateTimeseriesPlot(benchmarkID int, xField, yField string, interval flo
 	return nil
 }
 
-func generatePolarPlot(probeIndices []int, metricType string, onlyPlot, onlyWrapper bool) error {
+func generatePolarPlot(benchmarkID int, probeIndices []int, metricType string, onlyPlot, onlyWrapper bool) error {
 	logger := logging.GetLogger()
 	logger.WithFields(logrus.Fields{
+		"benchmark_id":  benchmarkID,
 		"probe_indices": probeIndices,
 		"metric_type":   metricType,
 	}).Debug("Generating polar plot")
@@ -2352,7 +2355,7 @@ func generatePolarPlot(probeIndices []int, metricType string, onlyPlot, onlyWrap
 	}
 	defer plotMgr.Close()
 
-	plotTikz, wrapperTex, err := plotMgr.GeneratePolarPlot(probeIndices, metricType)
+	plotTikz, wrapperTex, err := plotMgr.GeneratePolarPlot(benchmarkID, probeIndices, metricType)
 	if err != nil {
 		logger.WithError(err).Error("Failed to generate plot")
 		return fmt.Errorf("failed to generate plot: %w", err)

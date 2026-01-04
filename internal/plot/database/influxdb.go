@@ -356,8 +356,9 @@ func (c *PlotDBClient) QueryMetaData(ctx context.Context, benchmarkID int) (*Met
 	return meta, nil
 }
 
-func (c *PlotDBClient) QueryProbes(ctx context.Context, probeIndices []int, metricType string) ([]ProbeData, error) {
+func (c *PlotDBClient) QueryProbes(ctx context.Context, probeIndices []int, metricType string, benchmarkID int) ([]ProbeData, error) {
 	c.logger.WithFields(logrus.Fields{
+		"benchmark_id":  benchmarkID,
 		"probe_indices": probeIndices,
 		"metric_type":   metricType,
 	}).Debug("Querying benchmark probes")
@@ -366,13 +367,20 @@ func (c *PlotDBClient) QueryProbes(ctx context.Context, probeIndices []int, metr
 		return nil, fmt.Errorf("no probe indices provided")
 	}
 
+	benchmarkFilter := ""
+	if benchmarkID > 0 {
+		benchmarkFilter = fmt.Sprintf(`
+		|> filter(fn: (r) => r["benchmark_id"] == "%d")`, benchmarkID)
+	}
+
 	query := fmt.Sprintf(`
 		from(bucket: "%s")
 		|> range(start: 0)
 		|> filter(fn: (r) => r["_measurement"] == "benchmark_probes")
+		%s
 		|> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
 		|> sort(columns: ["_time"])
-	`, c.bucket)
+	`, c.bucket, benchmarkFilter)
 
 	result, err := c.queryAPI.Query(ctx, query)
 	if err != nil {
@@ -387,6 +395,8 @@ func (c *PlotDBClient) QueryProbes(ctx context.Context, probeIndices []int, metr
 
 		if v, ok := record.ValueByKey("benchmark_id").(string); ok {
 			fmt.Sscanf(v, "%d", &probe.BenchmarkID)
+		} else if v, ok := record.ValueByKey("benchmark_id").(int64); ok {
+			probe.BenchmarkID = int(v)
 		}
 		if v, ok := record.ValueByKey("container_index").(string); ok {
 			fmt.Sscanf(v, "%d", &probe.ContainerIndex)
@@ -474,18 +484,29 @@ func (c *PlotDBClient) QueryProbes(ctx context.Context, probeIndices []int, metr
 		return probes[i].Started < probes[j].Started
 	})
 
-	// Filter by requested indices
+	// If requested, scope indices to a specific benchmark ID
+	filteredProbes := probes
+	if benchmarkID > 0 {
+		filteredProbes = nil
+		for _, p := range probes {
+			if p.BenchmarkID == benchmarkID {
+				filteredProbes = append(filteredProbes, p)
+			}
+		}
+	}
+
+	// Filter by requested indices (1-based)
 	var selectedProbes []ProbeData
 	for _, idx := range probeIndices {
-		if idx < 1 || idx > len(probes) {
+		if idx < 1 || idx > len(filteredProbes) {
 			c.logger.WithFields(map[string]interface{}{
 				"requested_index": idx,
-				"total_probes":    len(probes),
+				"total_probes":    len(filteredProbes),
 			}).Warn("Probe index out of range, skipping")
 			continue
 		}
 		// Convert from 1-based to 0-based indexing
-		selectedProbes = append(selectedProbes, probes[idx-1])
+		selectedProbes = append(selectedProbes, filteredProbes[idx-1])
 	}
 
 	if len(selectedProbes) == 0 {
