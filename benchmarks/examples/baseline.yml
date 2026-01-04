@@ -1,7 +1,7 @@
 benchmark:
-  name: Baseline
-  description: Test which starts a baseline, a victim and multiple neighbors
-  max_t: 60
+  name: Mixed Example
+  description: Starts mixed containers
+  max_t: 90
   log_level: info
   scheduler:
     implementation: default
@@ -20,55 +20,57 @@ benchmark:
       username: ${DOCKER_REGISTRY_USERNAME}
       password: ${DOCKER_REGISTRY_PASSWORD}
 
-baseline:
-  index: 0
+copy:
   image: nginx:alpine
-  core: 0
-  command: "sleep 2 && while :; do dd if=/dev/zero of=/dev/null bs=1M count=100 2>/dev/null; done"
+  command: "while :; do dd if=/dev/zero of=/dev/null bs=1M count=100 2>/dev/null; done"
   data:
     frequency: 100
     perf: true
     docker: true
     rdt: true
 
-victim:
-  index: 1
+neighbor:
   image: registry.jakob-eberhardt.de/neighbor:default  
-  core: 1
-  command: "sleep 2 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
+  command: "/neighbor --duration 70 --buffer-size 12MB --pattern random"
   data:
     frequency: 100
     perf: true
     docker: true
     rdt: true
 
-first:
-  index: 2
+neighbor-2:
   image: registry.jakob-eberhardt.de/neighbor:default  
-  core: 2
-  command: "sleep 20 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
+  command: "/neighbor --duration 70 --buffer-size 12MB --pattern random"
+  core: 17
   data:
     frequency: 100
     perf: true
     docker: true
     rdt: true
 
-second:
-  index: 3
-  image: registry.jakob-eberhardt.de/neighbor:default  
-  core: 3
-  command: "sleep 30 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
+matrix-3d:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --matrix-3d 2 --timeout 0"
+  num_cores: 2
+  start_t: 20
   data:
     frequency: 100
     perf: true
     docker: true
     rdt: true
 
-third:
-  index: 4
-  image: registry.jakob-eberhardt.de/neighbor:default  
-  core: 4
-  command: "sleep 40 && /neighbor --duration 3600 --buffer-size 12MB --pattern random"
+compression:
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+  command: "/populate.sh 1000 && 7z a -mx=9 -mmt=1  dummy.7z /data/*.bin"
+  data:
+    frequency: 100
+    perf: true
+    docker: true
+    rdt: true
+
+install:
+  image: nginx:alpine   
+  command: "apk add --no-cache firefox chromium libreoffice gimp inkscape blender thunderbird nodejs rust texlive-full"
   data:
     frequency: 100
     perf: true

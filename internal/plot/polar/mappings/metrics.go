@@ -18,6 +18,11 @@ var metricMappings = map[string]MetricInfo{
 		FullName:    "Stalled Cycles Percentage",
 		Description: "Stalled Cycles Percentage (SCP) sensitivity",
 	},
+	"ipce": {
+		Name:        "IPCE",
+		FullName:    "IPC Efficiency",
+		Description: "IPC Efficiency (IPCE) sensitivity",
+	},
 }
 
 // GetMetricInfo returns the display information for a metric type

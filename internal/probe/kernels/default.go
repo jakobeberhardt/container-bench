@@ -52,6 +52,7 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 	results := make(map[string]*ProbeSensitivities)
 	ipcResult := &ProbeSensitivities{}
 	scpResult := &ProbeSensitivities{}
+	IPCEResults := &ProbeSensitivities{}
 
 	// Divide time into 6 segments (baseline + 5 tests)
 	segmentTime := totalTime / 6
@@ -66,6 +67,7 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 	startStep := dpk.getCurrentMaxStep(containerDF)
 	ipcResult.FirstDataframeStep = startStep
 	scpResult.FirstDataframeStep = startStep
+	IPCEResults.FirstDataframeStep = startStep
 
 	dpk.logger.WithFields(logrus.Fields{
 		"target_container_index": targetContainerIndex,
@@ -75,7 +77,7 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 	}).Debug("Starting probe kernel execution sequence")
 
 	// 1. Baseline
-	baselineIPC, baselineSCP, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
+	baselineIPC, baselineSCP, baselineIPCE, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
 		cores, "", segmentTime)
 	if err != nil {
 		return nil, fmt.Errorf("baseline measurement failed: %w", err)
@@ -84,10 +86,11 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 	dpk.logger.WithFields(logrus.Fields{
 		"baseline_ipc": baselineIPC,
 		"baseline_scp": baselineSCP,
+		"baseline_ipce": baselineIPCE,
 	}).Info("Baseline metrics established")
 
 	// 2. LLC
-	llcIPC, llcSCP, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
+	llcIPC, llcSCP, llcIPCE, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
 		cores, "stress-ng --cache 0 --cache-level 3", segmentTime)
 
 	if err == nil && baselineIPC > 0 {
@@ -112,8 +115,19 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 		}).Info("LLC SCP sensitivity calculated")
 	}
 
+	if err == nil && baselineIPCE > 0 {
+		ipceSensitivity := (baselineIPCE - llcIPCE) / baselineIPCE
+		ipceVal := clampSensitivity(ipceSensitivity)
+		IPCEResults.LLC = &ipceVal
+		dpk.logger.WithFields(logrus.Fields{
+			"baseline_ipce": baselineIPCE,
+			"stressed_ipce": llcIPCE,
+			"sensitivity":   ipceVal,
+		}).Info("LLC IPCE sensitivity calculated")
+	}
+
 	// 3. Memory Read
-	memReadIPC, memReadSCP, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
+	memReadIPC, memReadSCP, memReadIPCE, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
 		cores, "stress-ng --stream 0", segmentTime)
 	if err == nil && baselineIPC > 0 {
 		ipcSensitivity := (baselineIPC - memReadIPC) / baselineIPC
@@ -135,9 +149,19 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 			"sensitivity":  scpVal,
 		}).Info("Memory read SCP sensitivity calculated")
 	}
+	if err == nil && baselineIPCE > 0 {
+		ipceSensitivity := (baselineIPCE - memReadIPCE) / baselineIPCE
+		ipceVal := clampSensitivity(ipceSensitivity)
+		IPCEResults.MemRead = &ipceVal
+		dpk.logger.WithFields(logrus.Fields{
+			"baseline_ipce": baselineIPCE,
+			"stressed_ipce": memReadIPCE,
+			"sensitivity":   ipceVal,
+		}).Info("Memory read IPCE sensitivity calculated")
+	}
 
 	// 4. Memory Write
-	memWriteIPC, memWriteSCP, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
+	memWriteIPC, memWriteSCP, memWriteIPCE, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
 		cores, "stress-ng --vm 0", segmentTime)
 	if err == nil && baselineIPC > 0 {
 		ipcSensitivity := (baselineIPC - memWriteIPC) / baselineIPC
@@ -159,9 +183,19 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 			"sensitivity":  scpVal,
 		}).Info("Memory write SCP sensitivity calculated")
 	}
+	if err == nil && baselineIPCE > 0 {
+		ipceSensitivity := (baselineIPCE - memWriteIPCE) / baselineIPCE
+		ipceVal := clampSensitivity(ipceSensitivity)
+		IPCEResults.MemWrite = &ipceVal
+		dpk.logger.WithFields(logrus.Fields{
+			"baseline_ipce": baselineIPCE,
+			"stressed_ipce": memWriteIPCE,
+			"sensitivity":   ipceVal,
+		}).Info("Memory write IPCE sensitivity calculated")
+	}
 
 	// 5. SysCall (contention on the kernel)
-	syscallIPC, syscallSCP, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
+	syscallIPC, syscallSCP, syscallIPCE, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
 		cores, "stress-ng --x86syscall 0", segmentTime)
 	if err == nil && baselineIPC > 0 {
 		ipcSensitivity := (baselineIPC - syscallIPC) / baselineIPC
@@ -183,9 +217,19 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 			"sensitivity":  scpVal,
 		}).Info("SysCall SCP sensitivity calculated")
 	}
+	if err == nil && baselineIPCE > 0 {
+		ipceSensitivity := (baselineIPCE - syscallIPCE) / baselineIPCE
+		ipceVal := clampSensitivity(ipceSensitivity)
+		IPCEResults.SysCall = &ipceVal
+		dpk.logger.WithFields(logrus.Fields{
+			"baseline_ipce": baselineIPCE,
+			"stressed_ipce": syscallIPCE,
+			"sensitivity":   ipceVal,
+		}).Info("SysCall IPCE sensitivity calculated")
+	}
 
 	// 6. Prefetch
-	prefetchIPC, prefetchSCP, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
+	prefetchIPC, prefetchSCP, prefetchIPCE, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
 		cores, "stress-ng --prefetch 0", segmentTime)
 	if err == nil && baselineIPC > 0 {
 		ipcSensitivity := (baselineIPC - prefetchIPC) / baselineIPC
@@ -207,19 +251,31 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 			"sensitivity":  scpVal,
 		}).Info("Prefetch SCP sensitivity calculated")
 	}
+	if err == nil && baselineIPCE > 0 {
+		ipceSensitivity := (baselineIPCE - prefetchIPCE) / baselineIPCE
+		ipceVal := clampSensitivity(ipceSensitivity)
+		IPCEResults.Prefetch = &ipceVal
+		dpk.logger.WithFields(logrus.Fields{
+			"baseline_ipce": baselineIPCE,
+			"stressed_ipce": prefetchIPCE,
+			"sensitivity":   ipceVal,
+		}).Info("Prefetch IPCE sensitivity calculated")
+	}
 
 	// Record ending
 	endStep := dpk.getCurrentMaxStep(containerDF)
 	ipcResult.LastDataframeStep = endStep
 	scpResult.LastDataframeStep = endStep
+	IPCEResults.LastDataframeStep = endStep
 
 	results["ipc"] = ipcResult
 	results["scp"] = scpResult
+	results["ipce"] = IPCEResults
 
 	return results, nil
 }
 
-// execute micro benchmark and return both IPC and SCP metrics
+// execute micro benchmark and return IPC, SCP, and IPCE metrics
 func (dpk *DefaultProbeKernel) measureWithWorkload(
 	ctx context.Context,
 	dockerClient *client.Client,
@@ -228,7 +284,7 @@ func (dpk *DefaultProbeKernel) measureWithWorkload(
 	cores string,
 	command string,
 	duration time.Duration,
-) (float64, float64, error) {
+) (float64, float64, float64, error) {
 
 	// Get current max step before test
 	stepBefore := dpk.getCurrentMaxStep(targetContainerDF)
@@ -254,11 +310,11 @@ func (dpk *DefaultProbeKernel) measureWithWorkload(
 
 		execResp, err := dockerClient.ContainerExecCreate(ctx, probingContainerID, execConfig)
 		if err != nil {
-			return 0, 0, fmt.Errorf("failed to create exec for command '%s': %w", command, err)
+			return 0, 0, 0, fmt.Errorf("failed to create exec for command '%s': %w", command, err)
 		}
 
 		if err := dockerClient.ContainerExecStart(ctx, execResp.ID, types.ExecStartCheck{}); err != nil {
-			return 0, 0, fmt.Errorf("failed to start exec for command '%s': %w", command, err)
+			return 0, 0, 0, fmt.Errorf("failed to start exec for command '%s': %w", command, err)
 		}
 
 		dpk.logger.WithField("exec_id", execResp.ID[:12]).Debug("Stress command started, waiting for completion")
@@ -273,16 +329,18 @@ func (dpk *DefaultProbeKernel) measureWithWorkload(
 	// Calculate average metrics of the victim container during this period
 	avgIPC := dpk.getAvgIPC(targetContainerDF, stepBefore, stepAfter)
 	avgSCP := dpk.getAvgSCP(targetContainerDF, stepBefore, stepAfter)
+	avgIPCE := dpk.getAvgIPCE(targetContainerDF, stepBefore, stepAfter)
 
 	dpk.logger.WithFields(logrus.Fields{
 		"step_before": stepBefore,
 		"step_after":  stepAfter,
 		"avg_ipc":     avgIPC,
 		"avg_scp":     avgSCP,
+		"avg_ipce":    avgIPCE,
 		"command":     command,
 	}).Debug("Workload measurement completed")
 
-	return avgIPC, avgSCP, nil
+	return avgIPC, avgSCP, avgIPCE, nil
 }
 
 // the current maximum step number in the dataframe
@@ -365,6 +423,41 @@ func (dpk *DefaultProbeKernel) getAvgSCP(containerDF *dataframe.ContainerDataFra
 	}).Debug("Average SCP calculated")
 
 	return avgSCP
+}
+
+func (dpk *DefaultProbeKernel) getAvgIPCE(containerDF *dataframe.ContainerDataFrame, fromStep, toStep int) float64 {
+	steps := containerDF.GetAllSteps()
+
+	var values []float64
+
+	dpk.logger.WithFields(logrus.Fields{
+		"from_step":   fromStep,
+		"to_step":     toStep,
+		"total_steps": len(steps),
+	}).Debug("Calculating average IPCE")
+
+	for stepNum, step := range steps {
+		if stepNum > fromStep && stepNum <= toStep {
+			if step != nil && step.Perf != nil && step.Perf.IPCEfficancy != nil {
+				values = append(values, *step.Perf.IPCEfficancy)
+				dpk.logger.WithFields(logrus.Fields{
+					"step": stepNum,
+					"ipce": *step.Perf.IPCEfficancy,
+				}).Trace("Found IPCE data point")
+			} else {
+				dpk.logger.WithField("step", stepNum).Trace("Step has no IPCE data")
+			}
+		}
+	}
+
+	avgIPCE := dpk.calculateAverage(values, "IPCE")
+
+	dpk.logger.WithFields(logrus.Fields{
+		"count":    len(values),
+		"avg_ipce": avgIPCE,
+	}).Debug("Average IPCE calculated")
+
+	return avgIPCE
 }
 
 func (dpk *DefaultProbeKernel) calculateAverage(values []float64, metricName string) float64 {
