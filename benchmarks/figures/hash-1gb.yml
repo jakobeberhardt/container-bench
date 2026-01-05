@@ -24,7 +24,7 @@ benchmark:
 c0:
   image: registry.jakob-eberhardt.de/neighbor:default  
   core: 1
-  command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
+  command: "sleep 1 && /neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
   data:
     frequency: 100
     perf: 
