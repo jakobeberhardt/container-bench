@@ -18,3 +18,7 @@ echo always | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 ```sh
 grep -E 'Anon|THP' /proc/meminfo
 ```
+
+```sh
+cat /sys/kernel/mm/transparent_hugepage/defrag
+```
