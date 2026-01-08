@@ -128,7 +128,7 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 
 	// 3. Memory Read
 	memReadIPC, memReadSCP, memReadIPCE, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
-		cores, "stress-ng --stream 0", segmentTime)
+		cores, "stress-ng --memrate 0 --memrate-rd-mbs 1000000 --memrate-wr-mbs 0 --memrate-bytes 500M", segmentTime)
 	if err == nil && baselineIPC > 0 {
 		ipcSensitivity := (baselineIPC - memReadIPC) / baselineIPC
 		ipcVal := clampSensitivity(ipcSensitivity)
@@ -162,7 +162,7 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 
 	// 4. Memory Write
 	memWriteIPC, memWriteSCP, memWriteIPCE, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
-		cores, "stress-ng --vm 0", segmentTime)
+		cores, "stress-ng --memrate 0 --memrate-wr-mbs 1000000 --memrate-rd-mbs 0 --memrate-method write64nt", segmentTime)
 	if err == nil && baselineIPC > 0 {
 		ipcSensitivity := (baselineIPC - memWriteIPC) / baselineIPC
 		ipcVal := clampSensitivity(ipcSensitivity)
@@ -196,7 +196,7 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 
 	// 5. SysCall (contention on the kernel)
 	syscallIPC, syscallSCP, syscallIPCE, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
-		cores, "stress-ng --x86syscall 0", segmentTime)
+		cores, "stress-ng --futex 0", segmentTime)
 	if err == nil && baselineIPC > 0 {
 		ipcSensitivity := (baselineIPC - syscallIPC) / baselineIPC
 		ipcVal := clampSensitivity(ipcSensitivity)
@@ -230,7 +230,7 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 
 	// 6. Prefetch
 	prefetchIPC, prefetchSCP, prefetchIPCE, err := dpk.measureWithWorkload(ctx, dockerClient, probingContainerID, containerDF,
-		cores, "stress-ng --prefetch 0", segmentTime)
+		cores, "stress-ng --stream 0 --stream-madvise hugepage --stream-index 0", segmentTime)
 	if err == nil && baselineIPC > 0 {
 		ipcSensitivity := (baselineIPC - prefetchIPC) / baselineIPC
 		ipcVal := clampSensitivity(ipcSensitivity)
