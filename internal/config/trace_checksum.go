@@ -15,6 +15,10 @@ type traceChecksumEntry struct {
 	NumCores int    `json:"num_cores"`
 	StartS   int    `json:"start_s"`
 	StopS    int    `json:"stop_s"`
+
+	Critical      bool     `json:"critical,omitempty"`
+	IPC           *float64 `json:"ipc,omitempty"`
+	IPCEfficiency *float64 `json:"ipce,omitempty"`
 }
 
 type traceChecksumPayload struct {
@@ -41,6 +45,9 @@ func TraceChecksum(cfg *BenchmarkConfig) (string, error) {
 			NumCores: c.GetRequestedNumCores(),
 			StartS:   c.GetStartSeconds(),
 			StopS:    c.GetStopSeconds(cfg.Benchmark.MaxT),
+			Critical:      c.Critical,
+			IPC:           c.IPC,
+			IPCEfficiency: c.IPCEfficiency,
 		})
 	}
 

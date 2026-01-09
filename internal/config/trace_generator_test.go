@@ -3,6 +3,8 @@ package config
 import "testing"
 
 func TestExpandGeneratedTrace_Deterministic(t *testing.T) {
+	ipc := 3.2
+	ipce := 0.8
 	cfg := &BenchmarkConfig{
 		Benchmark: BenchmarkInfo{
 			Name: "generated",
@@ -19,7 +21,7 @@ func TestExpandGeneratedTrace_Deterministic(t *testing.T) {
 		},
 		Data: &CollectorConfig{Frequency: 2000, Perf: map[string]bool{"instructions": true}, Docker: map[string]bool{"cpu_usage_total": true}, RDT: true},
 		Workloads: map[string]WorkloadConfig{
-			"w1": {Image: "img1", Command: "cmd1 --timeout 0", NumCores: 1, Kind: "single-thread", Sensitivity: "low"},
+			"w1": {Image: "img1", Command: "cmd1 --timeout 0", NumCores: 1, Kind: "single-thread", Sensitivity: "low", Critical: true, IPC: &ipc, IPCEfficiency: &ipce},
 			"w2": {Image: "img2", Command: "cmd2 --timeout 0", NumCores: 2, Kind: "multi-thread", Sensitivity: "high"},
 		},
 	}
@@ -47,6 +49,20 @@ func TestExpandGeneratedTrace_Deterministic(t *testing.T) {
 		j2 := c2[o2[i]]
 		if j1.Image != j2.Image || j1.Command != j2.Command || j1.NumCores != j2.NumCores {
 			t.Fatalf("job %q differs", o1[i])
+		}
+
+		// Scheduling hint fields should also be deterministic and preserved.
+		if j1.Critical != j2.Critical {
+			t.Fatalf("job %q critical differs", o1[i])
+		}
+		if (j1.IPC == nil) != (j2.IPC == nil) || (j1.IPCEfficiency == nil) != (j2.IPCEfficiency == nil) {
+			t.Fatalf("job %q ipc/ipce nilness differs", o1[i])
+		}
+		if j1.IPC != nil && j2.IPC != nil && *j1.IPC != *j2.IPC {
+			t.Fatalf("job %q ipc differs", o1[i])
+		}
+		if j1.IPCEfficiency != nil && j2.IPCEfficiency != nil && *j1.IPCEfficiency != *j2.IPCEfficiency {
+			t.Fatalf("job %q ipce differs", o1[i])
 		}
 
 		st := j1.GetStartSeconds()

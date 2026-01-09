@@ -104,6 +104,9 @@ container0:
   stop_t: 30       # Optional: stop container at t=stop_t seconds (default: max_t)
   expected_t: 25   # Optional: error if (stop-start) < expected_t
   command: "stress-ng --cpu 1 --timeout 25s" # Command which will be executed upon start. Can also be empty
+  critical: false  # Optional: mark container as critical (scheduler hint)
+  ipc: 3.2        
+  ipce: 0.8        
   environment:
     FOO: hello
     BAR: world
@@ -124,6 +127,9 @@ For long experiments, you can generate a trace from distributions instead of man
 - Add top-level `arrival:` parameters (inter-arrival time + job length distribution).
 - Add top-level `data:` defaults (applied to every generated job).
 - Add `workloads:` as a pool of templates.
+
+Workload template fields:
+- `critical` / `ipc` / `ipce` (optional) are copied into each generated container entry and can be used later by schedulers.
 
 Duration handling:
 - The generator samples a duration (seconds) from `arrival.length` and sets `start_t/stop_t/expected_t` accordingly.

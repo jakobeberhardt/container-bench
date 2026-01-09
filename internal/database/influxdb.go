@@ -86,6 +86,9 @@ type ContainerTimingMetadata struct {
 	BenchmarkID      int
 	ContainerIndex   int
 	ContainerName    string
+	Critical         bool
+	TargetIPC        *float64
+	TargetIPCE       *float64
 	StartTSeconds    int
 	WaitTSeconds     *int
 	StopTSeconds     int
@@ -551,9 +554,16 @@ func (idb *InfluxDBClient) WriteContainerTimingMetadata(containerMetadata []*Con
 			"stop_t":      m.StopTSeconds,
 			"actual_t":    m.ActualTSeconds,
 			"job_aborted": m.JobAborted,
+			"critical":    m.Critical,
 		}
 		if m.WaitTSeconds != nil {
 			fields["wait_t"] = *m.WaitTSeconds
+		}
+		if m.TargetIPC != nil {
+			fields["target_ipc"] = *m.TargetIPC
+		}
+		if m.TargetIPCE != nil {
+			fields["target_ipce"] = *m.TargetIPCE
 		}
 		if m.ExpectedTSeconds != nil {
 			fields["expected_t"] = *m.ExpectedTSeconds
@@ -886,6 +896,9 @@ func CollectContainerTimingMetadata(benchmarkID int, cfg *config.BenchmarkConfig
 			BenchmarkID:      benchmarkID,
 			ContainerIndex:   c.Index,
 			ContainerName:    c.GetContainerName(benchmarkID),
+			Critical:         c.Critical,
+			TargetIPC:        c.IPC,
+			TargetIPCE:       c.IPCEfficiency,
 			StartTSeconds:    startT,
 			WaitTSeconds:     waitPtr,
 			StopTSeconds:     stopT,

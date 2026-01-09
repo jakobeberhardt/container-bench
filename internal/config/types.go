@@ -62,6 +62,11 @@ type WorkloadConfig struct {
 	Command  string `yaml:"command"`
 	NumCores int    `yaml:"num_cores,omitempty"`
 
+	// Semantic scheduling hints (optional): copied into generated ContainerConfig entries.
+	Critical       bool     `yaml:"critical,omitempty"`
+	IPC            *float64 `yaml:"ipc,omitempty"`
+	IPCEfficiency  *float64 `yaml:"ipce,omitempty"` // optimal IPC efficiency (0..1) target/label
+
 	// Used only for generation-time selection (never passed to scheduler as semantic labels).
 	Kind        string `yaml:"kind,omitempty"`        // single-thread|multi-thread|multi-programmed|iobound
 	Sensitivity string `yaml:"sensitivity,omitempty"` // low|medium|high
@@ -205,10 +210,30 @@ type ContainerConfig struct {
 	StopT       *int              `yaml:"stop_t,omitempty"`
 	ExpectedT   *int              `yaml:"expected_t,omitempty"`
 	Command     string            `yaml:"command,omitempty"`
+
+	// Semantic scheduling hints (optional).
+	Critical      bool     `yaml:"critical,omitempty"`
+	IPC           *float64 `yaml:"ipc,omitempty"`
+	IPCEfficiency *float64 `yaml:"ipce,omitempty"` // optimal IPC efficiency (0..1) target/label
+
 	Privileged  bool              `yaml:"privileged,omitempty"`
 	Environment map[string]string `yaml:"environment,omitempty"`
 	Volumes     []string          `yaml:"volumes,omitempty"`
 	Data        CollectorConfig   `yaml:"data"`
+}
+
+func (c *ContainerConfig) GetTargetIPC() (float64, bool) {
+	if c == nil || c.IPC == nil {
+		return 0, false
+	}
+	return *c.IPC, true
+}
+
+func (c *ContainerConfig) GetIPCEfficancy() (float64, bool) {
+	if c == nil || c.IPCEfficiency == nil {
+		return 0, false
+	}
+	return *c.IPCEfficiency, true
 }
 
 func (c *ContainerConfig) GetRequestedNumCores() int {

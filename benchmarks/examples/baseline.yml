@@ -32,6 +32,9 @@ copy:
 neighbor:
   image: registry.jakob-eberhardt.de/neighbor:default  
   command: "/neighbor --duration 70 --buffer-size 12MB --pattern random"
+  critical: true
+  ipce: 0.9
+  ipc: 2.2
   data:
     frequency: 100
     perf: true
