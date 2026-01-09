@@ -104,6 +104,12 @@ type SchedulerConfig struct {
 	RDT            bool   `yaml:"rdt"`
 	LogLevel       string `yaml:"log_level,omitempty"`
 
+	// Socket rebalancing (used by implementation: "dynamic")
+	// - nil (omitted): disabled
+	// - false: enabled, move at most one container per tick
+	// - true: enabled, move multiple containers per tick (batch)
+	RebalanceBatch *bool `yaml:"rebalance_batch,omitempty"`
+
 	// Interference-aware scheduler (implementation: "interference_aware")
 	MaxL3                      int      `yaml:"max_l3,omitempty"`                        // max exclusive cache ways to probe/allocate
 	MaxMem                     float64  `yaml:"max_mem,omitempty"`                       // max memory bandwidth percentage to probe/allocate

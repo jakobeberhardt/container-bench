@@ -1,7 +1,7 @@
 benchmark:
-  name: 7zip Probe Medium/Small
-  description: Probes a 7zip container with medium settings and small file size
-  max_t: 75
+  name: FFmpeg 4 Core Probe Blur/Large
+  description: Probes an FFmpeg container applying blur filter to large video file
+  max_t: 95
   log_level: info
   scheduler:
     implementation: probe
@@ -12,7 +12,7 @@ benchmark:
       abortable: false
       isolated: true
       default_t: 60
-      warmup_t: 10
+      warmup_t: 30
       cooldown_t: 0
       default_probe_cores: 1
   data:
@@ -28,15 +28,20 @@ benchmark:
       username: ${DOCKER_REGISTRY_USERNAME}
       password: ${DOCKER_REGISTRY_PASSWORD}
 
-7z:
-  index: 0
-  image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
-  core: 0
-  command: "while :; do rm -f /data/dummy.7z && /populate.sh 10 && 7z a -mx=5 -mmt=1  dummy.7z /data/*.bin; done"
+ffmpeg:
+  num_cores: 4
+  image: registry.jakob-eberhardt.de/rdt4nn/ffmpeg/base:latest
+  command: "wget https://lfs.jakob-eberhardt.de/video/320/video.mov && while :; do ffmpeg -i /data/video.mov -vf 'boxblur=10:1' -c:v libx264 -preset fast -crf 23 -c:a copy -y /tmp/output.mp4; done"
   data:
     frequency: 100
     perf:
-      instructions: true
       cycles: true
-    docker: false
-    rdt: false
+      instructions: true
+      stalls_total: true
+      stalls_l3_miss: true
+      stalls_l3_miss_percent: true
+    docker: 
+      cpu_usage_percent: true
+    rdt: true
+
+

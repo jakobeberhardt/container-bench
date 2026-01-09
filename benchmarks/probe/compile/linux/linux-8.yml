@@ -1,5 +1,5 @@
 benchmark:
-  name: Compile Linux
+  name: Compile Linux 8 Cores
   description: Probes a container which builds the linux kernel
   max_t: 85
   log_level: info
@@ -29,8 +29,10 @@ benchmark:
       password: ${DOCKER_REGISTRY_PASSWORD}
 
 compile:
+  index: 0
   image: registry.jakob-eberhardt.de/rdt4nn/compile/linux:latest
-  command: "make defconfig && make -j4"
+  num_cores: 8
+  command: "make defconfig && make -j8"
   data:
     frequency: 100
     perf:

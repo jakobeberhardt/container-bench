@@ -2,14 +2,14 @@ benchmark:
   name: Trace Test
   description: Seed-based generated trace (arrival + length distributions)
   drain: false
-  max_t: 90
+  max_t: 140
   log_level: info
   accounting:
     log_level: info
   scheduler:
     implementation: dynamic
     prober:
-      log_level: debug
+      log_level: info
       min_l3: 1
       max_l3: 11
       step_l3: 1
@@ -28,6 +28,7 @@ benchmark:
     break_cpu_load: -1
     break_llc_occupancy: -1
     break_improvement: -1
+    rebalance_batch: false
 
     skip_allocation_after_probing: true
     allocate_unbound: false
@@ -58,7 +59,7 @@ copy:
 
 neighbor:
   image: registry.jakob-eberhardt.de/neighbor:default  
-  command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
+  command: "/neighbor --duration 90 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
   critical: true
   ipce: 0.9
   data:
@@ -77,6 +78,43 @@ neighbor-2:
     perf: true
     docker: true
     rdt: true
+
+neighbor-3:
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  critical: true
+  ipce: 0.9
+  data:
+    frequency: 2000
+    perf: true
+    docker: true
+    rdt: true
+
+neighbor-4:
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  critical: true
+  ipce: 0.9
+  start_t: 85
+  data:
+    frequency: 2000
+    perf: true
+    docker: true
+    rdt: true
+
+
+# neighbor-5:
+#   image: registry.jakob-eberhardt.de/neighbor:default  
+#   command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random"
+#   critical: true
+#   ipce: 0.9
+#   start_t: 1
+#   data:
+#     frequency: 2000
+#     perf: true
+#     docker: true
+#     rdt: true
+
 
 matrix-3d:
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng

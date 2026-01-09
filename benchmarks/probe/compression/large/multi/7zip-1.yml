@@ -1,6 +1,6 @@
 benchmark:
-  name: 7zip Probe Level 1/Large
-  description: Probes a 7zip container with compression level 1 (fastest) and large file size
+  name: 7zip Four Core Probe Level 1/Large
+  description: Probes a 7zip Four Core container with compression level 1 (fastest) and large file size
   max_t: 75
   log_level: info
   scheduler:
@@ -29,17 +29,16 @@ benchmark:
       password: ${DOCKER_REGISTRY_PASSWORD}
 
 7z:
-  index: 0
   image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
-  core: 0
-  command: "while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=1 -mmt=1  dummy.7z /data/*.bin; done"
+  num_cores: 4
+  command: "while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=1 -mmt=4  dummy.7z /data/*.bin; done"
   data:
     frequency: 100
     perf:
-      instructions: true
       cycles: true
+      instructions: true
       stalls_total: true
-    docker:
-      assigned_cores: true
-      cpu_usage_total: true
+      stalls_l3_miss: true
+      stalls_l3_miss_percent: true
+    docker: false
     rdt: true

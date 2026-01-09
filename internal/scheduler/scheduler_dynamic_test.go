@@ -76,3 +76,47 @@ func TestDynamicScheduler_SelectDescGuarantee_AllMeet(t *testing.T) {
 		t.Fatalf("expected last (9,70), got (%d,%.0f)", bestWays, bestMem)
 	}
 }
+
+func TestDynamicScheduler_PickSocketForCriticalAdmission_PrefersMoreHeadroom(t *testing.T) {
+	totalWays := 12
+	// Socket0 has only 2 contiguous ways free, socket1 has 6 contiguous ways free.
+	masks := [2]uint64{0b000000000011, 0b000000111111}
+	mem := [2]float64{50, 20}
+	// Need max 4 ways => should pick socket1.
+	got := pickSocketForCriticalAdmission(0, totalWays, 4, 10, masks, mem, 1, 10)
+	if got != 1 {
+		t.Fatalf("expected socket 1, got %d", got)
+	}
+}
+
+func TestDynamicScheduler_PickSocketForCriticalAdmission_PrefersMBAIfWaysTie(t *testing.T) {
+	totalWays := 12
+	// Both sockets have 6 contiguous ways.
+	masks := [2]uint64{0b000000111111, 0b000000111111}
+	mem := [2]float64{20, 80}
+	got := pickSocketForCriticalAdmission(0, totalWays, 4, 10, masks, mem, 1, 10)
+	if got != 1 {
+		t.Fatalf("expected socket 1, got %d", got)
+	}
+}
+
+func TestDynamicScheduler_PickSocketForCriticalAdmission_TieKeepsPreferred(t *testing.T) {
+	totalWays := 12
+	masks := [2]uint64{0b000000111111, 0b000000111111}
+	mem := [2]float64{50, 50}
+	got := pickSocketForCriticalAdmission(1, totalWays, 4, 10, masks, mem, 1, 10)
+	if got != 1 {
+		t.Fatalf("expected preferred socket 1, got %d", got)
+	}
+}
+
+func TestDynamicScheduler_PickSocketForCriticalAdmission_ReserveMakesSocketUnavailable(t *testing.T) {
+	totalWays := 12
+	// Both sockets have ways, but socket1 has exactly reserve MBA (10%), so available is 0.
+	masks := [2]uint64{0b000000111111, 0b000000111111}
+	mem := [2]float64{50, 10}
+	got := pickSocketForCriticalAdmission(1, totalWays, 4, 10, masks, mem, 1, 10)
+	if got != 0 {
+		t.Fatalf("expected socket 0 due to MBA reserve, got %d", got)
+	}
+}

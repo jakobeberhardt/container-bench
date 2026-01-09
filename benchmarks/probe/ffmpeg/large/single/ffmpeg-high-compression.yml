@@ -1,7 +1,7 @@
 benchmark:
-  name: FFmpeg Probe High Compression/Small
-  description: Probes an FFmpeg container with high compression settings and small video file
-  max_t: 75
+  name: FFmpeg Probe High Compression/Large
+  description: Probes an FFmpeg container with high compression settings and large video file
+  max_t: 85
   log_level: info
   scheduler:
     implementation: probe
@@ -12,7 +12,7 @@ benchmark:
       abortable: false
       isolated: true
       default_t: 60
-      warmup_t: 10
+      warmup_t: 20
       cooldown_t: 0
       default_probe_cores: 1
   data:
@@ -36,7 +36,11 @@ ffmpeg:
   data:
     frequency: 100
     perf:
-      instructions: true
       cycles: true
-    docker: false
-    rdt: false
+      instructions: true
+      stalls_total: true
+      stalls_l3_miss: true
+      stalls_l3_miss_percent: true
+    docker: 
+      cpu_usage_percent: true
+    rdt: true

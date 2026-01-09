@@ -1,6 +1,6 @@
 benchmark:
-  name: 7zip Probe High/Small
-  description: Probes a 7zip container with high settings and small file size
+  name: 7zip Probe Level 8/Large
+  description: Probes a 7zip container with compression level 8 and large file size
   max_t: 75
   log_level: info
   scheduler:
@@ -11,7 +11,7 @@ benchmark:
       implementation: default
       abortable: false
       isolated: true
-      default_t: 60
+      default_t: 30
       warmup_t: 10
       cooldown_t: 0
       default_probe_cores: 1
@@ -29,14 +29,15 @@ benchmark:
       password: ${DOCKER_REGISTRY_PASSWORD}
 
 7z:
-  index: 0
   image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
-  core: 0
-  command: "while :; do rm -f /data/dummy.7z && /populate.sh 10 && 7z a -mx=9 -mmt=1  dummy.7z /data/*.bin; done"
+  command: "while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=8 -mmt=1  dummy.7z /data/*.bin; done"
   data:
     frequency: 100
     perf:
-      instructions: true
       cycles: true
+      instructions: true
+      stalls_total: true
+      stalls_l3_miss: true
+      stalls_l3_miss_percent: true
     docker: false
-    rdt: false
+    rdt: true

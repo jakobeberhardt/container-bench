@@ -11,6 +11,7 @@ import (
 	proberesources "container-bench/internal/probe/resources"
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -43,6 +44,11 @@ type dynamicContainerProfile struct {
 	ways      int
 	mem       float64
 	l3Mask    uint64
+
+	// Socket-balancing heuristic (non-critical only)
+	stallsL3MissPercent float64
+	stallsL3MissProbed  bool
+	stallsUpdatedAt     time.Time
 
 	// floorWays/floorMem represent the committed minimum allocation for this critical
 	// container. Probing may temporarily move below this, but finalize must never commit
@@ -109,12 +115,20 @@ type DynamicScheduler struct {
 
 	probing       *dynamicActiveProbe
 	lastProbeDone time.Time
+	lastRebalanceAt time.Time
 
 	probeQueue  []int
 	probeQueued map[int]bool
 
 	allocationProbeResults []*proberesources.AllocationProbeResult
 }
+
+const (
+	// Hard reservation for system/default per socket.
+	// This ensures there is always a minimum amount of shared resources available.
+	systemDefaultReserveWays = 1
+	systemDefaultReserveMem  = 10.0
+)
 
 func NewDynamicScheduler() *DynamicScheduler {
 	return &DynamicScheduler{
@@ -297,9 +311,8 @@ func (s *DynamicScheduler) ProcessDataFrames(dfs *dataframe.DataFrames) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.rdtAccountant == nil {
-		return nil
-	}
+	// Update non-critical socket-balancing heuristic (best-effort).
+	s.updateNonCriticalStallsLocked(dfs)
 
 	// If a probe is active, step it (async stepper closes stepDone when done).
 	if s.probing != nil {
@@ -312,9 +325,16 @@ func (s *DynamicScheduler) ProcessDataFrames(dfs *dataframe.DataFrames) error {
 		}
 	}
 
+	// Rebalancing is independent from RDT probing; allow it even without an RDT accountant.
+	if s.rdtAccountant == nil {
+		s.maybeRebalanceNonCriticalLocked("tick")
+		return nil
+	}
+
 	// Start next probe if queued.
 	idx, ok := s.peekProbeHeadLocked()
 	if !ok {
+		s.maybeRebalanceNonCriticalLocked("tick")
 		return nil
 	}
 
@@ -353,8 +373,245 @@ func (s *DynamicScheduler) ProcessDataFrames(dfs *dataframe.DataFrames) error {
 			return nil
 		}
 	}
-	s.popProbeHeadLocked()
-	return s.startProbeLocked(dfs, idx)
+	started, err := s.startProbeLocked(dfs, idx)
+	if err != nil {
+		return err
+	}
+	if started {
+		s.popProbeHeadLocked()
+	}
+	return nil
+}
+
+func (s *DynamicScheduler) rebalanceModeLocked() (enabled bool, batch bool) {
+	if s.config == nil || s.config.RebalanceBatch == nil {
+		return false, false
+	}
+	return true, *s.config.RebalanceBatch
+}
+
+func (s *DynamicScheduler) updateNonCriticalStallsLocked(dfs *dataframe.DataFrames) {
+	if dfs == nil {
+		return
+	}
+	for idx, p := range s.profiles {
+		if p == nil || p.pid == 0 || p.critical {
+			continue
+		}
+		cdf := dfs.GetContainer(idx)
+		if cdf == nil {
+			continue
+		}
+		step := cdf.GetLatestStep()
+		if step == nil || step.Perf == nil || step.Perf.StallsL3MissPercent == nil {
+			continue
+		}
+		p.stallsL3MissPercent = *step.Perf.StallsL3MissPercent
+		p.stallsL3MissProbed = true
+		p.stallsUpdatedAt = step.Timestamp
+	}
+}
+
+func (s *DynamicScheduler) currentSocketForContainerLocked(containerIndex int) int {
+	if s.cpuAllocator == nil || s.hostConfig == nil {
+		return 0
+	}
+	cpus, ok := s.cpuAllocator.Get(containerIndex)
+	if !ok || len(cpus) == 0 {
+		return 0
+	}
+	sock, err := s.hostConfig.SocketOfPhysicalCPUs(cpus)
+	if err != nil {
+		return 0
+	}
+	if sock < 0 || sock >= s.sockets {
+		return 0
+	}
+	return sock
+}
+
+func (s *DynamicScheduler) socketStallsLoadLocked(sock int) float64 {
+	// Worst-case interference assumption for missing data.
+	const worstCaseStalls = 100.0
+	load := 0.0
+	for idx, p := range s.profiles {
+		if p == nil || p.pid == 0 || p.critical {
+			continue
+		}
+		curSock := p.socket
+		if curSock < 0 || curSock >= s.sockets {
+			curSock = s.currentSocketForContainerLocked(idx)
+		}
+		if curSock != sock {
+			continue
+		}
+		if p.stallsL3MissProbed {
+			load += p.stallsL3MissPercent
+		} else {
+			load += worstCaseStalls
+		}
+	}
+	return load
+}
+
+func (s *DynamicScheduler) maybeRebalanceNonCriticalLocked(trigger string) {
+	enabled, batch := s.rebalanceModeLocked()
+	if !enabled {
+		return
+	}
+	if s.sockets <= 1 || s.cpuAllocator == nil {
+		return
+	}
+
+	// Only attempt to rebalance when no critical allocation probe is active.
+	if s.probing != nil {
+		return
+	}
+
+	// Avoid thrashing by imposing a small cooldown.
+	const rebalanceCooldownSeconds = 2.0
+	if !s.lastRebalanceAt.IsZero() {
+		if time.Since(s.lastRebalanceAt).Seconds() < rebalanceCooldownSeconds {
+			return
+		}
+	}
+
+	// Only move if there's a meaningful imbalance.
+	const imbalanceThreshold = 5.0
+	const minImprovement = 1.0
+
+	load := make([]float64, s.sockets)
+	for sock := 0; sock < s.sockets; sock++ {
+		load[sock] = s.socketStallsLoadLocked(sock)
+	}
+
+	minSock, maxSock := 0, 0
+	for i := 1; i < s.sockets; i++ {
+		if load[i] < load[minSock] {
+			minSock = i
+		}
+		if load[i] > load[maxSock] {
+			maxSock = i
+		}
+	}
+	currentDiff := load[maxSock] - load[minSock]
+	if currentDiff <= imbalanceThreshold {
+		return
+	}
+
+	// Collect candidate non-critical containers from the most loaded socket.
+	type candidate struct {
+		idx     int
+		startAt time.Time
+		stalls  float64
+	}
+	candidates := make([]candidate, 0)
+	for idx, p := range s.profiles {
+		if p == nil || p.pid == 0 || p.critical || p.containerID == "" {
+			continue
+		}
+		srcSock := p.socket
+		if srcSock < 0 || srcSock >= s.sockets {
+			srcSock = s.currentSocketForContainerLocked(idx)
+		}
+		if srcSock != maxSock {
+			continue
+		}
+		stalls := 100.0
+		if p.stallsL3MissProbed {
+			stalls = p.stallsL3MissPercent
+		}
+		candidates = append(candidates, candidate{idx: idx, startAt: p.startedAt, stalls: stalls})
+	}
+	if len(candidates) == 0 {
+		return
+	}
+
+	// Youngest-first.
+	sort.Slice(candidates, func(i, j int) bool {
+		if !candidates[i].startAt.Equal(candidates[j].startAt) {
+			return candidates[i].startAt.After(candidates[j].startAt)
+		}
+		return candidates[i].idx < candidates[j].idx
+	})
+
+	maxMoves := 1
+	if batch {
+		maxMoves = len(candidates)
+		if maxMoves > 10 {
+			maxMoves = 10
+		}
+	}
+
+	moves := 0
+	for _, c := range candidates {
+		if moves >= maxMoves {
+			break
+		}
+		p := s.profiles[c.idx]
+		if p == nil || p.containerID == "" {
+			continue
+		}
+
+		beforeDiff := currentDiff
+		newLoadMax := load[maxSock] - c.stalls
+		newLoadMin := load[minSock] + c.stalls
+		newDiff := newLoadMax - newLoadMin
+		if newDiff < 0 {
+			newDiff = -newDiff
+		}
+		if beforeDiff-newDiff < minImprovement && newDiff > imbalanceThreshold {
+			continue
+		}
+
+		assigned, err := s.cpuAllocator.Move(c.idx, p.containerID, minSock)
+		if err != nil {
+			s.schedulerLogger.WithError(err).WithFields(logrus.Fields{
+				"trigger":   trigger,
+				"container": c.idx,
+				"src_sock":  maxSock,
+				"dst_sock":  minSock,
+			}).Debug("Failed to move container for stalls-based rebalancing")
+			continue
+		}
+
+		p.socket = minSock
+		load[maxSock] = newLoadMax
+		load[minSock] = newLoadMin
+		currentDiff = load[maxSock] - load[minSock]
+		if currentDiff < 0 {
+			currentDiff = -currentDiff
+		}
+		moves++
+		s.lastRebalanceAt = time.Now()
+
+		s.schedulerLogger.WithFields(logrus.Fields{
+			"trigger":             trigger,
+			"container":           c.idx,
+			"stalls_l3_miss_pct":  fmt.Sprintf("%.2f", c.stalls),
+			"src_sock":            maxSock,
+			"dst_sock":            minSock,
+			"diff_before":         fmt.Sprintf("%.2f", beforeDiff),
+			"diff_after":          fmt.Sprintf("%.2f", currentDiff),
+			"assigned_cpus":       assigned,
+			"batch":               batch,
+			"remaining_candidates": len(candidates) - moves,
+		}).Info("Rebalanced non-critical container based on StallsL3MissPercent")
+
+		// Recompute min/max sockets after each move.
+		minSock, maxSock = 0, 0
+		for i := 1; i < s.sockets; i++ {
+			if load[i] < load[minSock] {
+				minSock = i
+			}
+			if load[i] > load[maxSock] {
+				maxSock = i
+			}
+		}
+		if load[maxSock]-load[minSock] <= imbalanceThreshold {
+			break
+		}
+	}
 }
 
 func (s *DynamicScheduler) Shutdown() error {
@@ -449,6 +706,16 @@ func (s *DynamicScheduler) OnContainerStop(containerIndex int) error {
 		p.floorMem = 0
 	}
 
+	// If a critical container stopped and released resources, allow queued critical probes
+	// to restart immediately (bypass cooldown based on lastProbeDone).
+	if p.critical {
+		if s.probing == nil {
+			if _, has := s.peekProbeHeadLocked(); has {
+				s.lastProbeDone = time.Time{}
+			}
+		}
+	}
+
 	p.pid = 0
 	p.containerID = ""
 	return nil
@@ -535,25 +802,20 @@ func (s *DynamicScheduler) popProbeHeadLocked() {
 	delete(s.probeQueued, idx)
 }
 
-func (s *DynamicScheduler) startProbeLocked(dfs *dataframe.DataFrames, containerIndex int) error {
+func (s *DynamicScheduler) startProbeLocked(dfs *dataframe.DataFrames, containerIndex int) (bool, error) {
 	p := s.profiles[containerIndex]
 	if p == nil || !p.critical {
-		return nil
+		return false, nil
 	}
 	if p.containerID == "" {
-		return nil
+		return false, nil
 	}
 	if s.rdtAccountant == nil {
-		return nil
+		return false, nil
 	}
 	if !s.isAllocatingProbeEnabledLocked() {
 		s.schedulerLogger.WithField("container", containerIndex).Warn("Dynamic scheduler requires prober.allocate=true for critical allocations")
-		return nil
-	}
-
-	sock := p.socket
-	if sock < 0 || sock >= s.sockets {
-		sock = 0
+		return false, nil
 	}
 
 	// Find container config for metadata + target thresholds.
@@ -624,6 +886,81 @@ func (s *DynamicScheduler) startProbeLocked(dfs *dataframe.DataFrames, container
 			outlierDrop = pc.DropOutliers
 		}
 		greedy = pc.GreedyAllocation
+	}
+
+	// Admission: for critical jobs, prefer the socket with more currently free resources
+	// so their probe can reach deeper candidates / find a satisfying allocation.
+	preferredSock := p.socket
+	if preferredSock < 0 || preferredSock >= s.sockets {
+		preferredSock = 0
+	}
+	sock := preferredSock
+	if s.sockets > 1 {
+		sock = pickSocketForCriticalAdmission(preferredSock, s.totalWays, maxL3, maxMem, s.benchmarkMask, s.benchmarkMem, systemDefaultReserveWays, systemDefaultReserveMem)
+		if sock != preferredSock && s.cpuAllocator != nil {
+			// Best-effort: move the container to the chosen socket before probing.
+			if moved, err := s.cpuAllocator.Move(containerIndex, p.containerID, sock); err == nil {
+				p.socket = sock
+				s.schedulerLogger.WithFields(logrus.Fields{
+					"container":     containerIndex,
+					"from_socket":   preferredSock,
+					"to_socket":     sock,
+					"need_max_l3":   maxL3,
+					"need_max_mem":  maxMem,
+					"assigned_cpus": moved,
+				}).Debug("Moved critical container to preferred socket for probing")
+			} else if err != nil {
+				s.schedulerLogger.WithError(err).WithFields(logrus.Fields{
+					"container":   containerIndex,
+					"from_socket": preferredSock,
+					"to_socket":   sock,
+				}).Debug("Failed to move critical container to preferred socket; probing in-place")
+				sock = preferredSock
+			}
+		}
+	}
+
+	// IMPORTANT: AllocationProbeRunner aborts the entire probe on the first ApplyAllocation error.
+	// Avoid premature "apply_failed" by ensuring the first candidate is feasible.
+	//
+	// Policy:
+	// - If the socket cannot satisfy the configured MINIMUM (min_l3/min_mem), we do NOT start
+	//   the probe yet; it stays queued and will be retried once resources are reclaimed.
+	// - If the socket can satisfy minimums but not the configured MAXIMUM, we clamp max down to
+	//   current availability.
+	availMaxWays := maxContiguousWaysAvailableForCritical(s.benchmarkMask[sock], s.totalWays, systemDefaultReserveWays)
+	if availMaxWays < minL3 {
+		s.schedulerLogger.WithFields(logrus.Fields{
+			"container":  containerIndex,
+			"socket":     sock,
+			"min_l3":     minL3,
+			"avail_l3":   availMaxWays,
+			"order":      order,
+			"queue_len":  len(s.probeQueue),
+		}).Info("Insufficient cache-way headroom for critical probing; will retry when resources are reclaimed")
+		return false, nil
+	}
+	if maxL3 > availMaxWays {
+		maxL3 = availMaxWays
+	}
+
+	availMaxMem := s.benchmarkMem[sock] - systemDefaultReserveMem
+	if availMaxMem < 0 {
+		availMaxMem = 0
+	}
+	if availMaxMem+1e-9 < minMem {
+		s.schedulerLogger.WithFields(logrus.Fields{
+			"container":  containerIndex,
+			"socket":     sock,
+			"min_mem":    minMem,
+			"avail_mem":  fmt.Sprintf("%.2f", availMaxMem),
+			"order":      order,
+			"queue_len":  len(s.probeQueue),
+		}).Info("Insufficient memory-bandwidth headroom for critical probing; will retry when resources are reclaimed")
+		return false, nil
+	}
+	if maxMem > availMaxMem {
+		maxMem = availMaxMem
 	}
 
 	probeRange := proberesources.AllocationRange{
@@ -708,7 +1045,7 @@ func (s *DynamicScheduler) startProbeLocked(dfs *dataframe.DataFrames, container
 		cb,
 	)
 	if runner == nil || runner.NumCandidates() == 0 {
-		return fmt.Errorf("no probe candidates")
+		return false, fmt.Errorf("no probe candidates")
 	}
 
 	ap := &dynamicActiveProbe{containerIndex: containerIndex, socket: sock, runner: runner}
@@ -725,7 +1062,7 @@ func (s *DynamicScheduler) startProbeLocked(dfs *dataframe.DataFrames, container
 	// Start probe + async stepping.
 	if err := runner.Start(dfs); err != nil {
 		s.probing = nil
-		return err
+		return false, err
 	}
 	s.startProbeStepperLocked(dfs, ap)
 
@@ -742,7 +1079,7 @@ func (s *DynamicScheduler) startProbeLocked(dfs *dataframe.DataFrames, container
 		"desc_guarantee": descGuarantee,
 	}).Info("Started dynamic allocation probing for critical container")
 
-	return nil
+	return true, nil
 }
 
 func (s *DynamicScheduler) startProbeStepperLocked(dfs *dataframe.DataFrames, ap *dynamicActiveProbe) {
@@ -1035,6 +1372,15 @@ func (s *DynamicScheduler) applyAllocationLocked(containerIndex int, sock int, w
 	// L3: take contiguous ways from benchmark mask.
 	taken := uint64(0)
 	if ways > 0 {
+		// Always preserve a minimum reserve for system/default.
+		bitsAvail := int(countBits(s.benchmarkMask[sock])) - systemDefaultReserveWays
+		if bitsAvail < 0 {
+			bitsAvail = 0
+		}
+		if ways > bitsAvail {
+			return fmt.Errorf("insufficient benchmark cache headroom on socket %d: have %d need %d", sock, bitsAvail, ways)
+		}
+
 		var err error
 		taken, s.benchmarkMask[sock], err = takeContiguousFromMask(s.benchmarkMask[sock], ways, s.totalWays)
 		if err != nil {
@@ -1042,8 +1388,13 @@ func (s *DynamicScheduler) applyAllocationLocked(containerIndex int, sock int, w
 		}
 	}
 	// Mem: take from benchmark mem.
-	if mem > s.benchmarkMem[sock] {
-		return fmt.Errorf("insufficient benchmark mem headroom on socket %d: have %.2f need %.2f", sock, s.benchmarkMem[sock], mem)
+	// Always preserve a minimum reserve for system/default.
+	memAvail := s.benchmarkMem[sock] - systemDefaultReserveMem
+	if memAvail < 0 {
+		memAvail = 0
+	}
+	if mem > memAvail {
+		return fmt.Errorf("insufficient benchmark mem headroom on socket %d: have %.2f need %.2f", sock, memAvail, mem)
 	}
 	s.benchmarkMem[sock] -= mem
 	if s.benchmarkMem[sock] < 0 {
@@ -1135,4 +1486,77 @@ func selectAscGuaranteeAllocation(allocs []proberesources.AllocationResult, thr 
 		}
 	}
 	return fallbackWays, fallbackMem
+}
+
+func maxContiguousWaysFromMask(mask uint64, totalWays int) int {
+	if totalWays <= 0 {
+		return 0
+	}
+	best := 0
+	cur := 0
+	for i := 0; i < totalWays; i++ {
+		if (mask & (1 << i)) != 0 {
+			cur++
+			if cur > best {
+				best = cur
+			}
+		} else {
+			cur = 0
+		}
+	}
+	return best
+}
+
+func maxContiguousWaysAvailableForCritical(mask uint64, totalWays int, reserveWays int) int {
+	if reserveWays < 0 {
+		reserveWays = 0
+	}
+	bits := int(countBits(mask))
+	if bits <= reserveWays {
+		return 0
+	}
+	maxByBits := bits - reserveWays
+	contig := maxContiguousWaysFromMask(mask, totalWays)
+	// If all available bits are one contiguous run, keeping a reserve reduces what we can take.
+	if bits == contig {
+		contig -= reserveWays
+	}
+	if contig < 0 {
+		contig = 0
+	}
+	if contig > maxByBits {
+		contig = maxByBits
+	}
+	return contig
+}
+
+func pickSocketForCriticalAdmission(preferredSock int, totalWays int, needMaxWays int, needMaxMem float64, masks [2]uint64, mem [2]float64, reserveWays int, reserveMem float64) int {
+	// Only supports up to 2 sockets (same constraint as DynamicScheduler).
+	if preferredSock != 0 && preferredSock != 1 {
+		preferredSock = 0
+	}
+
+	score := func(sock int) float64 {
+		contig := float64(maxContiguousWaysAvailableForCritical(masks[sock], totalWays, reserveWays))
+		mba := mem[sock] - reserveMem
+		if mba < 0 {
+			mba = 0
+		}
+		// Prefer more headroom. We intentionally do NOT hard-penalize sockets that
+		// can't satisfy the configured max, because we cap the probe range to what's
+		// actually free on the chosen socket.
+		_ = needMaxWays
+		_ = needMaxMem
+		return contig + (mba/100.0)*float64(totalWays)
+	}
+
+	s0 := score(0)
+	s1 := score(1)
+	if s1 > s0 {
+		return 1
+	}
+	if s0 > s1 {
+		return 0
+	}
+	return preferredSock
 }

@@ -1,7 +1,7 @@
 benchmark:
-  name: Compile Linux
-  description: Probes a container which builds the linux kernel
-  max_t: 85
+  name: 7zip Probe Level 3/Large
+  description: Probes a 7zip container with compression level 3 (fast) and large file size
+  max_t: 75
   log_level: info
   scheduler:
     implementation: probe
@@ -11,8 +11,8 @@ benchmark:
       implementation: default
       abortable: false
       isolated: true
-      default_t: 60
-      warmup_t: 20
+      default_t: 30
+      warmup_t: 10
       cooldown_t: 0
       default_probe_cores: 1
   data:
@@ -28,9 +28,9 @@ benchmark:
       username: ${DOCKER_REGISTRY_USERNAME}
       password: ${DOCKER_REGISTRY_PASSWORD}
 
-compile:
-  image: registry.jakob-eberhardt.de/rdt4nn/compile/linux:latest
-  command: "make defconfig && make -j4"
+7z:
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+  command: "while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=3 -mmt=1  dummy.7z /data/*.bin; done"
   data:
     frequency: 100
     perf:
@@ -39,6 +39,5 @@ compile:
       stalls_total: true
       stalls_l3_miss: true
       stalls_l3_miss_percent: true
-    docker: 
-      cpu_usage_percent: true
+    docker: false
     rdt: true
