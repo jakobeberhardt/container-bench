@@ -9,7 +9,7 @@ benchmark:
   scheduler:
     implementation: dynamic
     prober:
-      log_level: info
+      log_level: debug
       min_l3: 1
       max_l3: 11
       step_l3: 1
@@ -19,7 +19,7 @@ benchmark:
       probing_t: 20
       order: desc
       cooldown_t: 5
-      warmup_t: 20
+      warmup_t: 5
       greedy_allocation: false
       probing_frequency: 50
       drop_outliers: 5
@@ -61,7 +61,6 @@ neighbor:
   command: "/neighbor --duration 70 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
   critical: true
   ipce: 0.9
-  ipc: 2.2
   data:
     frequency: 2000
     perf: true

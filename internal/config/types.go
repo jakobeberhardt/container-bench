@@ -163,6 +163,7 @@ type ProberConfig struct {
 	MinMemBandwidth  float64 `yaml:"min_mem,omitempty"`
 	MaxMemBandwidth  float64 `yaml:"max_mem,omitempty"`
 	StepMemBandwidth float64 `yaml:"mem_step,omitempty"`
+	Order            string  `yaml:"order,omitempty"` // "asc" (start smallest) or "desc" (start largest)
 	ProbingT         float64 `yaml:"probing_t,omitempty"`
 
 	// ProbingFrequency temporarily overrides the container collector sampling frequency (ms)

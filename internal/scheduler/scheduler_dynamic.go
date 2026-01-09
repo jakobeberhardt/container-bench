@@ -43,12 +43,32 @@ type dynamicContainerProfile struct {
 	ways      int
 	mem       float64
 	l3Mask    uint64
+
+	// floorWays/floorMem represent the committed minimum allocation for this critical
+	// container. Probing may temporarily move below this, but finalize must never commit
+	// a lower allocation than the floor.
+	floorWays int
+	floorMem  float64
 }
 
 type dynamicActiveProbe struct {
 	containerIndex int
 	socket         int
 	runner         *proberesources.AllocationProbeRunner
+
+	// Descending guarantee search (order: desc + target IPCE available):
+	// start from max allocation and lower it until IPCE falls below the guarantee;
+	// then keep the previous (last >= guarantee).
+	descGuarantee bool
+	guarantee     float64
+
+	hasFallback bool
+	fallbackWays int
+	fallbackMem  float64
+
+	hasLastAbove bool
+	lastAboveWays int
+	lastAboveMem  float64
 
 	stepCtx    context.Context
 	stepCancel context.CancelFunc
@@ -287,6 +307,29 @@ func (s *DynamicScheduler) ProcessDataFrames(dfs *dataframe.DataFrames) error {
 	if !ok {
 		return nil
 	}
+
+	warmupSeconds := 5
+	if s.config != nil {
+		// Prober-specific warmup takes precedence over scheduler-level warmup
+		if s.config.Prober != nil && s.config.Prober.WarmupT > 0 {
+			warmupSeconds = s.config.Prober.WarmupT
+		} else if s.config.WarmupT > 0 {
+			warmupSeconds = s.config.WarmupT
+		}
+	}
+
+	if p := s.profiles[idx]; p != nil {
+		if p.startedAt.IsZero() {
+			p.startedAt = time.Now()
+		}
+		if warmupSeconds > 0 && time.Since(p.startedAt) < time.Duration(warmupSeconds)*time.Second {
+			s.schedulerLogger.WithFields(logrus.Fields{
+				"container": idx,
+				"warmup_s":  warmupSeconds,
+			}).Debug("Dynamic probe delayed by warmup")
+			return nil
+		}
+	}
 	s.popProbeHeadLocked()
 	return s.startProbeLocked(dfs, idx)
 }
@@ -378,6 +421,8 @@ func (s *DynamicScheduler) OnContainerStop(containerIndex int) error {
 		_ = s.rdtAccountant.DeleteClass(p.className)
 		_ = s.reclaimContainerAllocationLocked(p)
 		p.ways = 0
+		p.floorWays = 0
+		p.floorMem = 0
 	}
 
 	p.pid = 0
@@ -522,6 +567,7 @@ func (s *DynamicScheduler) startProbeLocked(dfs *dataframe.DataFrames, container
 	minMem := 10.0
 	maxMem := 10.0
 	stepMem := 10.0
+	order := "asc"
 	budgetSeconds := 2.0
 	var probingFrequency time.Duration
 	outlierDrop := 0
@@ -546,6 +592,9 @@ func (s *DynamicScheduler) startProbeLocked(dfs *dataframe.DataFrames, container
 		if pc.StepMemBandwidth > 0 {
 			stepMem = pc.StepMemBandwidth
 		}
+		if pc.Order != "" {
+			order = pc.Order
+		}
 		if pc.ProbingT > 0 {
 			budgetSeconds = pc.ProbingT
 		}
@@ -565,13 +614,16 @@ func (s *DynamicScheduler) startProbeLocked(dfs *dataframe.DataFrames, container
 		MinMemBandwidth:  minMem,
 		MaxMemBandwidth:  maxMem,
 		StepMemBandwidth: stepMem,
-		Order:            "asc",
+		Order:            order,
 		SocketID:         sock,
 		IsolateOthers:    false,
 		ForceReallocation: false,
 	}
 
-	// Break policy: prefer per-container target IPCE, fallback to scheduler break_condition.
+	// Break/threshold policy:
+	// - Prefer per-container target IPCE, fallback to scheduler break_condition.
+	// - If order=desc, we do a "guarantee" search: start at max and lower until we
+	//   fall below the guarantee, then keep the previous allocation.
 	var acceptable *float64
 	if containerCfg != nil {
 		if v, ok := containerCfg.GetIPCEfficancy(); ok {
@@ -581,13 +633,18 @@ func (s *DynamicScheduler) startProbeLocked(dfs *dataframe.DataFrames, container
 	if acceptable == nil && cfg != nil && cfg.BreakCondition > 0 {
 		acceptable = normalizeIPCEPercentThreshold(cfg.BreakCondition)
 	}
-	breaks := proberesources.AllocationProbeBreakPolicy{AcceptableIPCEfficiency: acceptable}
+
+	descGuarantee := (order == "desc" && acceptable != nil && *acceptable >= 0)
+	breaks := proberesources.AllocationProbeBreakPolicy{}
+	if !descGuarantee {
+		breaks.AcceptableIPCEfficiency = acceptable
+	}
 
 	opts := proberesources.AllocationProbeOptions{
 		GreedyAllocation:  greedy,
 		ProbingFrequency:  probingFrequency,
 		OutlierDrop:       outlierDrop,
-		BaselineFirst:     true,
+		BaselineFirst:     !descGuarantee,
 	}
 
 	target := proberesources.AllocationProbeTarget{
@@ -633,6 +690,10 @@ func (s *DynamicScheduler) startProbeLocked(dfs *dataframe.DataFrames, container
 	}
 
 	ap := &dynamicActiveProbe{containerIndex: containerIndex, socket: sock, runner: runner}
+	if descGuarantee {
+		ap.descGuarantee = true
+		ap.guarantee = *acceptable
+	}
 	s.probing = ap
 
 	// Start probe + async stepping.
@@ -650,6 +711,7 @@ func (s *DynamicScheduler) startProbeLocked(dfs *dataframe.DataFrames, container
 		"max_l3":     maxL3,
 		"min_mem":    minMem,
 		"max_mem":    maxMem,
+		"order":      order,
 	}).Info("Started dynamic allocation probing for critical container")
 
 	return nil
@@ -689,7 +751,38 @@ func (s *DynamicScheduler) startProbeStepperLocked(dfs *dataframe.DataFrames, ap
 					s.mu.Unlock()
 					return
 				}
+				before := 0
+				if ap.runner.Result() != nil {
+					before = len(ap.runner.Result().Allocations)
+				}
 				done, _ := ap.runner.Step(dfs)
+				after := before
+				if ap.runner.Result() != nil {
+					after = len(ap.runner.Result().Allocations)
+				}
+
+				// Descending guarantee search: stop when we first fall below the guarantee,
+				// then revert to the previous (last >= guarantee) allocation.
+				if ap.descGuarantee && after > before {
+					last := ap.runner.Result().Allocations[after-1]
+					if !ap.hasFallback {
+						ap.hasFallback = true
+						ap.fallbackWays = last.L3Ways
+						ap.fallbackMem = last.MemBandwidth
+					}
+					if last.IPCEfficiency >= 0 {
+						if last.IPCEfficiency >= ap.guarantee {
+							ap.hasLastAbove = true
+							ap.lastAboveWays = last.L3Ways
+							ap.lastAboveMem = last.MemBandwidth
+						} else if ap.hasLastAbove {
+							// We just crossed below the guarantee; revert and stop.
+							_ = s.applyAllocationLocked(ap.containerIndex, ap.socket, ap.lastAboveWays, ap.lastAboveMem)
+							ap.runner.Abort("below_guarantee")
+							done = true
+						}
+					}
+				}
 				if done {
 					if ap.stepCancel != nil {
 						ap.stepCancel()
@@ -719,21 +812,38 @@ func (s *DynamicScheduler) finalizeProbeLocked() error {
 	p := s.profiles[idx]
 	bestWays := ap.runner.BestWays()
 	bestMem := ap.runner.BestMem()
+	if ap.descGuarantee {
+		if ap.hasLastAbove {
+			bestWays = ap.lastAboveWays
+			bestMem = ap.lastAboveMem
+		} else if ap.hasFallback {
+			// No allocation met the guarantee: keep the highest (first tested) allocation.
+			bestWays = ap.fallbackWays
+			bestMem = ap.fallbackMem
+		}
+	}
 
-	// Enforce monotonic: never lower an existing critical allocation.
+	// Enforce monotonic commit: never lower the committed floor.
 	if p != nil {
-		if bestWays < p.ways {
-			bestWays = p.ways
+		if bestWays < p.floorWays {
+			bestWays = p.floorWays
 		}
-		if bestMem < p.mem {
-			bestMem = p.mem
+		if bestMem < p.floorMem {
+			bestMem = p.floorMem
 		}
-		p.ways = bestWays
-		p.mem = bestMem
+		if bestWays > p.floorWays {
+			p.floorWays = bestWays
+		}
+		if bestMem > p.floorMem {
+			p.floorMem = bestMem
+		}
 	}
 
 	s.lastProbeDone = time.Now()
+	// Mark probe as inactive before applying the final allocation so applyAllocationLocked
+	// treats it as a committed (monotonic) update.
 	s.probing = nil
+	_ = s.applyAllocationLocked(idx, ap.socket, bestWays, bestMem)
 
 	s.schedulerLogger.WithFields(logrus.Fields{
 		"container": idx,
@@ -742,6 +852,7 @@ func (s *DynamicScheduler) finalizeProbeLocked() error {
 		"mem":       bestMem,
 		"best_eff":  ap.runner.BestEff(),
 		"reason":    ap.runner.StopReason(),
+		"desc_guarantee": ap.descGuarantee,
 	}).Info("Finished dynamic allocation probing")
 
 	return nil
@@ -831,12 +942,16 @@ func (s *DynamicScheduler) applyAllocationLocked(containerIndex int, sock int, w
 		return s.resetContainerToBenchmarkLocked(containerIndex)
 	}
 
-	// Monotonic: don't decrease.
-	if ways < p.ways {
-		ways = p.ways
-	}
-	if mem < p.mem {
-		mem = p.mem
+	// Monotonic (committed) floor: allow temporary decreases while probing, but never
+	// commit below the container's floor outside probing.
+	inProbe := s.probing != nil && s.probing.containerIndex == containerIndex
+	if !inProbe {
+		if ways < p.floorWays {
+			ways = p.floorWays
+		}
+		if mem < p.floorMem {
+			mem = p.floorMem
+		}
 	}
 
 	// If this container already has a class allocation, reclaim it back to the benchmark pool
@@ -907,4 +1022,40 @@ func (s *DynamicScheduler) applyAllocationLocked(containerIndex int, sock int, w
 	p.mem = mem
 	p.l3Mask = taken
 	return nil
+}
+
+func selectDescGuaranteeAllocation(allocs []proberesources.AllocationResult, thr float64) (ways int, mem float64) {
+	if len(allocs) == 0 {
+		return 0, 0
+	}
+
+	// Fallback: first tested allocation (highest, for order=desc).
+	fallbackWays := allocs[0].L3Ways
+	fallbackMem := allocs[0].MemBandwidth
+
+	hasAbove := false
+	lastAboveWays := 0
+	lastAboveMem := 0.0
+
+	for i := range allocs {
+		eff := allocs[i].IPCEfficiency
+		if eff < 0 {
+			continue
+		}
+		if eff >= thr {
+			hasAbove = true
+			lastAboveWays = allocs[i].L3Ways
+			lastAboveMem = allocs[i].MemBandwidth
+			continue
+		}
+		// First failure after at least one success: keep the previous (last >= thr).
+		if hasAbove {
+			return lastAboveWays, lastAboveMem
+		}
+	}
+
+	if hasAbove {
+		return lastAboveWays, lastAboveMem
+	}
+	return fallbackWays, fallbackMem
 }

@@ -266,9 +266,9 @@ func (g *AllocationPlotGenerator) getMetricValue(alloc database.AllocationData, 
 	case "ipc":
 		val = alloc.AvgIPC
 	case "ipc_efficiency":
-		val = alloc.IPCEfficiency * 100.0 // Scale from 0-1 to 0-100
+		val = normalizePercentMetric(alloc.IPCEfficiency)
 	case "cache_miss_rate":
-		val = alloc.AvgCacheMissRate * 100.0 // Scale from 0-1 to 0-100
+		val = normalizePercentMetric(alloc.AvgCacheMissRate)
 	case "stalled_cycles":
 		val = alloc.AvgStalledCycles
 	case "stalls_l3_miss_percent":
@@ -281,6 +281,19 @@ func (g *AllocationPlotGenerator) getMetricValue(alloc database.AllocationData, 
 		return nil
 	}
 	return &val
+}
+
+// normalizePercentMetric converts fraction-like values (0..~1) to percent (0..100)
+// while leaving already-percent values untouched.
+func normalizePercentMetric(v float64) float64 {
+	if v < 0 {
+		return v
+	}
+	// Treat values up to 1.5 as fractions to be robust to slight >1.0 noise.
+	if v <= 1.5 {
+		return v * 100.0
+	}
+	return v
 }
 
 func (g *AllocationPlotGenerator) prepareWrapperData(
