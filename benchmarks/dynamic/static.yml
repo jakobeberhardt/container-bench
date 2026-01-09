@@ -17,7 +17,7 @@ benchmark:
       max_mem: 90
       mem_step: 10
       probing_t: 20
-      order: desc
+      order: asc
       cooldown_t: 5
       warmup_t: 5
       greedy_allocation: false
@@ -70,6 +70,8 @@ neighbor:
 neighbor-2:
   image: registry.jakob-eberhardt.de/neighbor:default  
   command: "/neighbor --duration 70 --buffer-size 6MB --pattern random"
+  critical: true
+  ipce: 0.9
   data:
     frequency: 2000
     perf: true

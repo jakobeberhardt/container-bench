@@ -309,12 +309,25 @@ func (s *DynamicScheduler) ProcessDataFrames(dfs *dataframe.DataFrames) error {
 	}
 
 	warmupSeconds := 5
+	cooldownSeconds := 2
 	if s.config != nil {
 		// Prober-specific warmup takes precedence over scheduler-level warmup
 		if s.config.Prober != nil && s.config.Prober.WarmupT > 0 {
 			warmupSeconds = s.config.Prober.WarmupT
 		} else if s.config.WarmupT > 0 {
 			warmupSeconds = s.config.WarmupT
+		}
+		// Prober-specific cooldown takes precedence over scheduler-level cooldown
+		if s.config.Prober != nil && s.config.Prober.CooldownT > 0 {
+			cooldownSeconds = s.config.Prober.CooldownT
+		} else if s.config.CooldownT > 0 {
+			cooldownSeconds = s.config.CooldownT
+		}
+	}
+
+	if cooldownSeconds > 0 && !s.lastProbeDone.IsZero() {
+		if time.Since(s.lastProbeDone) < time.Duration(cooldownSeconds)*time.Second {
+			return nil
 		}
 	}
 
@@ -341,6 +354,7 @@ func (s *DynamicScheduler) Shutdown() error {
 		if s.probing.stepCancel != nil {
 			s.probing.stepCancel()
 		}
+		s.lastProbeDone = time.Now()
 	}
 	s.probing = nil
 	s.mu.Unlock()
@@ -407,6 +421,7 @@ func (s *DynamicScheduler) OnContainerStop(containerIndex int) error {
 		if s.probing.stepCancel != nil {
 			s.probing.stepCancel()
 		}
+		s.lastProbeDone = time.Now()
 		s.probing = nil
 	}
 

@@ -30,7 +30,7 @@ grid style=dashed,
 legend columns=5,
 legend pos=south east,
 legend style={font=\small},{{if .IncludeLegend}}
-legend style={font=\scriptsize, column sep=6pt},
+legend style={font=\small, column sep=6pt},
 legend to name=allocation-legend-{{.LabelID}},{{else}}
 every axis legend/.code={\let\addlegendentry\relax},{{end}}
 ]
