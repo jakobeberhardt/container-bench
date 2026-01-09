@@ -20,6 +20,34 @@ func TestDynamicScheduler_SelectDescGuarantee_LastGoodBeforeDrop(t *testing.T) {
 	}
 }
 
+func TestDynamicScheduler_SelectAscGuarantee_FirstMeetingThreshold(t *testing.T) {
+	thr := 0.90
+	allocs := []proberesources.AllocationResult{
+		{L3Ways: 1, MemBandwidth: 10, IPCEfficiency: 0.70},
+		{L3Ways: 2, MemBandwidth: 10, IPCEfficiency: 0.91},
+		{L3Ways: 3, MemBandwidth: 10, IPCEfficiency: 0.95},
+	}
+
+	bestWays, bestMem := selectAscGuaranteeAllocation(allocs, thr)
+	if bestWays != 2 || bestMem != 10 {
+		t.Fatalf("expected first meeting (2,10), got (%d,%.0f)", bestWays, bestMem)
+	}
+}
+
+func TestDynamicScheduler_SelectAscGuarantee_NoneMeetKeepsLast(t *testing.T) {
+	thr := 0.90
+	allocs := []proberesources.AllocationResult{
+		{L3Ways: 1, MemBandwidth: 10, IPCEfficiency: 0.70},
+		{L3Ways: 2, MemBandwidth: 20, IPCEfficiency: 0.80},
+		{L3Ways: 3, MemBandwidth: 30, IPCEfficiency: 0.85},
+	}
+
+	bestWays, bestMem := selectAscGuaranteeAllocation(allocs, thr)
+	if bestWays != 3 || bestMem != 30 {
+		t.Fatalf("expected last (3,30), got (%d,%.0f)", bestWays, bestMem)
+	}
+}
+
 func TestDynamicScheduler_SelectDescGuarantee_NoCandidateMeets(t *testing.T) {
 	// If the first (highest) allocation already fails, we keep it as best-effort.
 	thr := 0.90

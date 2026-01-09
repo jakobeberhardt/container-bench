@@ -60,6 +60,10 @@ type dynamicActiveProbe struct {
 	// start from max allocation and lower it until IPCE falls below the guarantee;
 	// then keep the previous (last >= guarantee).
 	descGuarantee bool
+	// Ascending guarantee search (order: asc + target IPCE available):
+	// start from min allocation and increase it until IPCE reaches the guarantee;
+	// then keep that first (>= guarantee) allocation.
+	ascGuarantee bool
 	guarantee     float64
 
 	hasFallback bool
@@ -69,6 +73,10 @@ type dynamicActiveProbe struct {
 	hasLastAbove bool
 	lastAboveWays int
 	lastAboveMem  float64
+
+	hasFirstAbove bool
+	firstAboveWays int
+	firstAboveMem  float64
 
 	stepCtx    context.Context
 	stepCancel context.CancelFunc
@@ -250,13 +258,15 @@ func (s *DynamicScheduler) Initialize(accountant *accounting.RDTAccountant, cont
 		s.benchmarkMask[1] = mask
 		s.benchmarkMem[1] = 100
 	}
-	s.benchmarkClass = s.benchmarkClassNameLocked()
+	// Keep non-critical containers in system/default and shrink system/default
+	// so critical containers can be truly isolated.
+	s.benchmarkClass = "system/default"
 
 	if err := s.createOrUpdateBenchmarkClassLocked(); err != nil {
 		return err
 	}
 
-	// Ensure we track all containers and default them to benchmark pool.
+	// Ensure we track all containers.
 	for _, c := range containers {
 		p := s.profileLocked(c.Index)
 		p.index = c.Index
@@ -392,8 +402,7 @@ func (s *DynamicScheduler) OnContainerStart(info ContainerInfo) error {
 		return nil
 	}
 
-	// Default: move all benchmark containers into the shared benchmark pool.
-	_ = s.moveContainerCgroupLocked(info.ContainerID, s.benchmarkClass)
+	// Non-critical containers remain in system/default.
 
 	// Critical containers are queued for allocation probing.
 	if p.critical {
@@ -458,12 +467,7 @@ func (s *DynamicScheduler) profileLocked(containerIndex int) *dynamicContainerPr
 	return p
 }
 
-func (s *DynamicScheduler) benchmarkClassNameLocked() string {
-	if s.benchmarkID > 0 {
-		return fmt.Sprintf("bench-%d-benchmark", s.benchmarkID)
-	}
-	return "bench-benchmark"
-}
+func (s *DynamicScheduler) benchmarkClassNameLocked() string { return "system/default" }
 
 func (s *DynamicScheduler) containerClassNameLocked(containerIndex int, containerKey string) string {
 	key := sanitizeResctrlNamePart(containerKey)
@@ -650,8 +654,9 @@ func (s *DynamicScheduler) startProbeLocked(dfs *dataframe.DataFrames, container
 	}
 
 	descGuarantee := (order == "desc" && acceptable != nil && *acceptable >= 0)
+	ascGuarantee := (order == "asc" && acceptable != nil && *acceptable >= 0)
 	breaks := proberesources.AllocationProbeBreakPolicy{}
-	if !descGuarantee {
+	if !(descGuarantee || ascGuarantee) {
 		breaks.AcceptableIPCEfficiency = acceptable
 	}
 
@@ -659,7 +664,9 @@ func (s *DynamicScheduler) startProbeLocked(dfs *dataframe.DataFrames, container
 		GreedyAllocation:  greedy,
 		ProbingFrequency:  probingFrequency,
 		OutlierDrop:       outlierDrop,
-		BaselineFirst:     !descGuarantee,
+		// Critical workloads must always probe real allocations (skip baseline) so the
+		// resulting decision is robust to future interference.
+		BaselineFirst:     false,
 	}
 
 	target := proberesources.AllocationProbeTarget{
@@ -709,6 +716,10 @@ func (s *DynamicScheduler) startProbeLocked(dfs *dataframe.DataFrames, container
 		ap.descGuarantee = true
 		ap.guarantee = *acceptable
 	}
+	if ascGuarantee {
+		ap.ascGuarantee = true
+		ap.guarantee = *acceptable
+	}
 	s.probing = ap
 
 	// Start probe + async stepping.
@@ -727,6 +738,8 @@ func (s *DynamicScheduler) startProbeLocked(dfs *dataframe.DataFrames, container
 		"min_mem":    minMem,
 		"max_mem":    maxMem,
 		"order":      order,
+		"asc_guarantee": ascGuarantee,
+		"desc_guarantee": descGuarantee,
 	}).Info("Started dynamic allocation probing for critical container")
 
 	return nil
@@ -778,14 +791,31 @@ func (s *DynamicScheduler) startProbeStepperLocked(dfs *dataframe.DataFrames, ap
 
 				// Descending guarantee search: stop when we first fall below the guarantee,
 				// then revert to the previous (last >= guarantee) allocation.
-				if ap.descGuarantee && after > before {
+				if (ap.descGuarantee || ap.ascGuarantee) && after > before {
 					last := ap.runner.Result().Allocations[after-1]
-					if !ap.hasFallback {
+					if ap.descGuarantee {
+						// Fallback = first tested (highest allocation)
+						if !ap.hasFallback {
+							ap.hasFallback = true
+							ap.fallbackWays = last.L3Ways
+							ap.fallbackMem = last.MemBandwidth
+						}
+					} else if ap.ascGuarantee {
+						// Fallback = last tested (highest allocation in asc mode)
 						ap.hasFallback = true
 						ap.fallbackWays = last.L3Ways
 						ap.fallbackMem = last.MemBandwidth
 					}
 					if last.IPCEfficiency >= 0 {
+						// Ascending: stop at the first candidate that satisfies the guarantee.
+						if ap.ascGuarantee && !ap.hasFirstAbove && last.IPCEfficiency >= ap.guarantee {
+							ap.hasFirstAbove = true
+							ap.firstAboveWays = last.L3Ways
+							ap.firstAboveMem = last.MemBandwidth
+							ap.runner.Abort("met_guarantee")
+							done = true
+						}
+
 						if last.IPCEfficiency >= ap.guarantee {
 							ap.hasLastAbove = true
 							ap.lastAboveWays = last.L3Ways
@@ -837,6 +867,16 @@ func (s *DynamicScheduler) finalizeProbeLocked() error {
 			bestMem = ap.fallbackMem
 		}
 	}
+	if ap.ascGuarantee {
+		if ap.hasFirstAbove {
+			bestWays = ap.firstAboveWays
+			bestMem = ap.firstAboveMem
+		} else if ap.hasFallback {
+			// No allocation met the guarantee: keep best-effort (highest tested in asc mode).
+			bestWays = ap.fallbackWays
+			bestMem = ap.fallbackMem
+		}
+	}
 
 	// Enforce monotonic commit: never lower the committed floor.
 	if p != nil {
@@ -868,6 +908,7 @@ func (s *DynamicScheduler) finalizeProbeLocked() error {
 		"best_eff":  ap.runner.BestEff(),
 		"reason":    ap.runner.StopReason(),
 		"desc_guarantee": ap.descGuarantee,
+		"asc_guarantee":  ap.ascGuarantee,
 	}).Info("Finished dynamic allocation probing")
 
 	return nil
@@ -1071,6 +1112,27 @@ func selectDescGuaranteeAllocation(allocs []proberesources.AllocationResult, thr
 
 	if hasAbove {
 		return lastAboveWays, lastAboveMem
+	}
+	return fallbackWays, fallbackMem
+}
+
+func selectAscGuaranteeAllocation(allocs []proberesources.AllocationResult, thr float64) (ways int, mem float64) {
+	if len(allocs) == 0 {
+		return 0, 0
+	}
+
+	// Best-effort fallback: last tested allocation (highest, for order=asc).
+	fallbackWays := allocs[len(allocs)-1].L3Ways
+	fallbackMem := allocs[len(allocs)-1].MemBandwidth
+
+	for i := range allocs {
+		eff := allocs[i].IPCEfficiency
+		if eff < 0 {
+			continue
+		}
+		if eff >= thr {
+			return allocs[i].L3Ways, allocs[i].MemBandwidth
+		}
 	}
 	return fallbackWays, fallbackMem
 }

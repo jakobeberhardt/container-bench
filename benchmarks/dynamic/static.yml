@@ -18,8 +18,8 @@ benchmark:
       mem_step: 10
       probing_t: 20
       order: asc
-      cooldown_t: 5
-      warmup_t: 5
+      cooldown_t: 10
+      warmup_t: 10
       greedy_allocation: false
       probing_frequency: 50
       drop_outliers: 5
@@ -58,7 +58,7 @@ copy:
 
 neighbor:
   image: registry.jakob-eberhardt.de/neighbor:default  
-  command: "/neighbor --duration 70 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
+  command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
   critical: true
   ipce: 0.9
   data:
@@ -69,7 +69,7 @@ neighbor:
 
 neighbor-2:
   image: registry.jakob-eberhardt.de/neighbor:default  
-  command: "/neighbor --duration 70 --buffer-size 6MB --pattern random"
+  command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random"
   critical: true
   ipce: 0.9
   data:
