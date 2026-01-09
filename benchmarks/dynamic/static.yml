@@ -1,0 +1,107 @@
+benchmark:
+  name: Trace Test
+  description: Seed-based generated trace (arrival + length distributions)
+  drain: false
+  max_t: 90
+  log_level: info
+  accounting:
+    log_level: info
+  scheduler:
+    implementation: dynamic
+    prober:
+      log_level: info
+      min_l3: 1
+      max_l3: 11
+      step_l3: 1
+      min_mem: 10
+      max_mem: 90
+      mem_step: 10
+      probing_t: 20
+      order: desc
+      cooldown_t: 5
+      warmup_t: 20
+      greedy_allocation: false
+      probing_frequency: 50
+      drop_outliers: 5
+      allocate: true
+    break_condition: -1
+    break_cpu_load: -1
+    break_llc_occupancy: -1
+    break_improvement: -1
+
+    skip_allocation_after_probing: true
+    allocate_unbound: false
+    reallocate: true
+    rdt: true
+    log_level: info
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+copy:
+  image: nginx:alpine
+  command: "while :; do dd if=/dev/zero of=/dev/null bs=1M count=100 2>/dev/null; done"
+  data:
+    frequency: 2000
+    perf: true
+    docker: true
+    rdt: true
+
+neighbor:
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  command: "/neighbor --duration 70 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
+  critical: true
+  ipce: 0.9
+  ipc: 2.2
+  data:
+    frequency: 2000
+    perf: true
+    docker: true
+    rdt: true
+
+neighbor-2:
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  command: "/neighbor --duration 70 --buffer-size 6MB --pattern random"
+  data:
+    frequency: 2000
+    perf: true
+    docker: true
+    rdt: true
+
+matrix-3d:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --matrix-3d 2 --timeout 0"
+  num_cores: 2
+  start_t: 20
+  data:
+    frequency: 2000
+    perf: true
+    docker: true
+    rdt: true
+
+compression:
+  image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+  command: "/populate.sh 1000 && 7z a -mx=9 -mmt=1  dummy.7z /data/*.bin"
+  data:
+    frequency: 2000
+    perf: true
+    docker: true
+    rdt: true
+
+install:
+  image: nginx:alpine   
+  command: "apk add --no-cache firefox chromium libreoffice gimp inkscape blender thunderbird nodejs rust texlive-full"
+  data:
+    frequency: 2000
+    perf: true
+    docker: true
+    rdt: true

@@ -56,10 +56,10 @@ func normalizeSchedulerImplementation(input string) (string, error) {
 	impl = strings.NewReplacer("-", "_", " ", "_").Replace(impl)
 
 	switch impl {
-	case "default", "least_loaded", "probe", "allocation", "probe_allocation", "interference_aware":
+	case "default", "least_loaded", "probe", "allocation", "probe_allocation", "interference_aware", "dynamic":
 		return impl, nil
 	default:
-		return "", fmt.Errorf("unknown scheduler %q (allowed: default, least_loaded, probe, allocation, probe_allocation, interference_aware)", input)
+		return "", fmt.Errorf("unknown scheduler %q (allowed: default, least_loaded, probe, allocation, probe_allocation, interference_aware, dynamic)", input)
 	}
 }
 
@@ -562,7 +562,7 @@ func runBenchmark(configFile string, schedulerOverride string) error {
 		}
 	}
 	// Some schedulers require RDT even when not explicitly enabled via scheduler.rdt.
-	if bench.config.Benchmark.Scheduler.RDT || bench.config.Benchmark.Scheduler.Implementation == "interference_aware" {
+	if bench.config.Benchmark.Scheduler.RDT || bench.config.Benchmark.Scheduler.Implementation == "interference_aware" || bench.config.Benchmark.Scheduler.Implementation == "dynamic" {
 		rdtNeeded = true
 	}
 
@@ -646,6 +646,9 @@ func runBenchmark(configFile string, schedulerOverride string) error {
 	case "interference_aware":
 		logger.Info("Using interference-aware scheduler")
 		bench.scheduler = scheduler.NewInterferenceAwareScheduler()
+	case "dynamic":
+		logger.Info("Using dynamic scheduler")
+		bench.scheduler = scheduler.NewDynamicScheduler()
 	default:
 		logger.WithField("implementation", schedulerImpl).Warn("Unknown scheduler implementation, using default")
 		bench.scheduler = scheduler.NewDefaultScheduler()
@@ -1246,7 +1249,7 @@ func (cb *ContainerBench) initializeSchedulerWithPIDs() error {
 
 	// Create RDT accountant if supported
 	var rdtAccountant *accounting.RDTAccountant
-	requiresRDT := cb.config.Benchmark.Scheduler.RDT || cb.config.Benchmark.Scheduler.Implementation == "interference_aware"
+	requiresRDT := cb.config.Benchmark.Scheduler.RDT || cb.config.Benchmark.Scheduler.Implementation == "interference_aware" || cb.config.Benchmark.Scheduler.Implementation == "dynamic"
 	if cb.hostConfig.RDT.Supported && requiresRDT {
 		rdtAllocator := allocation.NewDefaultRDTAllocator()
 		logger.Info("RDT allocator created")
