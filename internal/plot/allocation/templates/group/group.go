@@ -13,7 +13,7 @@ const GroupWrapperTemplate = `% Generated on {{.GeneratedDate}}
     
 {{range .Subfigures}}    \begin{subfigure}{\linewidth}
         \centering
-        \resizebox{\linewidth}{!}{\input{{"{"}}\currfiledir/{{.PlotFileName}}{{"}"}} }
+        \resizebox{\linewidth}{!}{\input{{"{"}}\currfiledir/{{.PlotFileName}}{{"}"}} } % chktex 27
         \caption{{"{"}}{{.Caption}}{{"}"}}
     \end{subfigure}
     
