@@ -40,7 +40,7 @@ const PlotTemplate = `% Generated on {{.GeneratedDate}}
   (288, {{.Prefetch}}) % Prefetch sensitivity
   (0,   {{.LLC}})      % Close the loop
 };
-% TODO: Add command
+{{if .LegendOverridden}}{{else}}% TODO: Add command{{end}}
 \addlegendentry{ {{.LegendEntry}} };
 
 {{end}}
@@ -77,5 +77,6 @@ type ProbeSeries struct {
 	Isolated              bool
 	Aborted               bool
 	Style                 string
+	LegendOverridden      bool
 	LegendEntry           string
 }

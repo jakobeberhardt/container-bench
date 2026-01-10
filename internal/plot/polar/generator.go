@@ -134,6 +134,7 @@ func (g *PolarPlotGenerator) preparePlotData(probes []database.ProbeData, opts P
 			Isolated:              probe.Isolated,
 			Aborted:               probe.Aborted,
 			Style:                 style.ToTikzOptions(),
+			LegendOverridden:      opts.Command != "",
 			LegendEntry:           legendEntry,
 		}
 
