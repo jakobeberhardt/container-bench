@@ -1,0 +1,60 @@
+benchmark:
+  name: Redis 4 Core Probe Mixed/Large
+  description: Probes a Redis container with large data size (redis-benchmark -d 65536) performing mixed read/write operations.
+  max_t: 75
+  log_level: info
+  scheduler:
+    implementation: probe
+    rdt: false
+    log_level: error
+    prober:
+      implementation: default
+      abortable: false
+      isolated: true
+      default_t: 60
+      warmup_t: 10
+      cooldown_t: 0
+      default_probe_cores: 1
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+redis:
+  index: 0
+  image: redis:latest
+  port: 6379:6379
+  num_cores: 4
+  data:
+    frequency: 100
+    perf:
+      cycles: true
+      instructions: true
+      stalls_total: true
+      stalls_l3_miss: true
+      stalls_l3_miss_percent: true
+    docker:
+      cpu_usage_percent: true
+    rdt: true
+
+# load:
+#   index: 1
+#   image: alpine:latest
+#   core: 16-19
+#   enviroment:
+#     SERVER_IP: redis
+#   command: "apk add --no-cache redis && sleep 2 && while :; do redis-benchmark -h $SERVER_IP -p 6379 -t set,get -d 65536 -c 100 -P 16 -n 99999999999; done"
+#   data:
+#     frequency: 100
+#     perf: false
+#     docker:
+#       cpu_usage_percent: true
+#     rdt: false

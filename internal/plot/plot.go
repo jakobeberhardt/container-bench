@@ -77,13 +77,15 @@ func (pm *PlotManager) GenerateTimeseriesPlot(
 	return pm.timeseriesGenerator.Generate(ctx, opts)
 }
 
-func (pm *PlotManager) GeneratePolarPlot(benchmarkID int, probeIndices []int, metricType string) (plotTikz, wrapperTex string, err error) {
+func (pm *PlotManager) GeneratePolarPlot(benchmarkID int, probeIndices []int, metricType string, style int, commandOverride string) (plotTikz, wrapperTex string, err error) {
 	ctx := context.Background()
 
 	opts := polar.PlotOptions{
 		BenchmarkID:  benchmarkID,
 		ProbeIndices: probeIndices,
 		MetricType:   metricType,
+		Style:        style,
+		Command:      commandOverride,
 	}
 
 	return pm.polarGenerator.Generate(ctx, opts)

@@ -34,6 +34,8 @@ type PlotOptions struct {
 	BenchmarkID  int
 	ProbeIndices []int
 	MetricType   string // e.g., "ipc", "scp"
+	Style        int    // Override plot style start index (0..N). -1 means default.
+	Command      string // Override legend entry text (replaces container command).
 }
 
 func (g *PolarPlotGenerator) Generate(ctx context.Context, opts PlotOptions) (string, string, error) {
@@ -45,6 +47,8 @@ func (g *PolarPlotGenerator) Generate(ctx context.Context, opts PlotOptions) (st
 	g.logger.WithFields(logrus.Fields{
 		"probe_indices": opts.ProbeIndices,
 		"metric_type":   metricType,
+		"style":         opts.Style,
+		"command":       opts.Command,
 	}).Info("Generating polar plot")
 
 	if len(opts.ProbeIndices) == 0 {
@@ -98,9 +102,16 @@ func (g *PolarPlotGenerator) preparePlotData(probes []database.ProbeData, opts P
 	}
 
 	for i, probe := range probes {
-		style := mappings.GetProbeStyle(i)
+		styleIndex := i
+		if opts.Style >= 0 {
+			styleIndex = opts.Style + i
+		}
+		style := mappings.GetProbeStyle(styleIndex)
 
 		legendEntry := probe.ContainerCommand
+		if opts.Command != "" {
+			legendEntry = opts.Command
+		}
 		if len(legendEntry) > 50 {
 			legendEntry = legendEntry[:47] + "..."
 		}

@@ -310,6 +310,7 @@ func main() {
 	var xField, yField string
 	var socketID int
 	var styleIndex int
+	var polarStyleIndex int
 	var interval float64
 	var minVal, maxVal float64
 	var minSet, maxSet bool
@@ -317,6 +318,7 @@ func main() {
 	var probeMetric string
 	var polarBenchmarkID int
 	var polarOutputDir string
+	var polarCommandOverride string
 	var allocationProbeIndex int
 	var allocationMetrics []string
 	var onlyPlot, onlyWrapper bool
@@ -393,7 +395,7 @@ func main() {
 			if err := validateEnvironment(); err != nil {
 				return err
 			}
-			return generatePolarPlot(polarBenchmarkID, probeIndices, probeMetric, onlyPlot, onlyWrapper, polarOutputDir)
+			return generatePolarPlot(polarBenchmarkID, probeIndices, probeMetric, polarStyleIndex, polarCommandOverride, onlyPlot, onlyWrapper, polarOutputDir)
 		},
 	}
 
@@ -438,6 +440,8 @@ func main() {
 	polarCmd.Flags().IntSliceVar(&probeIndices, "probes", []int{}, "Comma-separated list of probe indices")
 	polarCmd.Flags().IntVar(&polarBenchmarkID, "benchmark-id", 0, "Optional benchmark ID to scope probe indices (0 = all benchmarks)")
 	polarCmd.Flags().StringVar(&probeMetric, "metric", "ipc", "Metric type to plot (ipc, scp, ipce)")
+	polarCmd.Flags().IntVar(&polarStyleIndex, "style", -1, "Override plot style start index (0..N). Applies to the first probe series; subsequent series increment from there")
+	polarCmd.Flags().StringVar(&polarCommandOverride, "command", "", "Override legend entry text (replaces the container command shown in the legend)")
 	polarCmd.Flags().StringVar(&polarOutputDir, "files", "", "Output directory to save plot files (creates wrapper.tex and probe-sensitivity.tikz)")
 	polarCmd.Flags().BoolVar(&onlyPlot, "plot", false, "Print only the plot file (TikZ)")
 	polarCmd.Flags().BoolVar(&onlyWrapper, "wrapper", false, "Print only the wrapper file (LaTeX)")
@@ -2341,12 +2345,14 @@ func generateTimeseriesPlot(benchmarkID int, xField, yField string, interval flo
 	return nil
 }
 
-func generatePolarPlot(benchmarkID int, probeIndices []int, metricType string, onlyPlot, onlyWrapper bool, outputDir string) error {
+func generatePolarPlot(benchmarkID int, probeIndices []int, metricType string, styleIndex int, commandOverride string, onlyPlot, onlyWrapper bool, outputDir string) error {
 	logger := logging.GetLogger()
 	logger.WithFields(logrus.Fields{
 		"benchmark_id":  benchmarkID,
 		"probe_indices": probeIndices,
 		"metric_type":   metricType,
+		"style":         styleIndex,
+		"command":       commandOverride,
 		"output_dir":    outputDir,
 	}).Debug("Generating polar plot")
 
@@ -2361,7 +2367,7 @@ func generatePolarPlot(benchmarkID int, probeIndices []int, metricType string, o
 	}
 	defer plotMgr.Close()
 
-	plotTikz, wrapperTex, err := plotMgr.GeneratePolarPlot(benchmarkID, probeIndices, metricType)
+	plotTikz, wrapperTex, err := plotMgr.GeneratePolarPlot(benchmarkID, probeIndices, metricType, styleIndex, commandOverride)
 	if err != nil {
 		logger.WithError(err).Error("Failed to generate plot")
 		return fmt.Errorf("failed to generate plot: %w", err)
