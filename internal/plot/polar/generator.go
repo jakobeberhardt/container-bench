@@ -3,7 +3,7 @@ package polar
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
+	"crypto/rand"
 	"fmt"
 	"sort"
 	"strings"
@@ -36,12 +36,17 @@ type PlotOptions struct {
 	MetricType   string // e.g., "ipc", "scp"
 	Style        int    // Override plot style start index (0..N). -1 means default.
 	Command      string // Override legend entry text (replaces container command).
+	LabelID      string // Optional override; if empty, a random one is generated per plot.
 }
 
 func (g *PolarPlotGenerator) Generate(ctx context.Context, opts PlotOptions) (string, string, error) {
 	metricType := opts.MetricType
 	if metricType == "" {
 		metricType = "ipc" // default to IPC
+	}
+
+	if opts.LabelID == "" {
+		opts.LabelID = g.generateRandomLabelID()
 	}
 
 	g.logger.WithFields(logrus.Fields{
@@ -146,14 +151,12 @@ func (g *PolarPlotGenerator) preparePlotData(probes []database.ProbeData, opts P
 		indicesStr = append(indicesStr, fmt.Sprintf("%d", idx))
 	}
 
-	labelID := g.generateLabelID(opts.ProbeIndices)
-
 	return &plotTemplate.PlotData{
 		GeneratedDate:  time.Now().Format("2006-01-02 15:04:05"),
 		ProbeKernel:    probeKernel,
 		ProbeVersion:   probeVersion,
 		ProbeIndices:   strings.Join(indicesStr, ", "),
-		LabelID:        labelID,
+		LabelID:        opts.LabelID,
 		MetricName:     metricInfo.Name,
 		MetricFullName: metricInfo.FullName,
 		Probes:         probeSeries,
@@ -175,8 +178,6 @@ func (g *PolarPlotGenerator) prepareWrapperData(probes []database.ProbeData, opt
 		}
 	}
 
-	labelID := g.generateLabelID(opts.ProbeIndices)
-
 	return &wrapperTemplate.WrapperData{
 		GeneratedDate:  time.Now().Format("2006-01-02 15:04:05"),
 		ProbeKernel:    probeKernel,
@@ -184,20 +185,20 @@ func (g *PolarPlotGenerator) prepareWrapperData(probes []database.ProbeData, opt
 		PlotFileName:   "probe-sensitivity.tikz",
 		ShortCaption:   fmt.Sprintf("Probe Sensitivity (%s)", metricInfo.Name),
 		Caption:        fmt.Sprintf("%s using the \\texttt{%s} probe kernel.", metricInfo.Description, probeKernel),
-		LabelID:        labelID,
+		LabelID:        opts.LabelID,
 		MetricName:     metricInfo.Name,
 		MetricFullName: metricInfo.FullName,
 	}
 }
 
-func (g *PolarPlotGenerator) generateLabelID(indices []int) string {
-	var parts []string
-	for _, idx := range indices {
-		parts = append(parts, fmt.Sprintf("%d", idx))
+func (g *PolarPlotGenerator) generateRandomLabelID() string {
+	b := make([]byte, 6) // 12 hex chars
+	if _, err := rand.Read(b); err == nil {
+		return fmt.Sprintf("%x", b)
 	}
-	input := strings.Join(parts, "-")
-	hash := sha256.Sum256([]byte(input))
-	return fmt.Sprintf("%x", hash[:6])
+	// Fallback: time-based (still unique enough for plot labels)
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	return fmt.Sprintf("%x", []byte(now))[:12]
 }
 
 func (g *PolarPlotGenerator) renderPlot(data *plotTemplate.PlotData) (string, error) {

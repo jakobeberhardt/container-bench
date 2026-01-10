@@ -1,5 +1,5 @@
 benchmark:
-  name: Stress-ng Probe Stream L3 16M
+  name: Stress-ng Probe Stream L3 500 
   description: Probe workload using stress-ng stream with --stream-l3-size 16M.
   max_t: 70
   log_level: info
@@ -27,7 +27,7 @@ c0:
   index: 0
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
   core: 0
-  command: "stress-ng --stream 1 --stream-l3-size 16M --timeout 0"
+  command: "stress-ng --stream 1 --timeout 0"
   data:
     frequency: 100
     perf:
