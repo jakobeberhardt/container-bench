@@ -1,6 +1,6 @@
 benchmark:
-  name: Stress-ng Probe Tsearch Size 262144
-  description: Probe workload using stress-ng tsearch with --tsearch-size 262144.
+  name: Stress-ng Probe Tsearch Size 2048
+  description: Probe workload using stress-ng tsearch with --tsearch-size 2048.
   max_t: 70
   log_level: info
   scheduler:
@@ -27,7 +27,7 @@ c0:
   index: 0
   image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
   core: 0
-  command: "stress-ng --tsearch 1 --tsearch-size 262144 --timeout 0"
+  command: "stress-ng --tsearch 1 --tsearch-size 2048 --timeout 0"
   data:
     frequency: 100
     perf:

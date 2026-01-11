@@ -14,7 +14,7 @@ benchmark:
       default_t: 60
       warmup_t: 25
       cooldown_t: 0
-      default_probe_cores: 1
+      default_probe_cores: 15,14,13,12
   data:
     db:
       host: ${INFLUXDB_HOST}
@@ -51,7 +51,7 @@ apache:
 #   core: 16-19
 #   enviroment:
 #     SERVER_IP: ${SERVER_IP}
-#   command: "apk add --no-cache apache2-utils curl && sleep 2 && while :; do ab -n 1000000 -c 200 -k http://$SERVER_IP/; ab -n 1000000 -c 200 -p /dev/urandom -T application/octet-stream http://$SERVER_IP/; done"
+#   command: "apk add --no-cache apache2-utils curl && sleep 2 && while :; do ab -n 1000000 -c 200 -k http://$SERVER_IP/; ab -n 90000000 -c 200 -p /dev/urandom -T application/octet-stream http://$SERVER_IP/; done"
 #   data:
 #     frequency: 100
 #     perf: false

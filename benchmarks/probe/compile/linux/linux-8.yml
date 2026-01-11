@@ -1,7 +1,7 @@
 benchmark:
   name: Compile Linux 8 Cores
   description: Probes a container which builds the linux kernel
-  max_t: 85
+  max_t: 95
   log_level: info
   scheduler:
     implementation: probe
@@ -12,9 +12,9 @@ benchmark:
       abortable: false
       isolated: true
       default_t: 60
-      warmup_t: 20
+      warmup_t: 30
       cooldown_t: 0
-      default_probe_cores: 1
+      default_probe_cores: 14
   data:
     db:
       host: ${INFLUXDB_HOST}

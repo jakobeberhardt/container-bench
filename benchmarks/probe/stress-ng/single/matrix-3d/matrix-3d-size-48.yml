@@ -1,7 +1,7 @@
 benchmark:
-  name: Compile Linux 4 Cores
-  description: Probes a container which builds the linux kernel
-  max_t: 95
+  name: Stress-ng Probe Matrix-3d Size 48
+  description: Probe workload using stress-ng matrix-3d with --matrix-3d-size 48.
+  max_t: 70
   log_level: info
   scheduler:
     implementation: probe
@@ -12,9 +12,9 @@ benchmark:
       abortable: false
       isolated: true
       default_t: 60
-      warmup_t: 30
+      warmup_t: 5
       cooldown_t: 0
-      default_probe_cores: 14
+      default_probe_cores: 1
   data:
     db:
       host: ${INFLUXDB_HOST}
@@ -22,17 +22,12 @@ benchmark:
       user: ${INFLUXDB_USER}
       password: ${INFLUXDB_TOKEN}
       org: ${INFLUXDB_ORG}
-  docker:
-    registry:
-      host: ${DOCKER_REGISTRY_HOST}
-      username: ${DOCKER_REGISTRY_USERNAME}
-      password: ${DOCKER_REGISTRY_PASSWORD}
 
-compile:
+c0:
   index: 0
-  image: registry.jakob-eberhardt.de/rdt4nn/compile/linux:latest
-  num_cores: 4
-  command: "make defconfig && make -j4"
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  core: 0
+  command: "stress-ng --matrix-3d 1 --matrix-3d-size 48 --timeout 0"
   data:
     frequency: 100
     perf:
@@ -41,6 +36,6 @@ compile:
       stalls_total: true
       stalls_l3_miss: true
       stalls_l3_miss_percent: true
-    docker: 
+    docker:
       cpu_usage_percent: true
     rdt: true

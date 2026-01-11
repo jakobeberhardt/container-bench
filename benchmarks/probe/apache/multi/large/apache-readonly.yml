@@ -51,7 +51,7 @@ apache:
 #   core: 16-19
 #   enviroment:
 #     SERVER_IP: ${SERVER_IP}
-#   command: "apk add --no-cache apache2-utils && sleep 2 && while :; do ab -n 2000000 -c 200 -k http://$SERVER_IP/; done"
+#   command: "apk add --no-cache apache2-utils && sleep 2 && while :; do ab -n 90000000 -c 200 -k http://$SERVER_IP/; done"
 #   data:
 #     frequency: 100
 #     perf: false
