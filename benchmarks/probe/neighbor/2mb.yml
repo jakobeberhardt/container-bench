@@ -1,5 +1,5 @@
 benchmark:
-  name: neighbor with 2mb page 6mb
+  name: 50 % neighbor with 2mb page 12mb
   description: probe for 2mb pages
   max_t: 75
   pid_sync_interval: 100  
@@ -31,7 +31,7 @@ benchmark:
 
 neighbor:
   image: registry.jakob-eberhardt.de/neighbor:default  
-  command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random"
+  command: "/neighbor --duration 3600 --buffer-size 12MB --pattern random"
   data:
     frequency: 100
     perf:

@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"container-bench/internal/accounting"
+	"container-bench/internal/allocation"
 	"container-bench/internal/config"
 	"container-bench/internal/cpuallocator"
 	"container-bench/internal/dataframe"
@@ -698,12 +699,19 @@ func (s *DynamicScheduler) OnContainerStop(containerIndex int) error {
 
 	// Reclaim critical container resources.
 	if s.rdtAccountant != nil && p.critical && p.className != "" {
-		// Delete class first (frees allocations in accountant), then return them to benchmark pool.
+		// Delete class first (frees allocations in accountant), then consolidate to keep
+		// system/default contiguous (avoid fragmented bitmasks).
 		_ = s.rdtAccountant.DeleteClass(p.className)
-		_ = s.reclaimContainerAllocationLocked(p)
+
+		// Clear local allocation bookkeeping for this container.
 		p.ways = 0
+		p.mem = 0
+		p.l3Mask = 0
 		p.floorWays = 0
 		p.floorMem = 0
+		p.className = ""
+
+		_ = s.consolidateRDTPartitionsLocked()
 	}
 
 	// If a critical container stopped and released resources, allow queued critical probes
@@ -1290,26 +1298,12 @@ func (s *DynamicScheduler) reclaimContainerAllocationLocked(p *dynamicContainerP
 	if p == nil {
 		return nil
 	}
-	sock := p.socket
-	if sock < 0 || sock >= s.sockets {
-		sock = 0
-	}
-	// Return resources to benchmark pool (local accounting).
-	if p.l3Mask != 0 {
-		s.benchmarkMask[sock] |= p.l3Mask
-		p.l3Mask = 0
-	}
-	if p.mem > 0 {
-		s.benchmarkMem[sock] += p.mem
-		if s.benchmarkMem[sock] > 100 {
-			s.benchmarkMem[sock] = 100
-		}
-		p.mem = 0
-	}
-	if err := s.createOrUpdateBenchmarkClassLocked(); err != nil {
-		return err
-	}
-	return nil
+	// Instead of OR-ing masks back (which can fragment system/default), clear the
+	// allocation and repack all remaining critical classes contiguously.
+	p.ways = 0
+	p.mem = 0
+	p.l3Mask = 0
+	return s.consolidateRDTPartitionsLocked()
 }
 
 func (s *DynamicScheduler) applyAllocationLocked(containerIndex int, sock int, ways int, mem float64) error {
@@ -1369,7 +1363,15 @@ func (s *DynamicScheduler) applyAllocationLocked(containerIndex int, sock int, w
 		mem = 0
 	}
 
-	// L3: take contiguous ways from benchmark mask.
+	// If benchmark mask is already fragmented (e.g., from earlier runs), repack first.
+	if !isSingleContiguousRunOfOnes(s.benchmarkMask[sock], s.totalWays) {
+		if err := s.consolidateRDTPartitionsLocked(); err != nil {
+			return err
+		}
+	}
+
+	// L3: take contiguous ways from the HIGH end of the benchmark block.
+	// We keep system/default as the LOW contiguous block; critical allocations are packed at the top.
 	taken := uint64(0)
 	if ways > 0 {
 		// Always preserve a minimum reserve for system/default.
@@ -1380,12 +1382,16 @@ func (s *DynamicScheduler) applyAllocationLocked(containerIndex int, sock int, w
 		if ways > bitsAvail {
 			return fmt.Errorf("insufficient benchmark cache headroom on socket %d: have %d need %d", sock, bitsAvail, ways)
 		}
-
+		benchWays := int(countBits(s.benchmarkMask[sock]))
+		if benchWays < ways {
+			return fmt.Errorf("insufficient benchmark cache headroom on socket %d: have %d need %d", sock, benchWays, ways)
+		}
 		var err error
-		taken, s.benchmarkMask[sock], err = takeContiguousFromMask(s.benchmarkMask[sock], ways, s.totalWays)
+		taken, err = takeFromHighEndOfLowBlock(benchWays, ways)
 		if err != nil {
 			return err
 		}
+		s.benchmarkMask[sock] &^= taken
 	}
 	// Mem: take from benchmark mem.
 	// Always preserve a minimum reserve for system/default.
@@ -1429,6 +1435,218 @@ func (s *DynamicScheduler) applyAllocationLocked(containerIndex int, sock int, w
 	p.mem = mem
 	p.l3Mask = taken
 	return nil
+}
+
+// This avoids failures from goresctrl validation ("more than one continuous block of ones")
+// when classes finish and their freed blocks would otherwise leave holes in system/default.
+func (s *DynamicScheduler) consolidateRDTPartitionsLocked() error {
+	if s.rdtAccountant == nil {
+		return nil
+	}
+	if s.totalWays <= 0 {
+		return nil
+	}
+
+	// Collect active critical profiles by socket.
+	bySock := make([][]*dynamicContainerProfile, s.sockets)
+	for _, p := range s.profiles {
+		if p == nil || !p.critical {
+			continue
+		}
+		if p.containerID == "" {
+			continue
+		}
+		if p.className == "" {
+			continue
+		}
+		if p.ways <= 0 {
+			continue
+		}
+		sock := p.socket
+		if sock < 0 || sock >= s.sockets {
+			sock = 0
+		}
+		bySock[sock] = append(bySock[sock], p)
+	}
+
+	// Deterministic packing order: older first, then index.
+	for sock := 0; sock < s.sockets; sock++ {
+		sort.Slice(bySock[sock], func(i, j int) bool {
+			pi := bySock[sock][i]
+			pj := bySock[sock][j]
+			if pi.startedAt != pj.startedAt {
+				// If startedAt is zero for some reason, treat it as newest.
+				zi := pi.startedAt.IsZero()
+				zj := pj.startedAt.IsZero()
+				if zi != zj {
+					return !zi
+				}
+				return pi.startedAt.Before(pj.startedAt)
+			}
+			return pi.index < pj.index
+		})
+	}
+
+	// Compute new masks and benchmark pools.
+	for sock := 0; sock < s.sockets; sock++ {
+		waysList := make([]int, 0, len(bySock[sock]))
+		sumMem := 0.0
+		sumWays := 0
+		for _, p := range bySock[sock] {
+			waysList = append(waysList, p.ways)
+			sumMem += p.mem
+			sumWays += p.ways
+		}
+		assigned, benchMask, err := repackCriticalMasksHigh(s.totalWays, waysList)
+		if err != nil {
+			return err
+		}
+		// Update profile masks.
+		for i := range bySock[sock] {
+			bySock[sock][i].l3Mask = assigned[i]
+		}
+		s.benchmarkMask[sock] = benchMask
+		s.benchmarkMem[sock] = 100.0 - sumMem
+		if s.benchmarkMem[sock] < 0 {
+			s.benchmarkMem[sock] = 0
+		}
+		if s.benchmarkMem[sock] > 100 {
+			s.benchmarkMem[sock] = 100
+		}
+		// Sanity: benchmark ways should equal total - sumWays.
+		_ = sumWays
+	}
+
+	// Build full class set for a single allocator SetConfig update.
+	classes := make(map[string]struct {
+		Socket0 *allocation.SocketAllocation
+		Socket1 *allocation.SocketAllocation
+	})
+
+	// Benchmark pool (system/default)
+	classes[s.benchmarkClassNameLocked()] = struct {
+		Socket0 *allocation.SocketAllocation
+		Socket1 *allocation.SocketAllocation
+	}{
+		Socket0: &allocation.SocketAllocation{L3Bitmask: fmt.Sprintf("0x%x", s.benchmarkMask[0]), MemBandwidth: s.benchmarkMem[0]},
+		Socket1: func() *allocation.SocketAllocation {
+			if s.sockets > 1 {
+				return &allocation.SocketAllocation{L3Bitmask: fmt.Sprintf("0x%x", s.benchmarkMask[1]), MemBandwidth: s.benchmarkMem[1]}
+			}
+			return nil
+		}(),
+	}
+
+	for sock := 0; sock < s.sockets; sock++ {
+		for _, p := range bySock[sock] {
+			var s0, s1 *allocation.SocketAllocation
+			if sock == 0 {
+				s0 = &allocation.SocketAllocation{L3Bitmask: fmt.Sprintf("0x%x", p.l3Mask), MemBandwidth: p.mem}
+			} else {
+				s1 = &allocation.SocketAllocation{L3Bitmask: fmt.Sprintf("0x%x", p.l3Mask), MemBandwidth: p.mem}
+			}
+			classes[p.className] = struct {
+				Socket0 *allocation.SocketAllocation
+				Socket1 *allocation.SocketAllocation
+			}{Socket0: s0, Socket1: s1}
+		}
+	}
+
+	return s.rdtAccountant.ReplaceAllClasses(classes)
+}
+
+func isSingleContiguousRunOfOnes(mask uint64, totalWays int) bool {
+	if totalWays <= 0 {
+		return true
+	}
+	// Scan from LSB to totalWays.
+	seenOne := false
+	seenZeroAfterOne := false
+	for i := 0; i < totalWays; i++ {
+		bit := (mask & (1 << i)) != 0
+		if bit {
+			if seenZeroAfterOne {
+				return false
+			}
+			seenOne = true
+			continue
+		}
+		if seenOne {
+			seenZeroAfterOne = true
+		}
+	}
+	return true
+}
+
+// takeFromHighEndOfLowBlock returns a contiguous bitmask of length ways positioned at the
+// high end of a low-contiguous block of length benchWays.
+func takeFromHighEndOfLowBlock(benchWays int, ways int) (uint64, error) {
+	if ways <= 0 {
+		return 0, fmt.Errorf("ways must be > 0")
+	}
+	if benchWays < ways {
+		return 0, fmt.Errorf("benchWays must be >= ways")
+	}
+	if ways >= 64 {
+		return ^uint64(0), nil
+	}
+	low, err := lowMask(ways)
+	if err != nil {
+		return 0, err
+	}
+	shift := benchWays - ways
+	if shift <= 0 {
+		return low, nil
+	}
+	return low << shift, nil
+}
+
+func lowMask(n int) (uint64, error) {
+	if n <= 0 {
+		return 0, fmt.Errorf("n must be > 0")
+	}
+	if n >= 64 {
+		return ^uint64(0), nil
+	}
+	return (uint64(1) << n) - 1, nil
+}
+
+// repackCriticalMasksHigh packs critical allocations as adjacent blocks at the high end
+// of the cache-way space and returns the assigned masks and the remaining benchmark mask
+// as a low-contiguous block.
+func repackCriticalMasksHigh(totalWays int, criticalWays []int) ([]uint64, uint64, error) {
+	if totalWays <= 0 {
+		return nil, 0, fmt.Errorf("invalid totalWays")
+	}
+	sum := 0
+	for _, w := range criticalWays {
+		if w <= 0 {
+			return nil, 0, fmt.Errorf("invalid critical ways")
+		}
+		sum += w
+	}
+	if sum > totalWays {
+		return nil, 0, fmt.Errorf("critical ways exceed totalWays")
+	}
+	assigned := make([]uint64, len(criticalWays))
+	cur := totalWays
+	for i, w := range criticalWays {
+		cur -= w
+		m, err := lowMask(w)
+		if err != nil {
+			return nil, 0, err
+		}
+		assigned[i] = m << cur
+	}
+	benchWays := totalWays - sum
+	if benchWays == 0 {
+		return assigned, 0, nil
+	}
+	benchMask, err := lowMask(benchWays)
+	if err != nil {
+		return nil, 0, err
+	}
+	return assigned, benchMask, nil
 }
 
 func selectDescGuaranteeAllocation(allocs []proberesources.AllocationResult, thr float64) (ways int, mem float64) {

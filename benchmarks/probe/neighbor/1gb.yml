@@ -1,5 +1,5 @@
 benchmark:
-  name: neighbor with 1gb page 6mb
+  name: 50 % neighbor with 1gb page 12mb
   description: Finds Allocation
   max_t: 75
   pid_sync_interval: 100  
@@ -31,7 +31,7 @@ benchmark:
 
 neighbor:
   image: registry.jakob-eberhardt.de/neighbor:default  
-  command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
+  command: "/neighbor --duration 3600 --buffer-size 12MB --pattern random --hugepages hugetlb-1g"
   data:
     frequency: 100
     perf:

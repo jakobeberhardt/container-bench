@@ -375,24 +375,38 @@ func (a *PhysicalCoreAllocator) EnsureAssigned(containerIndex int, cfg *config.C
 	// Cache cfg pointer for later release logging
 	a.mu.Lock()
 	a.cfgByIndex[containerIndex] = cfg
-	// If already assigned, return without re-logging
-	if len(cfg.CPUCores) > 0 {
-		assigned := append([]int(nil), cfg.CPUCores...)
+	// If allocator already tracks an assignment, return it (avoid re-logging).
+	if assigned, ok := a.assigned[containerIndex]; ok && len(assigned) > 0 {
+		out := append([]int(nil), assigned...)
+		// Keep cfg in sync for downstream users.
+		if len(cfg.CPUCores) == 0 {
+			cfg.CPUCores = append([]int(nil), assigned...)
+			cfg.Core = config.FormatCPUSpec(cfg.CPUCores)
+		}
 		a.mu.Unlock()
-		return assigned, nil
+		return out, nil
 	}
 	a.mu.Unlock()
 
-	// Explicit cores: treat as reservation request
-	if cfg.Core != "" {
-		cpus, err := config.ParseCPUSpec(cfg.Core)
-		if err != nil {
-			return nil, err
+	// Explicit cores: treat as reservation request.
+	// Note: cfg.CPUCores may be pre-populated by callers (tests/schedulers). We must
+	// still validate/reserve them; otherwise socket mapping and future allocations break.
+	if cfg.Core != "" || len(cfg.CPUCores) > 0 {
+		var cpus []int
+		if cfg.Core != "" {
+			parsed, err := config.ParseCPUSpec(cfg.Core)
+			if err != nil {
+				return nil, err
+			}
+			cpus = parsed
+		} else {
+			cpus = append([]int(nil), cfg.CPUCores...)
 		}
 		if err := a.Reserve(containerIndex, cpus); err != nil {
 			return nil, err
 		}
-		cfg.CPUCores = cpus
+		cpus = uniqueSorted(cpus)
+		cfg.CPUCores = append([]int(nil), cpus...)
 		cfg.Core = config.FormatCPUSpec(cpus)
 		a.logger.WithFields(a.containerFields(containerIndex, cfg)).WithFields(logrus.Fields{
 			"cpus":   cpus,

@@ -1,0 +1,54 @@
+benchmark:
+  name: XGBoost Train 8 Processes
+  description: Runs long-running XGBoost model training using 8 worker processes (1 thread each) to provide stable CPU load.
+  max_t: 90
+  log_level: info
+  scheduler:
+    implementation: probe
+    rdt: false
+    log_level: error
+    prober:
+      implementation: default
+      abortable: false
+      isolated: true
+      default_t: 60
+      warmup_t: 25
+      cooldown_t: 0
+      default_probe_cores: 15
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+xgboost:
+  index: 0
+  image: registry.jakob-eberhardt.de/rdt4nn/xgboost:latest
+  num_cores: 8
+  environment:
+    XGB_WORKERS: "8"
+    XGB_ROUNDS: "2000"
+    XGB_ROWS: "100000"
+    XGB_COLS: "50"
+    OMP_NUM_THREADS: "1"
+    OPENBLAS_NUM_THREADS: "1"
+    MKL_NUM_THREADS: "1"
+    NUMEXPR_NUM_THREADS: "1"
+  data:
+    frequency: 100
+    perf:
+      cycles: true
+      instructions: true
+      stalls_total: true
+      stalls_l3_miss: true
+      stalls_l3_miss_percent: true
+    docker:
+      cpu_usage_percent: true
+    rdt: true

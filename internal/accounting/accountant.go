@@ -56,6 +56,92 @@ type RDTAccountant struct {
 	containerClass map[int]string // PID -> class name
 }
 
+// ReplaceAllClasses replaces the allocator's managed class set in a single RDT
+// configuration update.
+//
+// This is used by schedulers that need to repack/defragment cache-way bitmasks
+// across multiple classes. It preserves container-to-class assignments in resctrl
+// (the underlying SetConfig does not move PIDs) and keeps the accountant's
+// container tracking where possible.
+func (a *RDTAccountant) ReplaceAllClasses(classes map[string]struct {
+	Socket0 *allocation.SocketAllocation
+	Socket1 *allocation.SocketAllocation
+}) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Validate no overlaps and aggregate MBA usage.
+	var used0, used1 uint64
+	mem0 := 0.0
+	mem1 := 0.0
+	for name, cfg := range classes {
+		_ = name
+		if cfg.Socket0 != nil {
+			if cfg.Socket0.L3Bitmask != "" {
+				bm := parseBitmask(cfg.Socket0.L3Bitmask)
+				if used0&bm != 0 {
+					return fmt.Errorf("overlapping L3 bitmask on socket0 in class set")
+				}
+				used0 |= bm
+			}
+			mem0 += cfg.Socket0.MemBandwidth
+		}
+		if cfg.Socket1 != nil {
+			if cfg.Socket1.L3Bitmask != "" {
+				bm := parseBitmask(cfg.Socket1.L3Bitmask)
+				if used1&bm != 0 {
+					return fmt.Errorf("overlapping L3 bitmask on socket1 in class set")
+				}
+				used1 |= bm
+			}
+			mem1 += cfg.Socket1.MemBandwidth
+		}
+	}
+	if mem0 > 100.0+1e-9 {
+		return fmt.Errorf("memory bandwidth allocation would exceed 100%% on socket0 (total: %.2f%%)", mem0)
+	}
+	if mem1 > 100.0+1e-9 {
+		return fmt.Errorf("memory bandwidth allocation would exceed 100%% on socket1 (total: %.2f%%)", mem1)
+	}
+
+	if err := a.allocator.CreateAllRDTClasses(classes); err != nil {
+		return err
+	}
+
+	// Rebuild tracking based on the provided class set.
+	newClasses := make(map[string]*ClassAllocation, len(classes))
+	for className, cfg := range classes {
+		if old, ok := a.classes[className]; ok {
+			old.Socket0 = cfg.Socket0
+			old.Socket1 = cfg.Socket1
+			newClasses[className] = old
+			continue
+		}
+		newClasses[className] = &ClassAllocation{
+			ClassName:  className,
+			Socket0:    cfg.Socket0,
+			Socket1:    cfg.Socket1,
+			Containers: make([]int, 0),
+		}
+	}
+	// Drop containerClass mappings for classes that no longer exist.
+	for pid, className := range a.containerClass {
+		if _, ok := newClasses[className]; !ok {
+			delete(a.containerClass, pid)
+		}
+	}
+	a.classes = newClasses
+
+	// Recompute per-socket state.
+	a.socket0State.AllocatedBitmask = used0
+	a.socket0State.MemBandwidthUsed = mem0
+	a.socket1State.AllocatedBitmask = used1
+	a.socket1State.MemBandwidthUsed = mem1
+
+	a.logger.WithField("classes", len(classes)).Debug("RDT class set replaced in accountant")
+	return nil
+}
+
 // NewRDTAccountant creates a new RDT accountant instance
 func NewRDTAccountant(allocator allocation.RDTAllocator, hostCfg *host.HostConfig) (*RDTAccountant, error) {
 	var totalWays int

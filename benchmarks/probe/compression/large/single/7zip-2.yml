@@ -1,6 +1,6 @@
 benchmark:
   name: 7zip Probe Level 2/Large
-  description: Probes a 7zip container with compression level 2 and large file size
+  description: Probes a 7zip container with compression level 2  and large file size
   max_t: 75
   log_level: info
   scheduler:
@@ -11,10 +11,10 @@ benchmark:
       implementation: default
       abortable: false
       isolated: true
-      default_t: 30
+      default_t: 60
       warmup_t: 10
       cooldown_t: 0
-      default_probe_cores: 1
+      default_probe_cores: 2
   data:
     db:
       host: ${INFLUXDB_HOST}

@@ -1,0 +1,69 @@
+benchmark:
+  name: PostgreSQL 4 Core Probe Mixed/Small
+  description: Probes a PostgreSQL container with a small dataset (pgbench -s 1) performing mixed operations.
+  max_t: 395
+  pid_sync_interval: 100  
+  log_level: info
+  scheduler:
+    implementation: probe_allocation
+    rdt: true
+    log_level: info
+    allocator:
+      implementation: default
+      warmup_t: 30
+      duration: 360
+      step_size_l3: 1
+      step_size_mb: 10 
+      min_l3_ways: 1  
+      max_l3_ways: 12       
+      min_mem_bandwidth: 10 
+      max_mem_bandwidth: 100  
+      order: asc            
+      isolate_others: true   
+      force_reallocation: true
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+postgres:
+  index: 0
+  image: registry.jakob-eberhardt.de/rdt4nn/postgres:latest
+  port: 5432:5432
+  num_cores: 4
+  data:
+    frequency: 100
+    perf:
+      cycles: true
+      instructions: true
+      stalls_total: true
+      stalls_l3_miss: true
+      stalls_l3_miss_percent: true
+      cache_references: true
+      cache_misses: true
+    docker:
+      cpu_usage_percent: true
+    rdt: true
+
+# load:
+#   index: 1
+#   image: registry.jakob-eberhardt.de/rdt4nn/postgres:latest
+#   core: 16-19
+#   enviroment:
+#     SERVER_IP: ${SERVER_IP}
+#     PGPASSWORD: ${PGPASSWORD}
+#   command: "sleep 2 && PGPASSWORD=$PGPASSWORD pgbench -i -s 1 -h $SERVER_IP -U benchmark benchmark && while :; do PGPASSWORD=$PGPASSWORD pgbench -c 16 -j 16 -T 3600 -h $SERVER_IP -U benchmark benchmark; done"
+#   data:
+#     frequency: 100
+#     perf: false
+#     docker:
+#       cpu_usage_percent: true
+#     rdt: false

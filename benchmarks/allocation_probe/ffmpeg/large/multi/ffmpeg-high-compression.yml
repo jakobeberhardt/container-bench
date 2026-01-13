@@ -1,0 +1,45 @@
+benchmark:
+  name: FFmpeg 4 Core Probe High Compression/Large
+  description: Probes an FFmpeg container with high compression settings and large video file
+  max_t: 95
+  log_level: info
+  scheduler:
+    implementation: probe
+    rdt: false
+    log_level: error
+    prober:
+      implementation: default
+      abortable: false
+      isolated: true
+      default_t: 60
+      warmup_t: 30
+      cooldown_t: 0
+      default_probe_cores: 15
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+ffmpeg:
+  image: registry.jakob-eberhardt.de/rdt4nn/ffmpeg/base:latest
+  num_cores: 4
+  command: "wget https://lfs.jakob-eberhardt.de/video/320/video.mov && while :; do ffmpeg -i /data/video.mov -c:v libx265 -preset veryslow -crf 22 -c:a aac -b:a 128k -y /tmp/output.mp4; done"
+  data:
+    frequency: 100
+    perf:
+      cycles: true
+      instructions: true
+      stalls_total: true
+      stalls_l3_miss: true
+      stalls_l3_miss_percent: true
+    docker: 
+      cpu_usage_percent: true
+    rdt: true

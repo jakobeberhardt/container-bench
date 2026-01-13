@@ -653,7 +653,7 @@ func (rc *RDTCollector) detectAndHandleClassMigration() error {
 		"pid":       rc.pid,
 		"new_class": currentClassName,
 		"mon_group": rc.monGroupName,
-	}).Info("RDT monitoring group successfully migrated to new class")
+	}).Debug("RDT monitoring group successfully migrated to new class")
 
 	// Sync PIDs to the new monitoring group
 	rc.mu.Unlock()

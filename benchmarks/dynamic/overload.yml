@@ -1,0 +1,179 @@
+benchmark:
+  name: Trace Test
+  description: Seed-based generated trace (arrival + length distributions)
+  drain: false
+  max_t: 90
+  log_level: info
+  accounting:
+    log_level: info
+  scheduler:
+    implementation: dynamic
+    prober:
+      log_level: info
+      min_l3: 1
+      max_l3: 11
+      step_l3: 1
+      min_mem: 10
+      max_mem: 90
+      mem_step: 10
+      probing_t: 20
+      order: asc
+      cooldown_t: 10
+      warmup_t: 10
+      greedy_allocation: false
+      probing_frequency: 50
+      drop_outliers: 5
+      allocate: true
+      buffer_ways: 1
+      buffer_memory: 1
+    break_condition: -1
+    break_cpu_load: -1
+    break_llc_occupancy: -1
+    break_improvement: -1
+    rebalance_batch: false
+
+    skip_allocation_after_probing: true
+    allocate_unbound: false
+    reallocate: true
+    rdt: true
+    log_level: info
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+neighbor:
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  command: "/neighbor --duration 70 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
+  critical: true
+  start_t: 0
+  ipce: 0.9
+  data:
+    frequency: 2000
+    perf: true
+    docker: true
+    rdt: true
+
+neighbor-2:
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
+  start_t: 5
+  critical: true
+  ipce: 0.9
+  data:
+    frequency: 2000
+    perf: true
+    docker: true
+    rdt: true
+
+# neighbor-3:
+#   image: registry.jakob-eberhardt.de/neighbor:default  
+#   command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
+#   start_t: 10
+#   critical: true
+#   ipce: 0.9
+#   data:
+#     frequency: 2000
+#     perf: true
+#     docker: true
+#     rdt: true
+
+# neighbor-4:
+#   image: registry.jakob-eberhardt.de/neighbor:default  
+#   command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
+#   critical: true
+#   start_t: 15
+#   ipce: 0.9
+#   data:
+#     frequency: 2000
+#     perf: true
+#     docker: true
+#     rdt: true
+
+
+# neighbor-5:
+#   image: registry.jakob-eberhardt.de/neighbor:default  
+#   command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
+#   start_t: 20
+#   critical: true
+#   ipce: 0.9
+#   data:
+#     frequency: 2000
+#     perf: true
+#     docker: true
+#     rdt: true
+
+# neighbor-6:
+#   image: registry.jakob-eberhardt.de/neighbor:default  
+#   command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
+#   start_t: 25
+#   critical: true
+#   ipce: 0.9
+#   data:
+#     frequency: 2000
+#     perf: true
+#     docker: true
+#     rdt: true
+
+# neighbor-7:
+#   image: registry.jakob-eberhardt.de/neighbor:default  
+#   command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
+#   start_t: 30
+#   critical: true
+#   ipce: 0.9
+#   data:
+#     frequency: 2000
+#     perf: true
+#     docker: true
+#     rdt: true
+
+
+matrix-3d0:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --matrix-3d 2 --timeout 0"
+  num_cores: 2
+  data:
+    frequency: 2000
+    perf: true
+    docker: true
+    rdt: true
+
+
+matrix-3d1:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --matrix-3d 2 --timeout 0"
+  num_cores: 2
+  data:
+    frequency: 2000
+    perf: true
+    docker: true
+    rdt: true
+
+matrix-3d2:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --matrix-3d 2 --timeout 0"
+  num_cores: 2
+  data:
+    frequency: 2000
+    perf: true
+    docker: true
+    rdt: true
+
+matrix-3d3:
+  image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+  command: "stress-ng --matrix-3d 2 --timeout 0"
+  num_cores: 2
+  data:
+    frequency: 2000
+    perf: true
+    docker: true
+    rdt: true
+

@@ -1,0 +1,56 @@
+benchmark:
+  name: FFmpeg Probe Blur/Large
+  description: Probes an FFmpeg container applying blur filter to large video file
+  max_t: 215
+  pid_sync_interval: 100  
+  log_level: info
+  scheduler:
+    implementation: probe_allocation
+    rdt: true
+    log_level: info
+    allocator:
+      implementation: default
+      warmup_t: 30
+      duration: 180
+      step_size_l3: 1
+      step_size_mb: 10 
+      min_l3_ways: 1  
+      max_l3_ways: 12       
+      min_mem_bandwidth: 10 
+      max_mem_bandwidth: 100  
+      order: asc            
+      isolate_others: true   
+      force_reallocation: true
+  data:
+    db:
+      host: ${INFLUXDB_HOST}
+      name: ${INFLUXDB_BUCKET}
+      user: ${INFLUXDB_USER}
+      password: ${INFLUXDB_TOKEN}
+      org: ${INFLUXDB_ORG}
+  docker:
+    registry:
+      host: ${DOCKER_REGISTRY_HOST}
+      username: ${DOCKER_REGISTRY_USERNAME}
+      password: ${DOCKER_REGISTRY_PASSWORD}
+
+ffmpeg:
+  index: 0
+  image: registry.jakob-eberhardt.de/rdt4nn/ffmpeg/base:latest
+  core: 0
+  command: "wget https://lfs.jakob-eberhardt.de/video/320/video.mov && while :; do ffmpeg -i /data/video.mov -vf 'boxblur=10:1' -c:v libx264 -preset fast -crf 23 -c:a copy -y /tmp/output.mp4; done"
+  data:
+    frequency: 100
+    perf:
+      cycles: true
+      instructions: true
+      stalls_total: true
+      stalls_l3_miss: true
+      stalls_l3_miss_percent: true
+      cache_references: true
+      cache_misses: true
+    docker:
+      cpu_usage_percent: true
+    rdt: true
+
+

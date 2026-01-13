@@ -152,6 +152,40 @@ func TestPhysicalCoreAllocator_EnsureAssignedExplicit(t *testing.T) {
 	}
 }
 
+func TestPhysicalCoreAllocator_EnsureAssignedExplicitCPUCoresOnly(t *testing.T) {
+	hc := makeHostConfigEqualSockets(t, 1, 3, 2) // physical: 0,2,4
+	a, err := NewPhysicalCoreAllocator(hc, nil, nil)
+	if err != nil {
+		t.Fatalf("new allocator: %v", err)
+	}
+
+	// Caller provides CPUCores directly (Core string empty).
+	cfg0 := &config.ContainerConfig{Name: "c0", CPUCores: []int{4, 0}}
+	c0, err := a.EnsureAssigned(0, cfg0)
+	if err != nil {
+		t.Fatalf("ensure c0: %v", err)
+	}
+	if got := config.FormatCPUSpec(c0); got != "0,4" {
+		t.Fatalf("c0 cpus=%v got %q", c0, got)
+	}
+	if cfg0.Core != "0,4" {
+		t.Fatalf("cfg0.Core got %q", cfg0.Core)
+	}
+	if got, ok := a.Get(0); !ok || config.FormatCPUSpec(got) != "0,4" {
+		t.Fatalf("allocator state=%v ok=%v", got, ok)
+	}
+
+	// Ensure allocator doesn't reuse reserved CPUs.
+	cfg1 := &config.ContainerConfig{Name: "c1", NumCores: 1}
+	c1, err := a.EnsureAssigned(1, cfg1)
+	if err != nil {
+		t.Fatalf("ensure c1: %v", err)
+	}
+	if got := config.FormatCPUSpec(c1); got != "2" {
+		t.Fatalf("c1 cpus=%v got %q", c1, got)
+	}
+}
+
 func TestPhysicalCoreAllocator_MoveSuccessAcrossSockets(t *testing.T) {
 	hc := makeHostConfigEqualSockets(t, 2, 2, 2) // physical: socket0 {0,2}, socket1 {4,6}
 	applier := &fakeCpusetApplier{}
