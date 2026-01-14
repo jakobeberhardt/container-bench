@@ -136,3 +136,30 @@ func TestDynamicSchedulerV3_AssignCPUCores_PlacesPriorityOnLessPrioritySocket(t 
 }
 
 func ptrBool(v bool) *bool { return &v }
+
+func TestDynamicSchedulerV3_ForceMoveForPriorityAdmission_DefaultEnabled(t *testing.T) {
+	s := NewDynamicSchedulerV3()
+	if !s.forceMoveForPriorityAdmissionEnabled() {
+		t.Fatalf("expected eviction enabled by default")
+	}
+}
+
+func TestDynamicSchedulerV3_ForceMoveForPriorityAdmission_RespectsConfig(t *testing.T) {
+	s := NewDynamicSchedulerV3()
+	s.config = &config.SchedulerConfig{ForceMoveForPriorityAdmission: ptrBool(false)}
+	if s.forceMoveForPriorityAdmissionEnabled() {
+		t.Fatalf("expected eviction disabled when configured")
+	}
+	s.config.ForceMoveForPriorityAdmission = ptrBool(true)
+	if !s.forceMoveForPriorityAdmissionEnabled() {
+		t.Fatalf("expected eviction enabled when configured")
+	}
+}
+
+func TestDynamicSchedulerV3_ForceMoveForPriorityAdmission_AliasEvictForPriorityAdmission(t *testing.T) {
+	s := NewDynamicSchedulerV3()
+	s.config = &config.SchedulerConfig{EvictForPriorityAdmission: ptrBool(false)}
+	if s.forceMoveForPriorityAdmissionEnabled() {
+		t.Fatalf("expected disabled via legacy alias")
+	}
+}

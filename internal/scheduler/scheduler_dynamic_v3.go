@@ -102,8 +102,8 @@ func (s *DynamicSchedulerV3) AssignCPUCores(containerIndex int) ([]int, error) {
 		for _, targetSocket := range preferredSockets {
 			cpus, err := s.pickFreeCPUsOnSocket(targetSocket, requested)
 			if err != nil {
-				// Best-effort: try to free cores by moving non-priority containers away.
-				if s.hostConfig.Topology.Sockets == 2 {
+				// Best-effort: try to free cores by force-moving non-priority containers away.
+				if s.hostConfig.Topology.Sockets == 2 && s.forceMoveForPriorityAdmissionEnabled() {
 					other := 1
 					if targetSocket == 1 {
 						other = 0
@@ -163,6 +163,21 @@ func (s *DynamicSchedulerV3) AssignCPUCores(containerIndex int) ([]int, error) {
 
 	// If we couldn't reserve after retries, fall back to allocator default.
 	return s.DynamicScheduler.AssignCPUCores(containerIndex)
+}
+
+func (s *DynamicSchedulerV3) forceMoveForPriorityAdmissionEnabled() bool {
+	// Default: keep the current behavior enabled unless explicitly disabled.
+	if s.config == nil {
+		return true
+	}
+	if s.config.ForceMoveForPriorityAdmission != nil {
+		return *s.config.ForceMoveForPriorityAdmission
+	}
+	// Backward-compat alias.
+	if s.config.EvictForPriorityAdmission != nil {
+		return *s.config.EvictForPriorityAdmission
+	}
+	return true
 }
 
 func isPriorityContainerConfig(cfg *config.ContainerConfig) bool {
@@ -335,7 +350,7 @@ func (s *DynamicSchedulerV3) pickFreeCPUsOnSocket(socket int, num int) ([]int, e
 }
 
 func (s *DynamicSchedulerV3) tryEvictNonPriorityForCapacity(fromSocket int, toSocket int, neededCores int) bool {
-	// Best-effort eviction: move smallest non-priority containers from fromSocket to toSocket
+	// Best-effort force-move: move smallest non-priority containers from fromSocket to toSocket
 	// to free up capacity for a priority admission.
 	if s.cpuAllocator == nil || s.hostConfig == nil {
 		return false
@@ -404,7 +419,8 @@ func (s *DynamicSchedulerV3) tryEvictNonPriorityForCapacity(fromSocket int, toSo
 			"to_socket":   toSocket,
 			"moved":       moved,
 			"freed_cores": freed,
-		}).Info("Evicted non-priority containers to free cores for priority admission")
+			"action":      "force_move",
+		}).Info("Force-moved non-priority containers to free cores for priority admission")
 		return true
 	}
 	return false

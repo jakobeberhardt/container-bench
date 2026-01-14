@@ -31,7 +31,6 @@ type LeastLoadedScheduler struct {
 	cpuAllocator    cpuallocator.Allocator
 
 	mu           sync.Mutex
-	cond         *sync.Cond
 	queuedSet    map[int]bool
 	shuttingDown bool
 }
@@ -39,11 +38,10 @@ type LeastLoadedScheduler struct {
 func NewLeastLoadedScheduler() *LeastLoadedScheduler {
 	ls := &LeastLoadedScheduler{
 		name:            "least_loaded",
-		version:         "1.0.0",
+		version:         "1.1.0",
 		schedulerLogger: logging.GetSchedulerLogger(),
 		queuedSet:       make(map[int]bool),
 	}
-	ls.cond = sync.NewCond(&ls.mu)
 	return ls
 }
 
@@ -63,7 +61,6 @@ func (ls *LeastLoadedScheduler) ProcessDataFrames(_ *dataframe.DataFrames) error
 func (ls *LeastLoadedScheduler) Shutdown() error {
 	ls.mu.Lock()
 	ls.shuttingDown = true
-	ls.cond.Broadcast()
 	ls.mu.Unlock()
 	return nil
 }
@@ -113,57 +110,53 @@ func (ls *LeastLoadedScheduler) AssignCPUCores(containerIndex int) ([]int, error
 	}
 
 	requested := cfg.GetRequestedNumCores()
-	for {
-		ls.mu.Lock()
-		if ls.shuttingDown {
-			ls.mu.Unlock()
-			return nil, fmt.Errorf("scheduler is shutting down")
-		}
+	ls.mu.Lock()
+	if ls.shuttingDown {
 		ls.mu.Unlock()
+		return nil, fmt.Errorf("scheduler is shutting down")
+	}
+	ls.mu.Unlock()
 
-		cpus, err := ls.pickCPUsLeastLoaded(requested)
-		if err == nil {
-			// Reserve and publish assignment.
-			if err := ls.cpuAllocator.Reserve(containerIndex, cpus); err != nil {
-				// A race with another admission; retry.
-				continue
-			}
-			cfg.CPUCores = append([]int(nil), cpus...)
-			cfg.Core = config.FormatCPUSpec(cpus)
-			// Cache cfg pointer for release logging.
-			_, _ = ls.cpuAllocator.EnsureAssigned(containerIndex, cfg)
-
-			ls.mu.Lock()
-			if ls.queuedSet[containerIndex] {
-				delete(ls.queuedSet, containerIndex)
-			}
-			ls.mu.Unlock()
-
-			ls.schedulerLogger.WithFields(containerLogFields(ls.containers, containerIndex, cfg)).WithFields(logrus.Fields{
-				"cpus":                cpus,
-				"cpuset":              cfg.Core,
-				"requested_num_cores": requested,
-				"source":              "least_loaded",
-			}).Info("Assigned CPU cores")
-
-			return cpus, nil
-		}
-
-		// Not enough cores: enqueue and wait.
+	cpus, err := ls.pickCPUsLeastLoaded(requested)
+	if err != nil {
+		// Non-blocking admission: surface the capacity error and let the benchmark loop
+		// defer admission (strict FIFO) while continuing to tick stop times.
 		ls.mu.Lock()
-		if ls.shuttingDown {
-			ls.mu.Unlock()
-			return nil, fmt.Errorf("scheduler is shutting down")
-		}
 		if !ls.queuedSet[containerIndex] {
 			ls.queuedSet[containerIndex] = true
 			ls.schedulerLogger.WithFields(containerLogFields(ls.containers, containerIndex, cfg)).WithFields(logrus.Fields{
 				"requested_num_cores": requested,
-			}).Info("Queued container: insufficient cores")
+				"reason":             err.Error(),
+			}).Debug("Admission deferred (insufficient CPU capacity)")
 		}
-		ls.cond.Wait()
 		ls.mu.Unlock()
+		return nil, err
 	}
+
+	// Reserve and publish assignment.
+	if err := ls.cpuAllocator.Reserve(containerIndex, cpus); err != nil {
+		// A race with another admission; return the allocator error so admission can be deferred.
+		return nil, err
+	}
+	cfg.CPUCores = append([]int(nil), cpus...)
+	cfg.Core = config.FormatCPUSpec(cpus)
+	// Cache cfg pointer for release logging.
+	_, _ = ls.cpuAllocator.EnsureAssigned(containerIndex, cfg)
+
+	ls.mu.Lock()
+	if ls.queuedSet[containerIndex] {
+		delete(ls.queuedSet, containerIndex)
+	}
+	ls.mu.Unlock()
+
+	ls.schedulerLogger.WithFields(containerLogFields(ls.containers, containerIndex, cfg)).WithFields(logrus.Fields{
+		"cpus":                cpus,
+		"cpuset":              cfg.Core,
+		"requested_num_cores": requested,
+		"source":              "least_loaded",
+	}).Info("Assigned CPU cores")
+
+	return cpus, nil
 }
 
 func (ls *LeastLoadedScheduler) SetProbe(prober *probe.Probe) {
@@ -190,7 +183,9 @@ func (ls *LeastLoadedScheduler) OnContainerStop(containerIndex int) error {
 		ls.cpuAllocator.Release(containerIndex)
 	}
 	ls.mu.Lock()
-	ls.cond.Broadcast()
+	if ls.queuedSet[containerIndex] {
+		delete(ls.queuedSet, containerIndex)
+	}
 	ls.mu.Unlock()
 	for i := range ls.containers {
 		if ls.containers[i].Index == containerIndex {

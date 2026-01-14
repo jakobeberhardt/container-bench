@@ -104,10 +104,24 @@ type SchedulerConfig struct {
 	RDT            bool   `yaml:"rdt"`
 	LogLevel       string `yaml:"log_level,omitempty"`
 
+	// dynamic-v3: when admitting priority containers, allow best-effort force-moves (CPU moves)
+	// of non-priority containers to free cores on the preferred socket.
+	// - nil (omitted): enabled (default)
+	// - false: disabled
+	// - true: enabled
+	ForceMoveForPriorityAdmission *bool `yaml:"force_move_for_priority_admission,omitempty"`
+
+	// Backward-compat alias (deprecated): prefer force_move_for_priority_admission.
+	EvictForPriorityAdmission *bool `yaml:"evict_for_priority_admission,omitempty"`
+
 	// Socket rebalancing (used by implementation: "dynamic")
-	// - nil (omitted): disabled
-	// - false: enabled, move at most one container per tick
-	// - true: enabled, move multiple containers per tick (batch)
+	// - rebalance: enables/disables the feature (default: disabled)
+	// - rebalance_batch: when rebalancing is enabled, controls whether we move multiple
+	//   containers per tick (true) or at most one (false).
+	//
+	// Backward-compatibility: if rebalance is omitted, rebalance_batch=true enables
+	// rebalancing in batch mode; rebalance_batch=false keeps it disabled.
+	Rebalance      *bool `yaml:"rebalance,omitempty"`
 	RebalanceBatch *bool `yaml:"rebalance_batch,omitempty"`
 
 	// Interference-aware scheduler (implementation: "interference_aware")

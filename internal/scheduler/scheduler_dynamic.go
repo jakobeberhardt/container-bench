@@ -385,10 +385,22 @@ func (s *DynamicScheduler) ProcessDataFrames(dfs *dataframe.DataFrames) error {
 }
 
 func (s *DynamicScheduler) rebalanceModeLocked() (enabled bool, batch bool) {
-	if s.config == nil || s.config.RebalanceBatch == nil {
+	if s.config == nil {
 		return false, false
 	}
-	return true, *s.config.RebalanceBatch
+
+	// New semantics: `rebalance` enables the feature; `rebalance_batch` controls batch mode.
+	if s.config.Rebalance != nil {
+		enabled = *s.config.Rebalance
+		batch = s.config.RebalanceBatch != nil && *s.config.RebalanceBatch
+		return enabled, batch
+	}
+
+	// Backward-compat: treat `rebalance_batch: true` as "enable rebalancing (batch)".
+	if s.config.RebalanceBatch != nil && *s.config.RebalanceBatch {
+		return true, true
+	}
+	return false, false
 }
 
 func (s *DynamicScheduler) updateNonCriticalStallsLocked(dfs *dataframe.DataFrames) {

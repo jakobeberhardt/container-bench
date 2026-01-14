@@ -1812,6 +1812,23 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 	exitEvents := make(chan containerExitEvent, len(containers)*2)
 	execEvents := make(chan containerExecEvent, len(containers)*2)
 
+	shouldExitDrain := func(now time.Time) bool {
+		if !drain || maxT <= 0 {
+			return false
+		}
+		elapsed := int(now.Sub(cb.startTime).Seconds())
+		if elapsed < maxT {
+			return false
+		}
+		// After max_t, drain mode waits only for already-running jobs.
+		for _, st := range states {
+			if st.started && !st.stopped {
+				return false
+			}
+		}
+		return true
+	}
+
 	handleExit := func(ev containerExitEvent) error {
 		if ev.waitError == nil {
 			cb.timingsMu.Lock()
@@ -1860,26 +1877,12 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 
 	processSchedule := func(now time.Time) error {
 		elapsedSec := int(now.Sub(cb.startTime).Seconds())
+		maxTReached := maxT > 0 && elapsedSec >= maxT
 
 		// Queue any containers that reached their start time.
 		for idx, st := range states {
 			if st.stopped {
 				continue
-			}
-			if drain && maxT > 0 && st.startSec >= maxT {
-				// Arrival horizon reached; jobs scheduled after max_t are never admitted.
-				if elapsedSec >= maxT {
-					st.stopped = true
-				}
-				continue
-			}
-			if !st.queued && !st.started && elapsedSec >= st.startSec {
-				st.queued = true
-				pending = append(pending, idx)
-				logger.WithFields(logrus.Fields{
-					"index":   idx,
-					"start_t": st.startSec,
-				}).Info("Container queued for scheduler admission")
 			}
 			// If a container never got admitted before its stop time, mark as stopped.
 			if st.started && !st.stopped && elapsedSec >= st.stopSec {
@@ -1893,6 +1896,31 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 					return err
 				}
 			}
+
+			// Admission horizon at max_t:
+			// - hard-stop mode: stop admitting new containers at/after max_t
+			// - drain mode: stop admitting AND drop any not-yet-started containers at/after max_t
+			if maxTReached {
+				if drain {
+					if !st.started {
+						st.stopped = true
+					}
+				}
+				continue
+			}
+
+			if drain && maxT > 0 && st.startSec >= maxT {
+				// Arrival horizon reached; jobs scheduled after max_t are never admitted.
+				continue
+			}
+			if !st.queued && !st.started && elapsedSec >= st.startSec {
+				st.queued = true
+				pending = append(pending, idx)
+				logger.WithFields(logrus.Fields{
+					"index":   idx,
+					"start_t": st.startSec,
+				}).Info("Container queued for scheduler admission")
+			}
 			if !st.started && st.queued && elapsedSec >= st.stopSec {
 				st.stopped = true
 				logger.WithFields(logrus.Fields{
@@ -1902,7 +1930,24 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 			}
 		}
 
+		// Drop any stopped/already-started entries from the pending queue.
+		if len(pending) > 0 {
+			filtered := pending[:0]
+			for _, idx := range pending {
+				st := states[idx]
+				if st == nil || st.stopped || st.started {
+					continue
+				}
+				filtered = append(filtered, idx)
+			}
+			pending = filtered
+		}
+
 		// Admit/start containers from the pending queue (strict FIFO, no backfilling).
+		if maxTReached {
+			// Never admit new containers at/after max_t.
+			return nil
+		}
 		for len(pending) > 0 {
 			idx := pending[0]
 			st := states[idx]
@@ -1963,56 +2008,18 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 				cb.endTime = time.Now()
 				return err
 			}
-			if drain {
-				now := time.Now()
-				elapsed := int(now.Sub(cb.startTime).Seconds())
-				if maxT > 0 && elapsed >= maxT {
-					allDone := len(pending) == 0
-					if allDone {
-						for _, st := range states {
-							if st.started && !st.stopped {
-								allDone = false
-								break
-							}
-							if !st.started && !st.stopped && st.startSec < maxT {
-								allDone = false
-								break
-							}
-						}
-					}
-					if allDone {
-						cb.endTime = now
-						return nil
-					}
-				}
+			if shouldExitDrain(time.Now()) {
+				cb.endTime = time.Now()
+				return nil
 			}
 		case ev := <-execEvents:
 			if err := handleExecFinished(ev); err != nil {
 				cb.endTime = time.Now()
 				return err
 			}
-			if drain {
-				now := time.Now()
-				elapsed := int(now.Sub(cb.startTime).Seconds())
-				if maxT > 0 && elapsed >= maxT {
-					allDone := len(pending) == 0
-					if allDone {
-						for _, st := range states {
-							if st.started && !st.stopped {
-								allDone = false
-								break
-							}
-							if !st.started && !st.stopped && st.startSec < maxT {
-								allDone = false
-								break
-							}
-						}
-					}
-					if allDone {
-						cb.endTime = now
-						return nil
-					}
-				}
+			if shouldExitDrain(time.Now()) {
+				cb.endTime = time.Now()
+				return nil
 			}
 		case <-benchCtx.Done():
 			if !drain && benchCtx.Err() == context.DeadlineExceeded {
@@ -2077,28 +2084,9 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 				cb.endTime = time.Now()
 				return err
 			}
-			if drain {
-				now := time.Now()
-				elapsed := int(now.Sub(cb.startTime).Seconds())
-				if maxT > 0 && elapsed >= maxT {
-					allDone := len(pending) == 0
-					if allDone {
-						for _, st := range states {
-							if st.started && !st.stopped {
-								allDone = false
-								break
-							}
-							if !st.started && !st.stopped && st.startSec < maxT {
-								allDone = false
-								break
-							}
-						}
-					}
-					if allDone {
-						cb.endTime = now
-						return nil
-					}
-				}
+			if shouldExitDrain(time.Now()) {
+				cb.endTime = time.Now()
+				return nil
 			}
 		case <-schedulerTicker.C:
 			// Update scheduler with current data
