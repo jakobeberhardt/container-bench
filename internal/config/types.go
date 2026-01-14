@@ -172,6 +172,14 @@ type ProberConfig struct {
 	Order            string  `yaml:"order,omitempty"` // "asc" (start smallest) or "desc" (start largest)
 	ProbingT         float64 `yaml:"probing_t,omitempty"`
 
+	// BufferWays / BufferMemory add headroom beyond a guarantee-satisfying allocation.
+	// If > 0 and a probe finds an allocation meeting the IPCE guarantee, the scheduler will
+	// attempt to commit an allocation with extra resources (best-effort).
+	// BufferWays is additional L3 ways.
+	// BufferMemory is additional memory steps (multiples of mem_step / MBA granularity).
+	BufferWays   int `yaml:"buffer_ways,omitempty"`
+	BufferMemory int `yaml:"buffer_memory,omitempty"`
+
 	// ProbingFrequency temporarily overrides the container collector sampling frequency (ms)
 	// while the allocation prober is running for a container. If 0: disabled.
 	ProbingFrequency int `yaml:"probing_frequency,omitempty"`

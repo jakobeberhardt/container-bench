@@ -3,7 +3,7 @@ benchmark:
   description: Seed-based generated trace (arrival + length distributions)
   drain: false
   max_t: 180
-  log_level: warn
+  log_level: info
   accounting:
     log_level: info
   scheduler:

@@ -397,29 +397,43 @@ func (rc *RDTCollector) syncCGroupPIDs() error {
 		pidsBefore = []string{} // Continue anyway
 	}
 
-	// PIDs must be added to the control group BEFORE adding to monitoring group
-	// The monitoring group is a subdivision within the control group
-	// Step 1: Add all PIDs to the parent control group first
-	rdtguard.Lock()
-	err = ctrlGroup.AddPids(pids...)
-	rdtguard.Unlock()
-	if err != nil {
-		return fmt.Errorf("failed to add PIDs to RDT control group %s: %v", ctrlName, err)
+	// Add PIDs to the monitoring group (which is within the control group)
+	// IMPORTANT: Do NOT move PIDs into the control group here.
+	// The scheduler owns CLOS placement; during allocation probing it may intentionally
+	// move the container between classes. If the collector calls ctrlGroup.AddPids,
+	// it can race with the scheduler and leave containers stuck in system/default.
+	//
+	// Instead, add PIDs to the monitoring group best-effort. Adding a PID that is not
+	// currently in the parent control group fails with "Can't move task to different
+	// control group"; we skip those and rely on the scheduler to converge placement.
+	added := 0
+	for _, pid := range pids {
+		rdtguard.Lock()
+		err = monGroup.AddPids(pid)
+		rdtguard.Unlock()
+		if err != nil {
+			msg := strings.ToLower(err.Error())
+			if strings.Contains(msg, "different control group") || strings.Contains(msg, "can't move task") {
+				rc.logger.WithError(err).WithFields(logrus.Fields{
+					"pid":        rc.pid,
+					"ctrl_group": ctrlName,
+					"mon_group":  monName,
+					"task_pid":   pid,
+				}).Trace("Skipping PID not in control group for monitoring")
+				continue
+			}
+			return fmt.Errorf("failed to add PID %s to RDT monitoring group: %v", pid, err)
+		}
+		added++
 	}
 
 	rc.logger.WithFields(logrus.Fields{
 		"pid":        rc.pid,
 		"ctrl_group": ctrlName,
-		"pids_count": len(pids),
-	}).Trace("Added PIDs to RDT control group")
-
-	// Step 2: Now add PIDs to the monitoring group (which is within the control group)
-	rdtguard.Lock()
-	err = monGroup.AddPids(pids...)
-	rdtguard.Unlock()
-	if err != nil {
-		return fmt.Errorf("failed to add PIDs to RDT monitoring group: %v", err)
-	}
+		"mon_group":  monName,
+		"added":      added,
+		"total":      len(pids),
+	}).Trace("Added PIDs to RDT monitoring group")
 
 	// Get PIDs after sync
 	rdtguard.Lock()

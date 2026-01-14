@@ -1223,19 +1223,73 @@ func (s *DynamicScheduler) finalizeProbeLocked() error {
 		}
 	}
 
+	// Optional headroom buffer: if the selected allocation meets the guarantee, try to
+	// commit one additional step of resources (best-effort).
+	meetsGuarantee := (ap.descGuarantee && ap.hasLastAbove) || (ap.ascGuarantee && ap.hasFirstAbove)
+	bufWays := 0
+	bufMemSteps := 0
+	if meetsGuarantee && s.config != nil && s.config.Prober != nil {
+		if s.config.Prober.BufferWays > 0 {
+			bufWays = s.config.Prober.BufferWays
+		}
+		if s.config.Prober.BufferMemory > 0 {
+			bufMemSteps = s.config.Prober.BufferMemory
+		}
+	}
+
+	// Determine step/max bounds from the probe range/result.
+	maxWays := 0
+	maxMem := 0.0
+	memStep := 0.0
+	if res != nil {
+		maxWays = res.Range.MaxL3Ways
+		maxMem = res.Range.MaxMemBandwidth
+		memStep = res.Range.StepMemBandwidth
+	}
+	if memStep <= 0 {
+		if s.hostConfig != nil && s.hostConfig.RDT.MBAGranularity > 0 {
+			memStep = float64(s.hostConfig.RDT.MBAGranularity)
+		} else {
+			memStep = 10
+		}
+	}
+	if maxWays <= 0 {
+		maxWays = bestWays
+	}
+	if maxMem <= 0 {
+		maxMem = bestMem
+	}
+
+	desiredWays := bestWays
+	desiredMem := bestMem
+	if meetsGuarantee && (bufWays > 0 || bufMemSteps > 0) {
+		if bufWays > 0 {
+			desiredWays = bestWays + bufWays
+			if desiredWays > maxWays {
+				desiredWays = maxWays
+			}
+		}
+		if bufMemSteps > 0 {
+			desiredMem = bestMem + float64(bufMemSteps)*memStep
+			if desiredMem > maxMem {
+				desiredMem = maxMem
+			}
+		}
+	}
+
 	// Enforce monotonic commit: never lower the committed floor.
 	if p != nil {
+		if desiredWays < p.floorWays {
+			desiredWays = p.floorWays
+		}
+		if desiredMem < p.floorMem {
+			desiredMem = p.floorMem
+		}
 		if bestWays < p.floorWays {
 			bestWays = p.floorWays
 		}
 		if bestMem < p.floorMem {
 			bestMem = p.floorMem
-		}
-		if bestWays > p.floorWays {
-			p.floorWays = bestWays
-		}
-		if bestMem > p.floorMem {
-			p.floorMem = bestMem
 		}
 	}
 
@@ -1243,17 +1297,42 @@ func (s *DynamicScheduler) finalizeProbeLocked() error {
 	// Mark probe as inactive before applying the final allocation so applyAllocationLocked
 	// treats it as a committed (monotonic) update.
 	s.probing = nil
-	_ = s.applyAllocationLocked(idx, ap.socket, bestWays, bestMem)
+
+	appliedWays := bestWays
+	appliedMem := bestMem
+	if desiredWays != bestWays || (desiredMem-bestMem) > 1e-9 {
+		if err := s.applyAllocationLocked(idx, ap.socket, desiredWays, desiredMem); err == nil {
+			appliedWays = desiredWays
+			appliedMem = desiredMem
+		} else {
+			// Fallback to the original best allocation.
+			_ = s.applyAllocationLocked(idx, ap.socket, bestWays, bestMem)
+		}
+	} else {
+		_ = s.applyAllocationLocked(idx, ap.socket, bestWays, bestMem)
+	}
+
+	// Update committed floor after successful apply (best-effort).
+	if p != nil {
+		if appliedWays > p.floorWays {
+			p.floorWays = appliedWays
+		}
+		if appliedMem > p.floorMem {
+			p.floorMem = appliedMem
+		}
+	}
 
 	s.schedulerLogger.WithFields(logrus.Fields{
 		"container": idx,
 		"socket":    ap.socket,
-		"ways":      bestWays,
-		"mem":       bestMem,
+		"ways":      appliedWays,
+		"mem":       appliedMem,
 		"best_eff":  ap.runner.BestEff(),
 		"reason":    ap.runner.StopReason(),
 		"desc_guarantee": ap.descGuarantee,
 		"asc_guarantee":  ap.ascGuarantee,
+		"buffer_ways":    bufWays,
+		"buffer_mem_steps": bufMemSteps,
 	}).Info("Finished dynamic allocation probing")
 
 	return nil
