@@ -2,7 +2,7 @@ benchmark:
   name: Trace Test
   description: Seed-based generated trace (arrival + length distributions)
   drain: false
-  max_t: 90
+  max_t: 180
   log_level: warn
   accounting:
     log_level: info
@@ -52,9 +52,10 @@ benchmark:
 
 neighbor:
   image: registry.jakob-eberhardt.de/neighbor:default  
-  command: "/neighbor --duration 70 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
+  command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
   critical: true
   start_t: 0
+  stop_t: 60
   ipce: 90
   data:
     frequency: 2000
@@ -66,6 +67,7 @@ neighbor-2:
   image: registry.jakob-eberhardt.de/neighbor:default  
   command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
   start_t: 5
+  stop_t: 80
   critical: true
   ipce: 90
   data:
@@ -99,41 +101,41 @@ neighbor-4:
     rdt: true
 
 
-# neighbor-5:
-#   image: registry.jakob-eberhardt.de/neighbor:default  
-#   command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
-#   start_t: 20
-#   critical: true
-#   ipce: 90
-#   data:
-#     frequency: 2000
-#     perf: true
-#     docker: true
-#     rdt: true
+neighbor-5:
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
+  start_t: 80
+  critical: true
+  ipce: 90
+  data:
+    frequency: 2000
+    perf: true
+    docker: true
+    rdt: true
 
-# neighbor-6:
-#   image: registry.jakob-eberhardt.de/neighbor:default  
-#   command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
-#   start_t: 25
-#   critical: true
-#   ipce: 90
-#   data:
-#     frequency: 2000
-#     perf: true
-#     docker: true
-#     rdt: true
+neighbor-6:
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
+  start_t: 90
+  critical: true
+  ipce: 90
+  data:
+    frequency: 2000
+    perf: true
+    docker: true
+    rdt: true
 
-# neighbor-7:
-#   image: registry.jakob-eberhardt.de/neighbor:default  
-#   command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
-#   start_t: 30
-#   critical: true
-#   ipce: 90
-#   data:
-#     frequency: 2000
-#     perf: true
-#     docker: true
-#     rdt: true
+neighbor-7:
+  image: registry.jakob-eberhardt.de/neighbor:default  
+  command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
+  start_t: 100
+  critical: true
+  ipce: 90
+  data:
+    frequency: 2000
+    perf: true
+    docker: true
+    rdt: true
 
 
 matrix-3d0:

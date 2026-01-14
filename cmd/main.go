@@ -56,10 +56,10 @@ func normalizeSchedulerImplementation(input string) (string, error) {
 	impl = strings.NewReplacer("-", "_", " ", "_").Replace(impl)
 
 	switch impl {
-	case "default", "least_loaded", "probe", "allocation", "probe_allocation", "interference_aware", "dynamic":
+	case "default", "least_loaded", "probe", "allocation", "probe_allocation", "interference_aware", "dynamic", "dynamic_v2", "dynamic_v3":
 		return impl, nil
 	default:
-		return "", fmt.Errorf("unknown scheduler %q (allowed: default, least_loaded, probe, allocation, probe_allocation, interference_aware, dynamic)", input)
+		return "", fmt.Errorf("unknown scheduler %q (allowed: default, least_loaded, probe, allocation, probe_allocation, interference_aware, dynamic, dynamic-v2, dynamic-v3)", input)
 	}
 }
 
@@ -653,9 +653,12 @@ func runBenchmark(configFile string, schedulerOverride string) error {
 	case "dynamic":
 		logger.Info("Using dynamic scheduler")
 		bench.scheduler = scheduler.NewDynamicScheduler()
-	case "dynamic-v2":
-		logger.Info("Using dynamic scheduler V2 (refactored with RDT manager)")
-		bench.scheduler = scheduler.NewDynamicSchedulerV2()
+	case "dynamic-v2", "dynamic_v2":
+		logger.Info("Using dynamic scheduler (v2 alias -> v3)")
+		bench.scheduler = scheduler.NewDynamicSchedulerV3()
+	case "dynamic-v3", "dynamic_v3":
+		logger.Info("Using dynamic scheduler v3")
+		bench.scheduler = scheduler.NewDynamicSchedulerV3()
 	default:
 		logger.WithField("implementation", schedulerImpl).Warn("Unknown scheduler implementation, using default")
 		bench.scheduler = scheduler.NewDefaultScheduler()
