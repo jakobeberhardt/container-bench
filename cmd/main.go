@@ -2206,6 +2206,48 @@ func (cb *ContainerBench) writeDatabaseData() error {
 	cb.timingsMu.Unlock()
 
 	containerMeta := database.CollectContainerTimingMetadata(cb.benchmarkID, cb.config, cb.startTime, startTimes, exitTimes, aborted)
+	// For drain-mode benchmarks, include makespan: from first queue entry (min start_t)
+	// to the exit of the last container.
+	if cb.config != nil && cb.config.Benchmark.Drain {
+		minStart := int(^uint(0) >> 1) // max int
+		for _, c := range cb.config.GetContainersSorted() {
+			st := c.GetStartSeconds()
+			if st < minStart {
+				minStart = st
+			}
+		}
+		if minStart == int(^uint(0)>>1) {
+			minStart = 0
+		}
+		startAt := cb.startTime.Add(time.Duration(minStart) * time.Second)
+		endAt := cb.endTime
+		for _, t := range exitTimes {
+			if t.After(endAt) {
+				endAt = t
+			}
+		}
+		makespan := endAt.Sub(startAt).Seconds()
+		if makespan < 0 {
+			makespan = 0
+		}
+		metadata.MakespanSeconds = &makespan
+	}
+	// Derive QoS satisfaction for priority containers from processed metrics.
+	qosByContainer := datahandeling.ComputePriorityQoSMetFractions(cb.config, processedMetrics)
+	if len(qosByContainer) > 0 {
+		for _, m := range containerMeta {
+			res, ok := qosByContainer[m.ContainerIndex]
+			if !ok {
+				continue
+			}
+			metric := string(res.Metric)
+			m.QoSMetric = &metric
+			guarantee := res.Guarantee
+			m.QoSGuarantee = &guarantee
+			fraction := res.FractionMet
+			m.QoSFractionMet = &fraction
+		}
+	}
 
 	var probeResults []*probe.ProbeResult
 	if cb.prober != nil {

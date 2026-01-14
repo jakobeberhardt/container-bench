@@ -64,6 +64,7 @@ type WorkloadConfig struct {
 
 	// Semantic scheduling hints (optional): copied into generated ContainerConfig entries.
 	Critical       bool     `yaml:"critical,omitempty"`
+	Priority       bool     `yaml:"priority,omitempty"`
 	IPC            *float64 `yaml:"ipc,omitempty"`
 	IPCEfficiency  *float64 `yaml:"ipce,omitempty"` // optimal IPC efficiency (0..1) target/label
 

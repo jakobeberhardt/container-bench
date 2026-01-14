@@ -9,23 +9,9 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// DynamicSchedulerV3 isolates containers marked with priority: true using Intel RDT.
-//
-// It reuses the existing DynamicScheduler implementation (allocation-probe runner,
-// guarantee search, and RDT defragmentation) but changes the admission and
-// classification semantics:
-//   - priority: true (and/or critical: true) is treated as "critical" for RDT isolation
-//   - before admission, priority containers are placed onto the socket with fewer
-//     other active priority containers (tie-break: fewer used cores)
-//
-// RDT repacking/defragmentation is handled by the embedded DynamicScheduler's
-// consolidateRDTPartitionsLocked(), which is triggered on container stop.
-
 type DynamicSchedulerV3 struct {
 	*DynamicScheduler
 
-	// explicitCPUPin marks containers that were explicitly pinned via YAML (core/cpu list).
-	// We avoid moving these when trying to free cores for priority admission.
 	explicitCPUPin map[int]bool
 }
 
@@ -41,7 +27,6 @@ func (s *DynamicSchedulerV3) Initialize(accountant *accounting.RDTAccountant, co
 		return err
 	}
 
-	// Reclassify using priority:true (and keep critical:true as a synonym).
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, c := range containers {
@@ -55,7 +40,6 @@ func (s *DynamicSchedulerV3) Initialize(accountant *accounting.RDTAccountant, co
 }
 
 func (s *DynamicSchedulerV3) OnContainerStart(info ContainerInfo) error {
-	// Treat priority:true as critical:true for the embedded scheduler.
 	if info.Config != nil && (info.Config.Priority || info.Config.Critical) {
 		cfgCopy := *info.Config
 		cfgCopy.Critical = true
@@ -65,7 +49,6 @@ func (s *DynamicSchedulerV3) OnContainerStart(info ContainerInfo) error {
 }
 
 func (s *DynamicSchedulerV3) AssignCPUCores(containerIndex int) ([]int, error) {
-	// If no allocator is wired, fall back.
 	if s.cpuAllocator == nil {
 		return s.DynamicScheduler.AssignCPUCores(containerIndex)
 	}
@@ -78,12 +61,12 @@ func (s *DynamicSchedulerV3) AssignCPUCores(containerIndex int) ([]int, error) {
 		return s.DynamicScheduler.AssignCPUCores(containerIndex)
 	}
 
-	// Explicit request or pre-set: let allocator handle it.
+	// Explicit request or pre-set
 	if cfg.Core != "" || len(cfg.CPUCores) > 0 {
 		return s.DynamicScheduler.AssignCPUCores(containerIndex)
 	}
 
-	// Non-priority admission: preserve existing behavior.
+	// Non-priority admission
 	if !isPriorityContainerConfig(cfg) || s.hostConfig.Topology.Sockets <= 1 {
 		return s.DynamicScheduler.AssignCPUCores(containerIndex)
 	}
@@ -96,13 +79,11 @@ func (s *DynamicSchedulerV3) AssignCPUCores(containerIndex int) ([]int, error) {
 		return nil, err
 	}
 
-	// Try a couple of times to handle reserve races.
 	for attempt := 0; attempt < 3; attempt++ {
 		var lastErr error
 		for _, targetSocket := range preferredSockets {
 			cpus, err := s.pickFreeCPUsOnSocket(targetSocket, requested)
 			if err != nil {
-				// Best-effort: try to free cores by force-moving non-priority containers away.
 				if s.hostConfig.Topology.Sockets == 2 && s.forceMoveForPriorityAdmissionEnabled() {
 					other := 1
 					if targetSocket == 1 {
@@ -120,40 +101,39 @@ func (s *DynamicSchedulerV3) AssignCPUCores(containerIndex int) ([]int, error) {
 			}
 
 			if err := s.cpuAllocator.Reserve(containerIndex, cpus); err != nil {
-				// Retry if another admission raced us.
 				lastErr = err
 				continue
 			}
 
-		cfg.CPUCores = append([]int(nil), cpus...)
-		cfg.Core = config.FormatCPUSpec(cpus)
+			cfg.CPUCores = append([]int(nil), cpus...)
+			cfg.Core = config.FormatCPUSpec(cpus)
 
-		assigned, err := s.cpuAllocator.EnsureAssigned(containerIndex, cfg)
-		if err != nil {
-			// Best-effort cleanup.
-			s.cpuAllocator.Release(containerIndex)
-			return nil, err
-		}
+			assigned, err := s.cpuAllocator.EnsureAssigned(containerIndex, cfg)
+			if err != nil {
+				// Best-effort cleanup.
+				s.cpuAllocator.Release(containerIndex)
+				return nil, err
+			}
 
-		sock := 0
-		if v, err := s.hostConfig.SocketOfPhysicalCPUs(assigned); err == nil {
-			sock = v
-		}
+			sock := 0
+			if v, err := s.hostConfig.SocketOfPhysicalCPUs(assigned); err == nil {
+				sock = v
+			}
 
-		s.mu.Lock()
-		p := s.profileLocked(containerIndex)
-		p.socket = sock
-		s.mu.Unlock()
+			s.mu.Lock()
+			p := s.profileLocked(containerIndex)
+			p.socket = sock
+			s.mu.Unlock()
 
-		s.schedulerLogger.WithFields(containerLogFields(s.containers, containerIndex, cfg)).WithFields(logrus.Fields{
-			"cpus":                assigned,
-			"cpuset":              cfg.Core,
-			"requested_num_cores": requested,
-			"target_socket":       sock,
-			"source":              "dynamic_v3_priority_socket",
-		}).Info("Assigned CPU cores")
+			s.schedulerLogger.WithFields(containerLogFields(s.containers, containerIndex, cfg)).WithFields(logrus.Fields{
+				"cpus":                assigned,
+				"cpuset":              cfg.Core,
+				"requested_num_cores": requested,
+				"target_socket":       sock,
+				"source":              "dynamic_v3_priority_socket",
+			}).Info("Assigned CPU cores")
 
-		return assigned, nil
+			return assigned, nil
 		}
 		if lastErr != nil {
 			// Next attempt.
@@ -161,7 +141,6 @@ func (s *DynamicSchedulerV3) AssignCPUCores(containerIndex int) ([]int, error) {
 		}
 	}
 
-	// If we couldn't reserve after retries, fall back to allocator default.
 	return s.DynamicScheduler.AssignCPUCores(containerIndex)
 }
 
@@ -173,7 +152,6 @@ func (s *DynamicSchedulerV3) forceMoveForPriorityAdmissionEnabled() bool {
 	if s.config.ForceMoveForPriorityAdmission != nil {
 		return *s.config.ForceMoveForPriorityAdmission
 	}
-	// Backward-compat alias.
 	if s.config.EvictForPriorityAdmission != nil {
 		return *s.config.EvictForPriorityAdmission
 	}
@@ -188,7 +166,7 @@ func isPriorityContainerConfig(cfg *config.ContainerConfig) bool {
 }
 
 func (s *DynamicSchedulerV3) findContainerConfig(containerIndex int) *config.ContainerConfig {
-	// containers slice is maintained by orchestration; best-effort lookup.
+	// containers slice is maintained by orchestration best-effort lookup.
 	for i := range s.containers {
 		if s.containers[i].Index == containerIndex {
 			return s.containers[i].Config
@@ -425,5 +403,3 @@ func (s *DynamicSchedulerV3) tryEvictNonPriorityForCapacity(fromSocket int, toSo
 	}
 	return false
 }
-
-// NOTE: socket ranking and cpu picking live in rankSocketsForPriorityPlacement and pickFreeCPUsOnSocket.

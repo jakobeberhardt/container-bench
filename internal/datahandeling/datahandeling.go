@@ -197,6 +197,10 @@ func (h *DefaultDataHandler) ProcessDataFrames(benchmarkID int, benchmarkConfig 
 			steps = append(steps, metricStep)
 		}
 
+		sort.Slice(steps, func(i, j int) bool {
+			return steps[i].StepNumber < steps[j].StepNumber
+		})
+
 		containerMetrics = append(containerMetrics, ContainerMetrics{
 			ContainerIndex: containerIndex,
 			ContainerName:  containerName,

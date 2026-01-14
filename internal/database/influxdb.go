@@ -38,6 +38,7 @@ type BenchmarkMetadata struct {
 	Description            string  `json:"description"`
 	TraceChecksum          string  `json:"trace_checksum"`
 	DurationSeconds        int64   `json:"duration_seconds"`
+	MakespanSeconds        *float64 `json:"makespan_seconds,omitempty"`
 	BenchmarkStarted       string  `json:"benchmark_started"`
 	BenchmarkFinished      string  `json:"benchmark_finished"`
 	TotalContainers        int     `json:"total_containers"`
@@ -87,8 +88,12 @@ type ContainerTimingMetadata struct {
 	ContainerIndex   int
 	ContainerName    string
 	Critical         bool
+	Priority         bool
 	TargetIPC        *float64
 	TargetIPCE       *float64
+	QoSMetric        *string
+	QoSGuarantee     *float64
+	QoSFractionMet   *float64
 	StartTSeconds    int
 	WaitTSeconds     *int
 	StopTSeconds     int
@@ -382,11 +387,22 @@ func (idb *InfluxDBClient) writePointsBatch(points []*write.Point, batchNum, tot
 func (idb *InfluxDBClient) WriteBenchmarkMetrics(benchmarkID int, benchmarkConfig *config.BenchmarkConfig, metrics *datahandeling.BenchmarkMetrics, startTime, endTime time.Time) error {
 	logger := logging.GetLogger()
 
+	priorityByIndex := make(map[int]bool)
+	if benchmarkConfig != nil {
+		for _, c := range benchmarkConfig.GetContainersSorted() {
+			priorityByIndex[c.Index] = c.Priority || c.Critical
+		}
+	}
+
 	// Create points for all container data
 	var points []*write.Point
 
 	for _, containerMetrics := range metrics.ContainerMetrics {
+		priority := priorityByIndex[containerMetrics.ContainerIndex]
 		for _, step := range containerMetrics.Steps {
+			fields := idb.createFieldsFromMetricStep(&step)
+			fields["priority"] = priority
+
 			// Create base point with common tags
 			point := influxdb2.NewPoint("benchmark_metrics",
 				map[string]string{
@@ -395,10 +411,11 @@ func (idb *InfluxDBClient) WriteBenchmarkMetrics(benchmarkID int, benchmarkConfi
 					"container_name":     containerMetrics.ContainerName,
 					"container_image":    containerMetrics.ContainerImage,
 					"container_core":     containerMetrics.ContainerCore,
+					"priority":           fmt.Sprintf("%t", priority),
 					"benchmark_started":  startTime.Format(time.RFC3339),
 					"benchmark_finished": endTime.Format(time.RFC3339),
 				},
-				idb.createFieldsFromMetricStep(&step),
+				fields,
 				step.Timestamp)
 
 			points = append(points, point)
@@ -465,54 +482,59 @@ func (idb *InfluxDBClient) WriteBenchmarkMetrics(benchmarkID int, benchmarkConfi
 func (idb *InfluxDBClient) WriteMetadata(metadata *BenchmarkMetadata) error {
 	logger := logging.GetLogger()
 
+	fields := map[string]interface{}{
+		"benchmark_name":            metadata.BenchmarkName,
+		"description":               metadata.Description,
+		"trace_checksum":            metadata.TraceChecksum,
+		"duration_seconds":          metadata.DurationSeconds,
+		"benchmark_started":         metadata.BenchmarkStarted,
+		"benchmark_finished":        metadata.BenchmarkFinished,
+		"total_containers":          metadata.TotalContainers,
+		"driver_version":            metadata.DriverVersion,
+		"used_scheduler":            metadata.UsedScheduler,
+		"scheduler_version":         metadata.SchedulerVersion,
+		"hostname":                  metadata.Hostname,
+		"execution_host":            metadata.ExecutionHost,
+		"os_info":                   metadata.OSInfo,
+		"kernel_version":            metadata.KernelVersion,
+		"cpu_vendor":                metadata.CPUVendor,
+		"cpu_model":                 metadata.CPUModel,
+		"total_cpu_cores":           metadata.TotalCPUCores,
+		"cpu_threads":               metadata.CPUThreads,
+		"cpu_sockets":               metadata.CPUSockets,
+		"l1_cache_size_kb":          metadata.L1CacheSizeKB,
+		"l2_cache_size_kb":          metadata.L2CacheSizeKB,
+		"l3_cache_size_bytes":       metadata.L3CacheSizeBytes,
+		"l3_cache_size_mb":          metadata.L3CacheSizeMB,
+		"l3_cache_ways":             metadata.L3CacheWays,
+		"rdt_supported":             metadata.RDTSupported,
+		"rdt_monitoring_supported":  metadata.RDTMonitoringSupported,
+		"rdt_allocation_supported":  metadata.RDTAllocationSupported,
+		"max_memory_bandwidth_mbps": metadata.MaxMemoryBandwidthMBps,
+		"max_duration_seconds":      metadata.MaxDurationSeconds,
+		"sampling_frequency_ms":     metadata.SamplingFrequencyMS,
+		"total_sampling_steps":      metadata.TotalSamplingSteps,
+		"total_measurements":        metadata.TotalMeasurements,
+		"total_data_size_bytes":     metadata.TotalDataSizeBytes,
+		"config_file":               metadata.ConfigFile,
+		"prober_enabled":            metadata.ProberEnabled,
+		"prober_implementation":     metadata.ProberImplementation,
+		"prober_abortable":          metadata.ProberAbortable,
+		"prober_isolated":           metadata.ProberIsolated,
+		"perf_enabled":              metadata.PerfEnabled,
+		"docker_stats_enabled":      metadata.DockerStatsEnabled,
+		"rdt_enabled":               metadata.RDTEnabled,
+	}
+	if metadata.MakespanSeconds != nil {
+		fields["makespan_seconds"] = *metadata.MakespanSeconds
+	}
+
 	// Create point for metadata
 	point := influxdb2.NewPoint("benchmark_meta",
 		map[string]string{
 			"benchmark_id": fmt.Sprintf("%d", metadata.BenchmarkID),
 		},
-		map[string]interface{}{
-			"benchmark_name":            metadata.BenchmarkName,
-			"description":               metadata.Description,
-			"trace_checksum":            metadata.TraceChecksum,
-			"duration_seconds":          metadata.DurationSeconds,
-			"benchmark_started":         metadata.BenchmarkStarted,
-			"benchmark_finished":        metadata.BenchmarkFinished,
-			"total_containers":          metadata.TotalContainers,
-			"driver_version":            metadata.DriverVersion,
-			"used_scheduler":            metadata.UsedScheduler,
-			"scheduler_version":         metadata.SchedulerVersion,
-			"hostname":                  metadata.Hostname,
-			"execution_host":            metadata.ExecutionHost,
-			"os_info":                   metadata.OSInfo,
-			"kernel_version":            metadata.KernelVersion,
-			"cpu_vendor":                metadata.CPUVendor,
-			"cpu_model":                 metadata.CPUModel,
-			"total_cpu_cores":           metadata.TotalCPUCores,
-			"cpu_threads":               metadata.CPUThreads,
-			"cpu_sockets":               metadata.CPUSockets,
-			"l1_cache_size_kb":          metadata.L1CacheSizeKB,
-			"l2_cache_size_kb":          metadata.L2CacheSizeKB,
-			"l3_cache_size_bytes":       metadata.L3CacheSizeBytes,
-			"l3_cache_size_mb":          metadata.L3CacheSizeMB,
-			"l3_cache_ways":             metadata.L3CacheWays,
-			"rdt_supported":             metadata.RDTSupported,
-			"rdt_monitoring_supported":  metadata.RDTMonitoringSupported,
-			"rdt_allocation_supported":  metadata.RDTAllocationSupported,
-			"max_memory_bandwidth_mbps": metadata.MaxMemoryBandwidthMBps,
-			"max_duration_seconds":      metadata.MaxDurationSeconds,
-			"sampling_frequency_ms":     metadata.SamplingFrequencyMS,
-			"total_sampling_steps":      metadata.TotalSamplingSteps,
-			"total_measurements":        metadata.TotalMeasurements,
-			"total_data_size_bytes":     metadata.TotalDataSizeBytes,
-			"config_file":               metadata.ConfigFile,
-			"prober_enabled":            metadata.ProberEnabled,
-			"prober_implementation":     metadata.ProberImplementation,
-			"prober_abortable":          metadata.ProberAbortable,
-			"prober_isolated":           metadata.ProberIsolated,
-			"perf_enabled":              metadata.PerfEnabled,
-			"docker_stats_enabled":      metadata.DockerStatsEnabled,
-			"rdt_enabled":               metadata.RDTEnabled,
-		},
+		fields,
 		time.Now())
 
 	logger.WithField("benchmark_id", metadata.BenchmarkID).Info("Writing benchmark metadata to InfluxDB")
@@ -555,6 +577,7 @@ func (idb *InfluxDBClient) WriteContainerTimingMetadata(containerMetadata []*Con
 			"actual_t":    m.ActualTSeconds,
 			"job_aborted": m.JobAborted,
 			"critical":    m.Critical,
+			"priority":    m.Priority,
 		}
 		if m.WaitTSeconds != nil {
 			fields["wait_t"] = *m.WaitTSeconds
@@ -564,6 +587,15 @@ func (idb *InfluxDBClient) WriteContainerTimingMetadata(containerMetadata []*Con
 		}
 		if m.TargetIPCE != nil {
 			fields["target_ipce"] = *m.TargetIPCE
+		}
+		if m.QoSMetric != nil {
+			fields["qos_metric"] = *m.QoSMetric
+		}
+		if m.QoSGuarantee != nil {
+			fields["qos_guarantee"] = *m.QoSGuarantee
+		}
+		if m.QoSFractionMet != nil {
+			fields["qos_fraction_met"] = *m.QoSFractionMet
 		}
 		if m.ExpectedTSeconds != nil {
 			fields["expected_t"] = *m.ExpectedTSeconds
@@ -897,6 +929,7 @@ func CollectContainerTimingMetadata(benchmarkID int, cfg *config.BenchmarkConfig
 			ContainerIndex:   c.Index,
 			ContainerName:    c.GetContainerName(benchmarkID),
 			Critical:         c.Critical,
+			Priority:         c.Priority || c.Critical,
 			TargetIPC:        c.IPC,
 			TargetIPCE:       c.IPCEfficiency,
 			StartTSeconds:    startT,

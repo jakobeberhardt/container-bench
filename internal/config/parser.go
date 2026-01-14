@@ -563,6 +563,7 @@ func expandGeneratedTrace(cfg *BenchmarkConfig) (map[string]ContainerConfig, []s
 			Command:   w.Command,
 			NumCores:  cores,
 			Critical:  w.Critical,
+			Priority:  w.Priority,
 			IPC:       w.IPC,
 			IPCEfficiency: w.IPCEfficiency,
 			StartT:    &st,
