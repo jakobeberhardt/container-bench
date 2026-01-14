@@ -653,6 +653,9 @@ func runBenchmark(configFile string, schedulerOverride string) error {
 	case "dynamic":
 		logger.Info("Using dynamic scheduler")
 		bench.scheduler = scheduler.NewDynamicScheduler()
+	case "dynamic-v2":
+		logger.Info("Using dynamic scheduler V2 (refactored with RDT manager)")
+		bench.scheduler = scheduler.NewDynamicSchedulerV2()
 	default:
 		logger.WithField("implementation", schedulerImpl).Warn("Unknown scheduler implementation, using default")
 		bench.scheduler = scheduler.NewDefaultScheduler()
