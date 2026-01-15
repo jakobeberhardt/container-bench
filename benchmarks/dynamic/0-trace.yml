@@ -1,20 +1,20 @@
 benchmark:
-  name: Example Trace
+  name: Balanced
   description: Runs a trace with different scheduler
-  drain: true
-  max_t: 90
-  log_level: info
+  drain: false
+  max_t: 600
+  log_level: warn
   accounting:
     log_level: info
   scheduler:
-    implementation: default #dynamic-v3
+    implementation: dynamic-v3
     prober:
       log_level: info
-      min_l3: 2
+      min_l3: 1
       max_l3: 11
       step_l3: 1
       min_mem: 10
-      max_mem: 30
+      max_mem: 20
       mem_step: 10
       probing_t: 20
       order: asc
@@ -57,30 +57,28 @@ benchmark:
 arrival:
   seed: 1
   mean: 5
-  sigma: 0
+  sigma: 2
   length:
-    mean: 70
+    mean: 140
     sigma: 30
-    min: 20
+    min: 60
   split:
-    random: true
+    random: false
     single-thread: 50
-    multi-programmed: 10
-    multi-thread: 30
-    iobound: 10
+    multi-thread: 50
+
   sensitivities:
-    random: true
-    low: 50
-    medium: 25
+    random: false
+    low: 75
     high: 25
 
   priority_split:
     random: false
-    priority: 50
-    nonpriority: 50
+    priority: 25
+    nonpriority: 75
 
 data:
-  frequency: 2000
+  frequency: 4000
   perf:
     instructions: true
     cycles: true
@@ -91,28 +89,8 @@ data:
   rdt: true
 
 workloads:
-
-  neighbor:
-    image: registry.jakob-eberhardt.de/neighbor:default  
-    command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
-    critical: true
-    ipce: 90
-    kind: single-thread
-    sensitivity: high
-
-  matrix-3d:
-    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-    command: "stress-ng --matrix-3d 7 --timeout 0"
-    critical: false
-    num_cores: 5
-    kind: single-thread
-    sensitivity: high
-
-  matrix-3d-single:
-    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
-    command: "stress-ng --matrix-3d 1 --timeout 0"
-    critical: false
-    num_cores: 1
-    kind: single-thread
-    sensitivity: high
+  input:
+    - ./jobs/stress-ng
+    - ./jobs/compression
+    - ./jobs/priority
 

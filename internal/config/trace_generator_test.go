@@ -116,3 +116,115 @@ func TestGeneratedTraceArrivalStartTimesStrictlyIncreasing(t *testing.T) {
 		prev = cur
 	}
 }
+
+func TestExpandGeneratedTrace_PrioritySplitSelectsTemplates(t *testing.T) {
+	baseCfg := &BenchmarkConfig{
+		Benchmark: BenchmarkInfo{
+			Name: "trace-priority-split",
+			MaxT: 120,
+			Data: DataConfig{DB: DatabaseConfig{Host: "h", Name: "n", User: "u", Password: "p", Org: "o"}},
+		},
+		Arrival: &ArrivalConfig{
+			Seed:          42,
+			Mean:          10,
+			Sigma:         0,
+			Length:        &NormalDistConfig{Mean: 30, Sigma: 0, Min: 10},
+			Split:         WeightedSet{Random: true},
+			Sensitivities: WeightedSet{Random: true},
+		},
+		Data: &CollectorConfig{Frequency: 2000, Perf: map[string]bool{"instructions": true}, Docker: map[string]bool{"cpu_usage_total": true}, RDT: true},
+		Workloads: map[string]WorkloadConfig{
+			"prio":    {Image: "img", Command: "cmd-prio --timeout 0", NumCores: 1, Critical: false, Priority: true},
+			"nonprio": {Image: "img", Command: "cmd-nonprio --timeout 0", NumCores: 1, Critical: false, Priority: false},
+		},
+	}
+
+	// Force all generated jobs to be priority.
+	cfgP := *baseCfg
+	arrP := *baseCfg.Arrival
+	cfgP.Arrival = &arrP
+	cfgP.Arrival.PrioritySplit = WeightedSet{Random: false, Weights: map[string]float64{"priority": 1, "nonpriority": 0}}
+	containers, order, err := expandGeneratedTrace(&cfgP)
+	if err != nil {
+		t.Fatalf("expandGeneratedTrace priority: %v", err)
+	}
+	if len(order) == 0 {
+		t.Fatalf("expected jobs")
+	}
+	for _, k := range order {
+		c := containers[k]
+		if !c.Priority {
+			t.Fatalf("expected generated container %q to be priority", k)
+		}
+		if c.Command != "cmd-prio --timeout 0" {
+			t.Fatalf("expected priority template for %q, got command=%q", k, c.Command)
+		}
+	}
+
+	// Force all generated jobs to be non-priority.
+	cfgN := *baseCfg
+	arrN := *baseCfg.Arrival
+	cfgN.Arrival = &arrN
+	cfgN.Arrival.PrioritySplit = WeightedSet{Random: false, Weights: map[string]float64{"priority": 0, "nonpriority": 1}}
+	containers2, order2, err := expandGeneratedTrace(&cfgN)
+	if err != nil {
+		t.Fatalf("expandGeneratedTrace nonpriority: %v", err)
+	}
+	if len(order2) == 0 {
+		t.Fatalf("expected jobs")
+	}
+	for _, k := range order2 {
+		c := containers2[k]
+		if c.Priority {
+			t.Fatalf("expected generated container %q to be nonpriority", k)
+		}
+		if c.Command != "cmd-nonprio --timeout 0" {
+			t.Fatalf("expected nonpriority template for %q, got command=%q", k, c.Command)
+		}
+	}
+}
+
+func TestExpandGeneratedTrace_PrioritySplitRelaxesKindBeforePriority(t *testing.T) {
+	cfg := &BenchmarkConfig{
+		Benchmark: BenchmarkInfo{
+			Name: "trace-priority-split-relax",
+			MaxT: 60,
+			Data: DataConfig{DB: DatabaseConfig{Host: "h", Name: "n", User: "u", Password: "p", Org: "o"}},
+		},
+		Arrival: &ArrivalConfig{
+			Seed:  1,
+			Mean:  10,
+			Sigma: 0,
+			Length: &NormalDistConfig{Mean: 20, Sigma: 0, Min: 10},
+			// Always pick single-thread kind.
+			Split: WeightedSet{Random: false, Weights: map[string]float64{"single-thread": 1}},
+			Sensitivities: WeightedSet{Random: true},
+			// Always request nonpriority.
+			PrioritySplit: WeightedSet{Random: false, Weights: map[string]float64{"priority": 0, "nonpriority": 1}},
+		},
+		Data: &CollectorConfig{Frequency: 2000, Perf: map[string]bool{"instructions": true}, Docker: map[string]bool{"cpu_usage_total": true}, RDT: true},
+		Workloads: map[string]WorkloadConfig{
+			// Priority matches the chosen kind.
+			"prio-st": {Image: "img", Command: "cmd-prio --timeout 0", NumCores: 1, Priority: true, Kind: "single-thread"},
+			// Nonpriority is multi-thread only.
+			"nonprio-mt": {Image: "img", Command: "cmd-nonprio --timeout 0", NumCores: 1, Priority: false, Kind: "multi-thread"},
+		},
+	}
+
+	containers, order, err := expandGeneratedTrace(cfg)
+	if err != nil {
+		t.Fatalf("expandGeneratedTrace: %v", err)
+	}
+	if len(order) == 0 {
+		t.Fatalf("expected jobs")
+	}
+	for _, k := range order {
+		c := containers[k]
+		if c.Priority {
+			t.Fatalf("expected %q to be nonpriority (relax kind before priority)", k)
+		}
+		if c.Command != "cmd-nonprio --timeout 0" {
+			t.Fatalf("expected nonpriority template for %q, got command=%q", k, c.Command)
+		}
+	}
+}

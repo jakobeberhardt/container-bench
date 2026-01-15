@@ -1,0 +1,29 @@
+workloads:
+
+  matrix-3d-128:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --matrix-3d 1 --matrix-3d-size 128 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: high
+
+  matrix-3d-196:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --matrix-3d 1 --matrix-3d-size 196 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: high
+
+  matrix-3d-256:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --matrix-3d 1 --matrix-3d-size 256 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  matrix-3d-1024:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --matrix-3d 1 --matrix-3d-size 1024 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low

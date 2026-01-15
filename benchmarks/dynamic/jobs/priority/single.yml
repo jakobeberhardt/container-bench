@@ -1,0 +1,25 @@
+workloads:
+
+  neighbor-6mb-huge:
+    image: registry.jakob-eberhardt.de/neighbor:default  
+    command: "/neighbor --duration 3600 --buffer-size 6MB --pattern random --hugepages hugetlb-1g"
+    priority: true
+    ipce: 90
+    kind: single-thread
+    sensitivity: high
+
+  neighbor-4mb-huge:
+    image: registry.jakob-eberhardt.de/neighbor:default  
+    command: "/neighbor --duration 3600 --buffer-size 4MB --pattern random --hugepages hugetlb-1g"
+    priority: true
+    ipce: 90
+    kind: single-thread
+    sensitivity: high
+
+  neighbor-2mb-huge:
+    image: registry.jakob-eberhardt.de/neighbor:default  
+    command: "/neighbor --duration 3600 --buffer-size 2MB --pattern random --hugepages hugetlb-1g"
+    priority: true
+    ipce: 90
+    kind: single-thread
+    sensitivity: high

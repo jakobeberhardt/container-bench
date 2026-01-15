@@ -1,20 +1,26 @@
 benchmark:
   name: Stress-ng Probe Tsearch Size 32768
   description: Probe workload using stress-ng tsearch with --tsearch-size 32768.
-  max_t: 70
+  max_t: 180
+  pid_sync_interval: 100  
   log_level: info
   scheduler:
-    implementation: probe
-    rdt: false
-    log_level: error
-    prober:
+    implementation: probe_allocation
+    rdt: true
+    log_level: info
+    allocator:
       implementation: default
-      abortable: false
-      isolated: true
-      default_t: 60
-      warmup_t: 5
-      cooldown_t: 0
-      default_probe_cores: 1
+      warmup_t: 10
+      duration: 160
+      step_size_l3: 1
+      step_size_mb: 10 
+      min_l3_ways: 1  
+      max_l3_ways: 12       
+      min_mem_bandwidth: 10 
+      max_mem_bandwidth: 100  
+      order: asc            
+      isolate_others: true   
+      force_reallocation: true
   data:
     db:
       host: ${INFLUXDB_HOST}
@@ -36,6 +42,8 @@ c0:
       stalls_total: true
       stalls_l3_miss: true
       stalls_l3_miss_percent: true
+      cache_references: true
+      cache_misses: true
     docker:
       cpu_usage_percent: true
     rdt: true

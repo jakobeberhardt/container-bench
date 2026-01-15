@@ -2,7 +2,7 @@ benchmark:
   name: Example Trace
   description: Runs a trace with different scheduler
   drain: true
-  max_t: 3600
+  max_t: 250
   log_level: info
   accounting:
     log_level: info
@@ -56,23 +56,28 @@ benchmark:
 
 arrival:
   seed: 1
-  mean: 5
+  mean: 1
   sigma: 0
   length:
-    mean: 70
+    mean: 200
     sigma: 30
     min: 20
   split:
     random: true
     single-thread: 50
-    multi-programmed: 10
-    multi-thread: 30
-    iobound: 10
+    multi-programmed: 0
+    multi-thread: 50
+    iobound: 0
   sensitivities:
     random: true
     low: 50
     medium: 25
     high: 25
+
+  priority_split:
+    random: false
+    priority: 50
+    nonpriority: 50
 
 data:
   frequency: 2000

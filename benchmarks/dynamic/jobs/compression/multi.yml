@@ -1,0 +1,21 @@
+workloads:
+  7z-1-large-multi:
+    image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+    num_cores: 2
+    command: "while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=1 -mmt=2  dummy.7z /data/*.bin; done"
+    kind: multi-thread
+    sensitivity: low
+
+  7z-2-large-multi:
+    image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+    num_cores: 2
+    command: "while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=2 -mmt=2  dummy.7z /data/*.bin; done"
+    kind: multi-thread
+    sensitivity: low
+
+  7z-3-large-multi:
+    image: registry.jakob-eberhardt.de/rdt4nn/compression/base:latest
+    num_cores: 2
+    command: "while :; do rm -f /data/dummy.7z && /populate.sh 1000 && 7z a -mx=3 -mmt=2  dummy.7z /data/*.bin; done"
+    kind: multi-thread
+    sensitivity: low

@@ -1,0 +1,15 @@
+workloads:
+  tsearch-2:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --tsearch 1 --tsearch-size 131072 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+
+  tsearch-3:
+    image: registry.jakob-eberhardt.de/rdt4nn/stress-ng
+    command: "stress-ng --tsearch 1 --tsearch-size 1048576 --timeout 0"
+    num_cores: 1
+    kind: single-thread
+    sensitivity: low
+      

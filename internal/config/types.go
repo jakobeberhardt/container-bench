@@ -33,6 +33,12 @@ type ArrivalConfig struct {
 	// If Random is true, weights are ignored.
 	Sensitivities WeightedSet `yaml:"sensitivities,omitempty"`
 	Sensetivities WeightedSet `yaml:"sensetivities,omitempty"` // backward/typo compatibility
+
+	// PrioritySplit optionally overrides the generated containers' priority/critical flags.
+	// Configure a mapping with keys "priority" and "nonpriority" (weights).
+	// If omitted (or Random is true), the workload template's `priority`/`critical` fields are used.
+	PrioritySplit WeightedSet `yaml:"priority_split,omitempty"`
+	Priorities    WeightedSet `yaml:"priorities,omitempty"` // alias for priority_split
 }
 
 type NormalDistConfig struct {

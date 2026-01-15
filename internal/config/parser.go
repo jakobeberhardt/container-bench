@@ -463,6 +463,18 @@ func expandGeneratedTrace(cfg *BenchmarkConfig) (map[string]ContainerConfig, []s
 		return keys[len(keys)-1], true
 	}
 
+	parsePriorityOverride := func(label string) (bool, bool) {
+		s := strings.ToLower(strings.TrimSpace(label))
+		switch s {
+		case "priority":
+			return true, true
+		case "nonpriority":
+			return false, true
+		default:
+			return false, false
+		}
+	}
+
 	sampleNormalClamped := func(mean, sigma, min, max float64) float64 {
 		v := mean
 		if sigma > 0 {
@@ -500,20 +512,64 @@ func expandGeneratedTrace(cfg *BenchmarkConfig) (map[string]ContainerConfig, []s
 			sensitivity = v
 		}
 
-		// Pick a workload template matching (kind, sensitivity) when possible.
-		candidates := make([]string, 0)
-		for _, k := range templateKeys {
-			w := cfg.Workloads[k]
-			if w.Image == "" || w.Command == "" {
-				continue
+		priorityWS := cfg.Arrival.PrioritySplit
+		if len(priorityWS.Weights) == 0 && len(cfg.Arrival.Priorities.Weights) > 0 {
+			priorityWS = cfg.Arrival.Priorities
+		}
+		desiredPriority := false
+		hasPriorityConstraint := false
+		if v, ok := chooseFromWeights(priorityWS); ok {
+			if p, ok2 := parsePriorityOverride(v); ok2 {
+				desiredPriority = p
+				hasPriorityConstraint = true
 			}
-			if kind != "" && w.Kind != "" && w.Kind != kind {
-				continue
+		}
+
+		// Pick a workload template matching (kind, sensitivity, priority) when possible.
+		// Important: if priority_split is configured, we relax kind/sensitivity before relaxing
+		// the priority constraint. Otherwise the realized priority ratio can be badly skewed.
+		buildCandidates := func(applyKind bool, applySensitivity bool, applyPriority bool) []string {
+			cands := make([]string, 0)
+			for _, k := range templateKeys {
+				w := cfg.Workloads[k]
+				if w.Image == "" || w.Command == "" {
+					continue
+				}
+				if applyKind {
+					if kind != "" && w.Kind != "" && w.Kind != kind {
+						continue
+					}
+				}
+				if applySensitivity {
+					if sensitivity != "" && w.Sensitivity != "" && w.Sensitivity != sensitivity {
+						continue
+					}
+				}
+				if applyPriority && hasPriorityConstraint {
+					isPrio := w.Priority || w.Critical
+					if isPrio != desiredPriority {
+						continue
+					}
+				}
+				cands = append(cands, k)
 			}
-			if sensitivity != "" && w.Sensitivity != "" && w.Sensitivity != sensitivity {
-				continue
-			}
-			candidates = append(candidates, k)
+			return cands
+		}
+
+		candidates := buildCandidates(true, true, true)
+		if len(candidates) == 0 && hasPriorityConstraint {
+			// Relax kind/sensitivity first (keep priority bucket).
+			candidates = buildCandidates(false, true, true)
+		}
+		if len(candidates) == 0 && hasPriorityConstraint {
+			candidates = buildCandidates(true, false, true)
+		}
+		if len(candidates) == 0 && hasPriorityConstraint {
+			candidates = buildCandidates(false, false, true)
+		}
+		if len(candidates) == 0 && hasPriorityConstraint {
+			// Only if we truly can't satisfy the requested bucket, relax priority.
+			candidates = buildCandidates(true, true, false)
 		}
 		if len(candidates) == 0 {
 			// Relax constraints.

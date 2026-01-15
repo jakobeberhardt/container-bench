@@ -129,7 +129,10 @@ For long experiments, you can generate a trace from distributions instead of man
 - Add `workloads:` as a pool of templates.
 
 Workload template fields:
-- `critical` / `ipc` / `ipce` (optional) are copied into each generated container entry and can be used later by schedulers.
+- `critical` / `priority` / `ipc` / `ipce` (optional) are copied into each generated container entry and can be used later by schedulers.
+
+Priority split override (optional):
+- `arrival.priority_split` lets you force a priority/nonpriority ratio in the generated trace (e.g. 50/50), overriding the template's `critical/priority` flags.
 
 Duration handling:
 - The generator samples a duration (seconds) from `arrival.length` and sets `start_t/stop_t/expected_t` accordingly.
