@@ -2,7 +2,7 @@ benchmark:
   name: Balanced
   description: Runs a trace with different scheduler
   drain: false
-  max_t: 600
+  max_t: 3600
   log_level: info
   accounting:
     log_level: info
@@ -78,7 +78,7 @@ arrival:
     nonpriority: 80
 
 data:
-  frequency: 4000
+  frequency: 6000
   perf:
     instructions: true
     cycles: true

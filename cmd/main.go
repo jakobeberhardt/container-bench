@@ -1536,6 +1536,23 @@ func (cb *ContainerBench) stopContainer(ctx context.Context, containerConfig *co
 		_ = listener.OnContainerStop(containerConfig.Index)
 	}
 
+	// Remove container immediately on stop (requested behavior). Teardown will also
+	// attempt removal; repeated removals are safe.
+	rmCtx, rmCancel := context.WithTimeout(ctx, dockerRemoveCallTimeout)
+	defer rmCancel()
+	rmErr := cb.dockerClient.ContainerRemove(rmCtx, containerID, types.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
+	if rmErr != nil && !client.IsErrNotFound(rmErr) {
+		logger.WithFields(logrus.Fields{
+			"index":        containerConfig.Index,
+			"container_id": containerID[:12],
+		}).WithError(rmErr).Warn("Failed to remove container after stop")
+	} else {
+		logger.WithFields(logrus.Fields{
+			"index":        containerConfig.Index,
+			"container_id": containerID[:12],
+		}).Info("Container removed")
+	}
+
 	logger.WithField("index", containerConfig.Index).Info("Container stopped")
 	return nil
 }
@@ -1848,6 +1865,20 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 
 		if listener, ok := cb.scheduler.(scheduler.ContainerLifecycleListener); ok {
 			_ = listener.OnContainerStop(ev.index)
+		}
+
+		// Remove the container immediately after it exits.
+		containerID := cb.containerIDs[ev.index]
+		if containerID != "" {
+			rmCtx, rmCancel := context.WithTimeout(ctx, dockerRemoveCallTimeout)
+			defer rmCancel()
+			rmErr := cb.dockerClient.ContainerRemove(rmCtx, containerID, types.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
+			if rmErr != nil && !client.IsErrNotFound(rmErr) {
+				logger.WithFields(logrus.Fields{
+					"index":        ev.index,
+					"container_id": containerID[:12],
+				}).WithError(rmErr).Warn("Failed to remove container after exit")
+			}
 		}
 
 		st.stopped = true
