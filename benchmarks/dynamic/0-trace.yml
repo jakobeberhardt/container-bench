@@ -3,23 +3,23 @@ benchmark:
   description: Runs a trace with different scheduler
   drain: false
   max_t: 600
-  log_level: warn
+  log_level: info
   accounting:
     log_level: info
   scheduler:
     implementation: dynamic-v3
     prober:
       log_level: info
-      min_l3: 1
-      max_l3: 11
+      min_l3: 2
+      max_l3: 4
       step_l3: 1
       min_mem: 10
       max_mem: 20
       mem_step: 10
-      probing_t: 20
+      probing_t: 12
       order: asc
-      cooldown_t: 10
-      warmup_t: 10
+      cooldown_t: 1
+      warmup_t: 3
       greedy_allocation: false
       probing_frequency: 50
       drop_outliers: 5
@@ -74,8 +74,8 @@ arrival:
 
   priority_split:
     random: false
-    priority: 25
-    nonpriority: 75
+    priority: 20
+    nonpriority: 80
 
 data:
   frequency: 4000

@@ -104,6 +104,14 @@ type DynamicScheduler struct {
 	cpuAllocator  cpuallocator.Allocator
 	benchmarkID   int
 
+	// lastDFS stores the most recent DataFrames snapshot observed by ProcessDataFrames.
+	// Probing uses it both for starting and stepping so probe progress does not depend
+	// on ProcessDataFrames being called at a high cadence.
+	lastDFS *dataframe.DataFrames
+
+	probeLoopCancel context.CancelFunc
+	probeLoopDone   chan struct{}
+
 	mu sync.Mutex
 
 	profiles map[int]*dynamicContainerProfile // containerIndex -> profile
@@ -118,10 +126,43 @@ type DynamicScheduler struct {
 	lastProbeDone time.Time
 	lastRebalanceAt time.Time
 
+	lastProbeDelayLogAt  time.Time
+	lastProbeDelayReason string
+	lastProbeDelayIndex  int
+
 	probeQueue  []int
 	probeQueued map[int]bool
 
 	allocationProbeResults []*proberesources.AllocationProbeResult
+}
+
+func (s *DynamicScheduler) logProbeDelayLocked(reason string, idx int, fields logrus.Fields) {
+	// Avoid spamming: log at most once every 5s unless the reason/container changes.
+	now := time.Now()
+	if reason == "" {
+		reason = "unknown"
+	}
+	if idx < 0 {
+		idx = -1
+	}
+	if reason == s.lastProbeDelayReason && idx == s.lastProbeDelayIndex {
+		if !s.lastProbeDelayLogAt.IsZero() && now.Sub(s.lastProbeDelayLogAt) < 5*time.Second {
+			return
+		}
+	}
+	s.lastProbeDelayLogAt = now
+	s.lastProbeDelayReason = reason
+	s.lastProbeDelayIndex = idx
+
+	if fields == nil {
+		fields = logrus.Fields{}
+	}
+	fields["reason"] = reason
+	fields["queue_len"] = len(s.probeQueue)
+	fields["container"] = idx
+	fields["has_active_probe"] = (s.probing != nil)
+
+	s.schedulerLogger.WithFields(fields).Info("Next critical probe delayed")
 }
 
 const (
@@ -138,6 +179,53 @@ func NewDynamicScheduler() *DynamicScheduler {
 		schedulerLogger: logging.GetSchedulerLogger(),
 		profiles:        make(map[int]*dynamicContainerProfile),
 		probeQueued:     make(map[int]bool),
+	}
+}
+
+func (s *DynamicScheduler) startProbeLoopLocked() {
+	if s.probeLoopCancel != nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.probeLoopCancel = cancel
+	s.probeLoopDone = make(chan struct{})
+
+	go func() {
+		defer close(s.probeLoopDone)
+		// Short cadence to avoid long "silent" gaps when ProcessDataFrames is sparse.
+		t := time.NewTicker(250 * time.Millisecond)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				s.mu.Lock()
+				// Only handle probe progression/start; avoid doing any rebalancing here.
+				if s.probing == nil {
+					_ = s.maybeStartNextProbeLocked("background")
+				}
+				s.mu.Unlock()
+			}
+		}
+	}()
+}
+
+func (s *DynamicScheduler) stopProbeLoopLocked() {
+	if s.probeLoopCancel != nil {
+		s.probeLoopCancel()
+		s.probeLoopCancel = nil
+	}
+	// Don't block indefinitely; shutdown should be best-effort.
+	if s.probeLoopDone != nil {
+		done := s.probeLoopDone
+		s.probeLoopDone = nil
+		s.mu.Unlock()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+		}
+		s.mu.Lock()
 	}
 }
 
@@ -227,6 +315,9 @@ func (s *DynamicScheduler) Initialize(accountant *accounting.RDTAccountant, cont
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// (Re)start the probe loop for this benchmark run.
+	s.startProbeLoopLocked()
+
 	s.rdtAccountant = accountant
 	s.containers = containers
 	s.config = schedulerConfig
@@ -312,11 +403,17 @@ func (s *DynamicScheduler) ProcessDataFrames(dfs *dataframe.DataFrames) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Remember last DataFrames snapshot for probe starting/stepping.
+	s.lastDFS = dfs
+
 	// Update non-critical socket-balancing heuristic (best-effort).
 	s.updateNonCriticalStallsLocked(dfs)
 
 	// If a probe is active, step it (async stepper closes stepDone when done).
 	if s.probing != nil {
+		if idx, ok := s.peekProbeHeadLocked(); ok {
+			s.logProbeDelayLocked("active_probe_running", idx, nil)
+		}
 		select {
 		case <-s.probing.stepDone:
 			// Probe finished.
@@ -358,6 +455,14 @@ func (s *DynamicScheduler) ProcessDataFrames(dfs *dataframe.DataFrames) error {
 
 	if cooldownSeconds > 0 && !s.lastProbeDone.IsZero() {
 		if time.Since(s.lastProbeDone) < time.Duration(cooldownSeconds)*time.Second {
+			remaining := time.Duration(cooldownSeconds)*time.Second - time.Since(s.lastProbeDone)
+			if remaining < 0 {
+				remaining = 0
+			}
+			s.logProbeDelayLocked("cooldown", idx, logrus.Fields{
+				"cooldown_s":          cooldownSeconds,
+				"cooldown_remaining_s": int(remaining.Round(time.Second).Seconds()),
+			})
 			return nil
 		}
 	}
@@ -367,14 +472,98 @@ func (s *DynamicScheduler) ProcessDataFrames(dfs *dataframe.DataFrames) error {
 			p.startedAt = time.Now()
 		}
 		if warmupSeconds > 0 && time.Since(p.startedAt) < time.Duration(warmupSeconds)*time.Second {
-			s.schedulerLogger.WithFields(logrus.Fields{
-				"container": idx,
-				"warmup_s":  warmupSeconds,
-			}).Debug("Dynamic probe delayed by warmup")
+			remaining := time.Duration(warmupSeconds)*time.Second - time.Since(p.startedAt)
+			if remaining < 0 {
+				remaining = 0
+			}
+			s.logProbeDelayLocked("warmup", idx, logrus.Fields{
+				"warmup_s":           warmupSeconds,
+				"warmup_remaining_s": int(remaining.Round(time.Second).Seconds()),
+			})
 			return nil
 		}
 	}
 	started, err := s.startProbeLocked(dfs, idx)
+	if err != nil {
+		return err
+	}
+	if started {
+		s.popProbeHeadLocked()
+	}
+	return nil
+}
+
+// maybeStartNextProbeLocked attempts to start the next queued critical probe if possible.
+// It logs gating reasons (warmup/cooldown/waiting_for_data) and relies on s.lastDFS for
+// probe execution.
+func (s *DynamicScheduler) maybeStartNextProbeLocked(trigger string) error {
+	if s.rdtAccountant == nil {
+		return nil
+	}
+	if s.probing != nil {
+		return nil
+	}
+
+	idx, ok := s.peekProbeHeadLocked()
+	if !ok {
+		return nil
+	}
+
+	// Without any DataFrames snapshot, the allocation probe cannot observe progress.
+	if s.lastDFS == nil {
+		s.logProbeDelayLocked("waiting_for_data", idx, logrus.Fields{"trigger": trigger})
+		return nil
+	}
+
+	warmupSeconds := 5
+	cooldownSeconds := 2
+	if s.config != nil {
+		if s.config.Prober != nil && s.config.Prober.WarmupT > 0 {
+			warmupSeconds = s.config.Prober.WarmupT
+		} else if s.config.WarmupT > 0 {
+			warmupSeconds = s.config.WarmupT
+		}
+		if s.config.Prober != nil && s.config.Prober.CooldownT > 0 {
+			cooldownSeconds = s.config.Prober.CooldownT
+		} else if s.config.CooldownT > 0 {
+			cooldownSeconds = s.config.CooldownT
+		}
+	}
+
+	if cooldownSeconds > 0 && !s.lastProbeDone.IsZero() {
+		if time.Since(s.lastProbeDone) < time.Duration(cooldownSeconds)*time.Second {
+			remaining := time.Duration(cooldownSeconds)*time.Second - time.Since(s.lastProbeDone)
+			if remaining < 0 {
+				remaining = 0
+			}
+			s.logProbeDelayLocked("cooldown", idx, logrus.Fields{
+				"trigger":              trigger,
+				"cooldown_s":           cooldownSeconds,
+				"cooldown_remaining_s": int(remaining.Round(time.Second).Seconds()),
+			})
+			return nil
+		}
+	}
+
+	if p := s.profiles[idx]; p != nil {
+		if p.startedAt.IsZero() {
+			p.startedAt = time.Now()
+		}
+		if warmupSeconds > 0 && time.Since(p.startedAt) < time.Duration(warmupSeconds)*time.Second {
+			remaining := time.Duration(warmupSeconds)*time.Second - time.Since(p.startedAt)
+			if remaining < 0 {
+				remaining = 0
+			}
+			s.logProbeDelayLocked("warmup", idx, logrus.Fields{
+				"trigger":             trigger,
+				"warmup_s":            warmupSeconds,
+				"warmup_remaining_s":  int(remaining.Round(time.Second).Seconds()),
+			})
+			return nil
+		}
+	}
+
+	started, err := s.startProbeLocked(s.lastDFS, idx)
 	if err != nil {
 		return err
 	}
@@ -637,6 +826,8 @@ func (s *DynamicScheduler) Shutdown() error {
 		s.lastProbeDone = time.Now()
 	}
 	s.probing = nil
+	// Stop background probe loop.
+	s.stopProbeLoopLocked()
 	s.mu.Unlock()
 
 	return nil
@@ -677,6 +868,8 @@ func (s *DynamicScheduler) OnContainerStart(info ContainerInfo) error {
 	// Critical containers are queued for allocation probing.
 	if p.critical {
 		s.enqueueProbeLocked(info.Index)
+		// Avoid long silent gaps: attempt to start probe immediately (or at least log why not).
+		_ = s.maybeStartNextProbeLocked("container_start")
 	}
 	return nil
 }
@@ -929,7 +1122,7 @@ func (s *DynamicScheduler) startProbeLocked(dfs *dataframe.DataFrames, container
 					"need_max_mem":  maxMem,
 					"assigned_cpus": moved,
 				}).Debug("Moved critical container to preferred socket for probing")
-			} else if err != nil {
+			} else {
 				s.schedulerLogger.WithError(err).WithFields(logrus.Fields{
 					"container":   containerIndex,
 					"from_socket": preferredSock,

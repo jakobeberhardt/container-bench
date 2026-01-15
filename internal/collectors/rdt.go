@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,6 +40,7 @@ type RDTCollector struct {
 	syncInterval time.Duration
 	syncTicker   *time.Ticker
 	syncStopChan chan struct{}
+	syncDoneChan chan struct{}
 	isClosing    bool // Flag to indicate shutdown in progress
 
 	// Mutex for thread-safe access to monGroup, ctrlGroup, className
@@ -482,10 +484,26 @@ func (rc *RDTCollector) StartPIDSyncTicker() {
 		return
 	}
 
-	rc.syncStopChan = make(chan struct{})
-	rc.syncTicker = time.NewTicker(rc.syncInterval)
+	rc.mu.Lock()
+	// Prevent double-start.
+	if rc.syncStopChan != nil {
+		rc.mu.Unlock()
+		return
+	}
+	stopCh := make(chan struct{})
+	doneCh := make(chan struct{})
+	ticker := time.NewTicker(rc.syncInterval)
+	rc.syncStopChan = stopCh
+	rc.syncDoneChan = doneCh
+	rc.syncTicker = ticker
+	rc.mu.Unlock()
+
+	// Use local references in the goroutine so StopPIDSyncTicker can nil out rc.syncTicker
+	// without racing with reads of rc.syncTicker.C (which would panic).
+	tickCh := ticker.C
 
 	go func() {
+		defer close(doneCh)
 		rc.logger.WithFields(logrus.Fields{
 			"pid":      rc.pid,
 			"interval": rc.syncInterval,
@@ -496,13 +514,14 @@ func (rc *RDTCollector) StartPIDSyncTicker() {
 				rc.logger.WithFields(logrus.Fields{
 					"pid":   rc.pid,
 					"panic": r,
+					"stack": string(debug.Stack()),
 				}).Error("RDT PID sync ticker panicked, recovering")
 			}
 		}()
 
 		for {
 			select {
-			case <-rc.syncTicker.C:
+			case <-tickCh:
 				// Check if we're shutting down before syncing
 				rc.mu.RLock()
 				isClosing := rc.isClosing
@@ -536,7 +555,7 @@ func (rc *RDTCollector) StartPIDSyncTicker() {
 						rc.logger.WithError(err).WithField("pid", rc.pid).Trace("Failed to sync PIDs in ticker")
 					}
 				}
-			case <-rc.syncStopChan:
+			case <-stopCh:
 				rc.logger.WithField("pid", rc.pid).Debug("RDT PID sync ticker stopped")
 				return
 			}
@@ -546,17 +565,30 @@ func (rc *RDTCollector) StartPIDSyncTicker() {
 
 // StopPIDSyncTicker stops the PID sync ticker goroutine
 func (rc *RDTCollector) StopPIDSyncTicker() {
-	if rc.syncTicker != nil {
-		rc.syncTicker.Stop()
+	rc.mu.Lock()
+	ticker := rc.syncTicker
+	stopCh := rc.syncStopChan
+	doneCh := rc.syncDoneChan
+	// Clear state under lock so repeated Stop calls are safe.
+	rc.syncTicker = nil
+	rc.syncStopChan = nil
+	rc.syncDoneChan = nil
+	rc.mu.Unlock()
 
-		if rc.syncStopChan != nil {
-			close(rc.syncStopChan)
+	if ticker != nil {
+		ticker.Stop()
+	}
+	if stopCh != nil {
+		// Close in a safe way (it may already be closed if the goroutine exited).
+		defer func() { _ = recover() }()
+		close(stopCh)
+	}
+	if doneCh != nil {
+		select {
+		case <-doneCh:
+		case <-time.After(250 * time.Millisecond):
+			// Best-effort: don't block shutdown.
 		}
-
-		time.Sleep(10 * time.Millisecond)
-
-		rc.syncTicker = nil
-		rc.syncStopChan = nil
 	}
 }
 
@@ -672,10 +704,24 @@ func (rc *RDTCollector) detectAndHandleClassMigration() error {
 	// Sync PIDs to the new monitoring group
 	rc.mu.Unlock()
 	if err := rc.syncCGroupPIDs(); err != nil {
-		rc.logger.WithError(err).WithFields(logrus.Fields{
+		msg := strings.ToLower(err.Error())
+		fields := logrus.Fields{
 			"pid":       rc.pid,
 			"new_class": currentClassName,
-		}).Warn("Failed to sync cgroup PIDs to new monitoring group")
+			"old_class": oldClassName,
+		}
+		// Best-effort repair: the mon_group directory can disappear if the underlying
+		// class is recreated/deleted concurrently. Recreate and retry once.
+		if strings.Contains(msg, "no such file") || strings.Contains(msg, "not found") {
+			if rerr := rc.recreateMonitoringGroup(); rerr == nil {
+				rc.logger.WithFields(fields).Debug("Recreated monitoring group after migration sync failure")
+			} else {
+				rc.logger.WithError(rerr).WithFields(fields).Warn("Failed to recreate monitoring group after migration sync failure")
+				rc.logger.WithError(err).WithFields(fields).Warn("Failed to sync cgroup PIDs to new monitoring group")
+			}
+		} else {
+			rc.logger.WithError(err).WithFields(fields).Warn("Failed to sync cgroup PIDs to new monitoring group")
+		}
 	}
 	rc.mu.Lock()
 
