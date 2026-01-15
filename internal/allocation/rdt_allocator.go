@@ -2,7 +2,10 @@ package allocation
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 
 	"container-bench/internal/logging"
@@ -287,12 +290,41 @@ func (a *DefaultRDTAllocator) AssignContainerToClass(pid int, className string) 
 		return nil
 	}
 
-	// Add to new class (this implicitly moves it from old class)
-	rdtguard.Lock()
-	err = ctrlGroup.AddPids(pidStr)
-	rdtguard.Unlock()
-	if err != nil {
-		return fmt.Errorf("failed to assign PID %d to RDT class %s: %v", pid, className, err)
+	// Add to new class (this implicitly moves it from old class).
+	// IMPORTANT: a docker container has multiple PIDs (entrypoint + exec'ed processes).
+	// Moving only the init PID leaves the real workload in the old class (making
+	// allocation probes appear to have identical results). We therefore move all
+	// PIDs in the container's cgroup where possible.
+	pidsToMove := []string{pidStr}
+	if cgroupPIDs, err := getCgroupPIDsForPID(pid); err == nil && len(cgroupPIDs) > 0 {
+		pidsToMove = cgroupPIDs
+	} else if err != nil {
+		a.logger.WithError(err).WithField("pid", pid).Trace("Failed to enumerate cgroup PIDs; falling back to single PID")
+	}
+
+	var firstErr error
+	for _, taskPID := range pidsToMove {
+		rdtguard.Lock()
+		err = ctrlGroup.AddPids(taskPID)
+		rdtguard.Unlock()
+		if err != nil {
+			// Best-effort: tasks can exit between reading cgroup.procs and moving.
+			msg := strings.ToLower(err.Error())
+			if strings.Contains(msg, "no such process") || strings.Contains(msg, "not found") {
+				continue
+			}
+			if firstErr == nil {
+				firstErr = err
+			}
+			a.logger.WithError(err).WithFields(logrus.Fields{
+				"container_pid": pid,
+				"task_pid":      taskPID,
+				"class":         className,
+			}).Warn("Failed to move task PID into RDT class")
+		}
+	}
+	if firstErr != nil {
+		return fmt.Errorf("failed to fully assign PID %d to RDT class %s: %v", pid, className, firstErr)
 	}
 
 	a.logger.WithFields(logrus.Fields{
@@ -336,11 +368,37 @@ func (a *DefaultRDTAllocator) RemoveContainerFromClass(pid int) error {
 	}
 
 	pidStr := strconv.Itoa(pid)
-	rdtguard.Lock()
-	err = defaultClass.AddPids(pidStr)
-	rdtguard.Unlock()
-	if err != nil {
-		return fmt.Errorf("failed to move PID %d to default class: %v", pid, err)
+	// See AssignContainerToClass for rationale: move all tasks from the container cgroup
+	// so future allocations don't get stuck split across classes.
+	pidsToMove := []string{pidStr}
+	if cgroupPIDs, err := getCgroupPIDsForPID(pid); err == nil && len(cgroupPIDs) > 0 {
+		pidsToMove = cgroupPIDs
+	} else if err != nil {
+		a.logger.WithError(err).WithField("pid", pid).Trace("Failed to enumerate cgroup PIDs for removal; falling back to single PID")
+	}
+
+	var firstErr error
+	for _, taskPID := range pidsToMove {
+		rdtguard.Lock()
+		err = defaultClass.AddPids(taskPID)
+		rdtguard.Unlock()
+		if err != nil {
+			msg := strings.ToLower(err.Error())
+			if strings.Contains(msg, "no such process") || strings.Contains(msg, "not found") {
+				continue
+			}
+			if firstErr == nil {
+				firstErr = err
+			}
+			a.logger.WithError(err).WithFields(logrus.Fields{
+				"container_pid": pid,
+				"task_pid":      taskPID,
+				"to_class":      defaultClass.Name(),
+			}).Warn("Failed to move task PID to default RDT class")
+		}
+	}
+	if firstErr != nil {
+		return fmt.Errorf("failed to move PID %d to default class: %v", pid, firstErr)
 	}
 
 	a.logger.WithFields(logrus.Fields{
@@ -350,6 +408,55 @@ func (a *DefaultRDTAllocator) RemoveContainerFromClass(pid int) error {
 	}).Debug("Container moved from RDT class to default")
 
 	return nil
+}
+
+func getCgroupPIDsForPID(pid int) ([]string, error) {
+	// This implementation targets cgroup v2 (unified hierarchy), where /proc/<pid>/cgroup
+	// contains a line like: "0::/system.slice/docker-<id>.scope".
+	// If we cannot resolve the cgroup path (e.g., cgroup v1), return an error so callers
+	// can fall back to moving only the init PID.
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/cgroup", pid))
+	if err != nil {
+		return nil, err
+	}
+
+	var relPath string
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// cgroup v2: 0::<path>
+		if strings.HasPrefix(line, "0::") {
+			parts := strings.SplitN(line, ":", 3)
+			if len(parts) == 3 {
+				relPath = strings.TrimSpace(parts[2])
+				break
+			}
+		}
+	}
+	if relPath == "" {
+		return nil, fmt.Errorf("could not find unified (0::) cgroup path for pid %d", pid)
+	}
+
+	// relPath is absolute within the cgroup mount. Ensure we don't accidentally drop the root.
+	cgroupDir := filepath.Clean(filepath.Join("/sys/fs/cgroup", relPath))
+	procsPath := filepath.Join(cgroupDir, "cgroup.procs")
+	procsData, err := os.ReadFile(procsPath)
+	if err != nil {
+		return nil, err
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(procsData)), "\n")
+	pids := make([]string, 0, len(lines))
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if l == "" {
+			continue
+		}
+		pids = append(pids, l)
+	}
+	return pids, nil
 }
 
 func (a *DefaultRDTAllocator) GetContainerClass(pid int) (string, error) {

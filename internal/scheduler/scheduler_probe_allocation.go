@@ -10,6 +10,7 @@ import (
 	"container-bench/internal/probe"
 	proberesources "container-bench/internal/probe/resources"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -33,13 +34,18 @@ type ProbeAllocationScheduler struct {
 	probeComplete bool
 	probeResults  []*proberesources.AllocationProbeResult
 
+	// Committed allocation (applies after probing)
+	classCreated      bool
+	committedClass    string
+	committedTargetID int
+
 	cpuAllocator cpuallocator.Allocator
 }
 
 func NewProbeAllocationScheduler() *ProbeAllocationScheduler {
 	return &ProbeAllocationScheduler{
 		name:            "probe-allocation",
-		version:         "1.0.0",
+		version:         "1.1.0",
 		schedulerLogger: logging.GetSchedulerLogger(),
 		probeStarted:    false,
 		probeComplete:   false,
@@ -371,6 +377,11 @@ func (as *ProbeAllocationScheduler) ProcessDataFrames(dataframes *dataframe.Data
 	as.probeResults = append(as.probeResults, result)
 	as.probeComplete = true
 
+	// Commit the best allocation so it actually takes effect for the rest of the benchmark.
+	if err := as.commitBestAllocationLocked(result, targetContainer, probeRange.SocketID); err != nil {
+		as.schedulerLogger.WithError(err).Warn("Failed to commit best allocation after probe")
+	}
+
 	// Log summary
 	as.schedulerLogger.WithFields(logrus.Fields{
 		"probe_run":         len(as.probeResults),
@@ -378,6 +389,85 @@ func (as *ProbeAllocationScheduler) ProcessDataFrames(dataframes *dataframe.Data
 		"allocations_tried": len(result.Allocations),
 		"aborted":           result.Aborted,
 	}).Info("Allocation probe complete")
+
+	return nil
+}
+
+func (as *ProbeAllocationScheduler) commitBestAllocationLocked(result *proberesources.AllocationProbeResult, target proberesources.ContainerInfo, targetSocket int) error {
+	if result == nil || as.rdtAccountant == nil {
+		return nil
+	}
+	if target.PID == 0 {
+		return fmt.Errorf("target PID is 0")
+	}
+
+	bestIdx := -1
+	bestEff := -1.0
+	for i := range result.Allocations {
+		a := result.Allocations[i]
+		if a.IPCEfficiency <= bestEff {
+			continue
+		}
+		if a.L3Ways <= 0 && a.MemBandwidth <= 0 {
+			continue
+		}
+		bestIdx = i
+		bestEff = a.IPCEfficiency
+	}
+	if bestIdx < 0 {
+		return fmt.Errorf("no valid allocation results to commit")
+	}
+	best := result.Allocations[bestIdx]
+	if best.L3Ways <= 0 {
+		return fmt.Errorf("best allocation has invalid L3Ways=%d", best.L3Ways)
+	}
+
+	className := fmt.Sprintf("probe-allocation-%d", as.benchmarkID)
+	waysRange := fmt.Sprintf("0-%d", best.L3Ways-1)
+	req := &accounting.AllocationRequest{L3Ways: waysRange, MemBandwidth: best.MemBandwidth}
+	var req0, req1 *accounting.AllocationRequest
+	if targetSocket == 0 {
+		req0 = req
+	} else {
+		req1 = req
+	}
+
+	if !as.classCreated || as.committedClass == "" {
+		err := as.rdtAccountant.CreateClass(className, req0, req1)
+		if err != nil {
+			// If class already exists (e.g., rerun in same process), update instead.
+			if strings.Contains(err.Error(), "already exists") {
+				err = as.rdtAccountant.UpdateClass(className, req0, req1)
+			}
+			if err != nil {
+				return err
+			}
+		}
+		as.classCreated = true
+		as.committedClass = className
+		as.committedTargetID = target.Index
+	} else {
+		if err := as.rdtAccountant.UpdateClass(as.committedClass, req0, req1); err != nil {
+			return err
+		}
+	}
+
+	// Move the target into the committed class so allocations take effect.
+	if err := as.rdtAccountant.MoveContainer(target.PID, as.committedClass); err != nil {
+		return err
+	}
+
+	as.schedulerLogger.WithFields(logrus.Fields{
+		"class":            as.committedClass,
+		"target_index":     target.Index,
+		"target_pid":       target.PID,
+		"socket":           targetSocket,
+		"best_idx":         bestIdx,
+		"l3_ways":          best.L3Ways,
+		"mem_bw_percent":   best.MemBandwidth,
+		"ipc_efficiency":   best.IPCEfficiency,
+		"allocations_tried": len(result.Allocations),
+	}).Info("Committed best allocation after probe")
 
 	return nil
 }
@@ -444,10 +534,22 @@ func (as *ProbeAllocationScheduler) OnContainerStart(info ContainerInfo) error {
 		if as.containers[i].Index == info.Index {
 			as.containers[i].PID = info.PID
 			as.containers[i].ContainerID = info.ContainerID
-			return nil
+			goto ASSIGN
 		}
 	}
 	as.containers = append(as.containers, info)
+
+ASSIGN:
+	// Ensure the probed target container is moved into the committed class when it (re)starts.
+	if as.rdtAccountant != nil && as.classCreated && as.committedClass != "" && info.PID != 0 && info.Index == as.committedTargetID {
+		if err := as.rdtAccountant.MoveContainer(info.PID, as.committedClass); err != nil {
+			as.schedulerLogger.WithError(err).WithFields(logrus.Fields{
+				"container_index": info.Index,
+				"pid":             info.PID,
+				"class":           as.committedClass,
+			}).Warn("Failed to assign target container to committed RDT class")
+		}
+	}
 	return nil
 }
 

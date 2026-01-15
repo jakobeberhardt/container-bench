@@ -13,7 +13,7 @@ benchmark:
       warmup_t: 30
       duration: 180
       step_size_l3: 1
-      step_size_mb: 10 
+      step_size_mb: 10
       min_l3_ways: 1  
       max_l3_ways: 12       
       min_mem_bandwidth: 10 
