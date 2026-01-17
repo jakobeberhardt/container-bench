@@ -11,11 +11,10 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// AllocationProbeResult represents the result of testing a specific allocation
+// Represents the result of testing a specific allocation.
 type AllocationProbeResult struct {
 	BenchmarkID int `json:"benchmark_id"`
 
-	// Target container info
 	ContainerID      string `json:"container_id"`
 	ContainerName    string `json:"container_name"`
 	ContainerIndex   int    `json:"container_index"`
@@ -24,7 +23,6 @@ type AllocationProbeResult struct {
 	ContainerImage   string `json:"container_image"`
 	ContainerCommand string `json:"container_command,omitempty"`
 
-	// Probing execution metadata
 	TotalProbeTime time.Duration `json:"total_probe_time"`
 	Aborted        bool          `json:"aborted"`
 	AbortReason    string        `json:"abort_reason,omitempty"`
@@ -33,29 +31,24 @@ type AllocationProbeResult struct {
 	Finished  time.Time  `json:"finished"`
 	AbortedAt *time.Time `json:"aborted_at,omitempty"`
 
-	// Tested allocations and results
 	Allocations []AllocationResult `json:"allocations"`
 
-	// Probe configuration
 	Range AllocationRange `json:"range"`
 }
 
-// AllocationResult represents the result of a single allocation test
+// Represents the result of a single allocation test.
 type AllocationResult struct {
-	// Allocation parameters
 	L3Ways         int     `json:"l3_ways"`
 	MemBandwidth   float64 `json:"mem_bandwidth_percent"`
 	SocketID       int     `json:"socket_id"`
 	IsolatedOthers bool    `json:"isolated_others"`
 
-	// Timing
 	Started  time.Time     `json:"started"`
 	Duration time.Duration `json:"duration"`
 
-	// Performance metrics (computed from dataframes)
 	AvgIPC                 float64 `json:"avg_ipc,omitempty"`
 	AvgTheoreticalIPC      float64 `json:"avg_theoretical_ipc,omitempty"`
-	IPCEfficiency          float64 `json:"ipc_efficiency,omitempty"` // From Perf.IPCEfficancy (no fallback)
+	IPCEfficiency          float64 `json:"ipc_efficiency,omitempty"`
 	AvgCacheMissRate       float64 `json:"avg_cache_miss_rate,omitempty"`
 	AvgStalledCycles       float64 `json:"avg_stalled_cycles,omitempty"`
 	AvgStallsL3MissPercent float64 `json:"avg_stalls_l3_miss_percent,omitempty"`
@@ -64,38 +57,35 @@ type AllocationResult struct {
 	AvgMemBandwidthUsed    uint64  `json:"avg_mem_bandwidth_used,omitempty"`
 	AvgCPUUsagePercent     float64 `json:"avg_cpu_usage_percent,omitempty"`
 
-	// Raw data frames for this allocation period
-	DataFrameSteps []int `json:"dataframe_steps"` // Step numbers captured during this allocation
+	DataFrameSteps []int `json:"dataframe_steps"`
 }
 
-// AllocationRange defines the range of allocations to test
+// Defines the range of allocations to test.
 type AllocationRange struct {
 	MinL3Ways         int     `json:"min_l3_ways"`
 	MaxL3Ways         int     `json:"max_l3_ways"`
-	MinMemBandwidth   float64 `json:"min_memory_bandwidth"` // Percentage 0-100
-	MaxMemBandwidth   float64 `json:"max_memory_bandwidth"` // Percentage 0-100
+	MinMemBandwidth   float64 `json:"min_memory_bandwidth"`
+	MaxMemBandwidth   float64 `json:"max_memory_bandwidth"`
 	StepL3Ways        int     `json:"step_l3_ways"`
-	StepMemBandwidth  float64 `json:"step_memory_bandwidth"` // Percentage points
-	Order             string  `json:"order"`                 // "asc" (start smallest) or "desc" (start largest)
-	DurationPerAlloc  int     `json:"duration_per_alloc"`    // Milliseconds to test each allocation
-	MaxTotalDuration  int     `json:"max_total_duration"`    // Maximum total probe time in seconds
-	SocketID          int     `json:"socket_id"`             // Which socket to test on
-	IsolateOthers     bool    `json:"isolate_others"`        // Move other containers to different allocation
-	ForceReallocation bool    `json:"force_reallocation"`    // Remove existing allocations if needed
+	StepMemBandwidth  float64 `json:"step_memory_bandwidth"`
+	Order             string  `json:"order"`
+	DurationPerAlloc  int     `json:"duration_per_alloc"`
+	MaxTotalDuration  int     `json:"max_total_duration"`
+	SocketID          int     `json:"socket_id"`
+	IsolateOthers     bool    `json:"isolate_others"`
+	ForceReallocation bool    `json:"force_reallocation"`
 }
 
-// AllocationSpec defines a specific allocation to test (shared helper type).
-// It is minimal so schedulers can reuse the same search ordering logic
-// without pulling in the full probe execution loop.
+// Defines a specific allocation to test.
 type AllocationSpec struct {
 	L3Ways       int
 	MemBandwidth float64
 }
 
-// defines when to stop probing early
+// Defines when to stop probing early.
 type BreakCondition func(result *AllocationResult, allResults []AllocationResult) bool
 
-// holds information about a container for probing
+// Holds information about a container for probing.
 type ContainerInfo struct {
 	Index   int
 	PID     int
@@ -390,12 +380,11 @@ func ComputeAllocationMetrics(
 	computeAllocationMetricsFromContainerDF(result, containerIndex, containerDF, startStep, endStep, 0, nil, nil)
 }
 
-// ComputeAllocationMetricsWithOutlierDrop is like ComputeAllocationMetrics but allows configuring
-// how many low/high samples are trimmed as outliers.
+// Like ComputeAllocationMetrics, but allows configuring how many low and high samples are
+// trimmed as outliers.
 //
-// outlierDrop semantics:
-// - if > 0: sort samples and drop outlierDrop lowest and outlierDrop highest values
-// - if <= 0: keep all values
+// If outlierDrop > 0, sort samples and drop outlierDrop lowest and outlierDrop highest values.
+// If outlierDrop <= 0, keep all values.
 func ComputeAllocationMetricsWithOutlierDrop(
 	result *AllocationResult,
 	dataframes *dataframe.DataFrames,
