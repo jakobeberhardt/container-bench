@@ -1928,9 +1928,8 @@ func (cb *ContainerBench) runBenchmarkLoop(ctx context.Context) error {
 				}
 			}
 
-			// Admission horizon at max_t:
-			// - hard-stop mode: stop admitting new containers at/after max_t
-			// - drain mode: stop admitting AND drop any not-yet-started containers at/after max_t
+			// Admission horizon at max_t. In hard stop mode, stop admitting new containers at or
+			// after max_t. In drain mode, also drop any not yet started containers at or after max_t.
 			if maxTReached {
 				if drain {
 					if !st.started {
