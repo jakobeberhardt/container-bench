@@ -13,25 +13,24 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// AllocationRequest represents a high-level resource allocation request
+// Represents a high-level resource allocation request.
 type AllocationRequest struct {
-	// L3 Cache Bitmask > Ways > Bytes > Percent)
 	L3Bitmask string
-	L3Ways    string  // Cache way range (e.g., "0-5")
-	L3Bytes   uint64  // Cache size in bytes (converted to ways using ceil)
-	L3Percent float64 // Percentage of cache (0-100, converted to ways using ceil)
+	L3Ways    string
+	L3Bytes   uint64
+	L3Percent float64
 
 	MemBandwidth float64
 }
 
-// SocketState tracks the current allocation state for a socket
+// Tracks the current allocation state for a socket.
 type SocketState struct {
 	TotalWays        int
 	AllocatedBitmask uint64 // Combined bitmask of all allocations
 	MemBandwidthUsed float64
 }
 
-// ClassAllocation tracks the allocation for a specific RDT class
+// Tracks the allocation for a specific RDT class.
 type ClassAllocation struct {
 	ClassName  string
 	Socket0    *allocation.SocketAllocation
@@ -39,8 +38,7 @@ type ClassAllocation struct {
 	Containers []int // PIDs assigned to this class
 }
 
-// RDTAccountant provides high-level resource accounting and allocation
-// It wraps the RDT allocator and provides intelligent resource management
+// Provides high-level resource accounting and allocation.
 type RDTAccountant struct {
 	allocator  allocation.RDTAllocator
 	hostConfig *host.HostConfig
@@ -56,13 +54,7 @@ type RDTAccountant struct {
 	containerClass map[int]string // PID -> class name
 }
 
-// ReplaceAllClasses replaces the allocator's managed class set in a single RDT
-// configuration update.
-//
-// This is used by schedulers that need to repack/defragment cache-way bitmasks
-// across multiple classes. It preserves container-to-class assignments in resctrl
-// (the underlying SetConfig does not move PIDs) and keeps the accountant's
-// container tracking where possible.
+// Replaces the allocator-managed class set in a single configuration update.
 func (a *RDTAccountant) ReplaceAllClasses(classes map[string]struct {
 	Socket0 *allocation.SocketAllocation
 	Socket1 *allocation.SocketAllocation
@@ -142,7 +134,7 @@ func (a *RDTAccountant) ReplaceAllClasses(classes map[string]struct {
 	return nil
 }
 
-// NewRDTAccountant creates a new RDT accountant instance
+// Creates a new RDT accountant instance.
 func NewRDTAccountant(allocator allocation.RDTAllocator, hostCfg *host.HostConfig) (*RDTAccountant, error) {
 	var totalWays int
 	var err error
@@ -169,12 +161,12 @@ func NewRDTAccountant(allocator allocation.RDTAllocator, hostCfg *host.HostConfi
 	}, nil
 }
 
-// Initialize initializes the accountant and underlying allocator
+// Initializes the accountant and underlying allocator.
 func (a *RDTAccountant) Initialize() error {
 	return a.allocator.Initialize()
 }
 
-// CreateClass creates a new RDT class with the specified allocations
+// Creates a new RDT class with the specified allocations.
 func (a *RDTAccountant) CreateClass(className string, socket0Req, socket1Req *AllocationRequest) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -224,7 +216,7 @@ func (a *RDTAccountant) CreateClass(className string, socket0Req, socket1Req *Al
 	return nil
 }
 
-// UpdateClass updates an existing RDT class with new allocations
+// Updates an existing RDT class with new allocations.
 func (a *RDTAccountant) UpdateClass(className string, socket0Req, socket1Req *AllocationRequest) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -289,7 +281,7 @@ func (a *RDTAccountant) UpdateClass(className string, socket0Req, socket1Req *Al
 	return nil
 }
 
-// MoveContainer assigns a container to a specific RDT class
+// Assigns a container to a specific RDT class.
 func (a *RDTAccountant) MoveContainer(containerPID int, className string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -324,7 +316,7 @@ func (a *RDTAccountant) MoveContainer(containerPID int, className string) error 
 	return nil
 }
 
-// DeleteClass removes an RDT class (moves containers to default first)
+// Removes an RDT class and moves containers to default first.
 func (a *RDTAccountant) DeleteClass(className string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -366,7 +358,7 @@ func (a *RDTAccountant) DeleteClass(className string) error {
 	return nil
 }
 
-// GetContainerClass returns the class name for a container
+// Returns the class name for a container.
 func (a *RDTAccountant) GetContainerClass(containerPID int) (string, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -378,7 +370,7 @@ func (a *RDTAccountant) GetContainerClass(containerPID int) (string, error) {
 	return a.allocator.GetContainerClass(containerPID)
 }
 
-// GetSocketState returns the current allocation state for a socket
+// Returns the current allocation state for a socket.
 func (a *RDTAccountant) GetSocketState(socketID int) (*SocketState, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -395,7 +387,7 @@ func (a *RDTAccountant) GetSocketState(socketID int) (*SocketState, error) {
 	}
 }
 
-// Cleanup cleans up all RDT classes
+// Cleans up all RDT classes.
 func (a *RDTAccountant) Cleanup() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -417,7 +409,7 @@ func (a *RDTAccountant) Cleanup() error {
 	return nil
 }
 
-// resolveAllocation converts an AllocationRequest to a SocketAllocation (bitmask)
+// Converts an AllocationRequest to a SocketAllocation.
 func (a *RDTAccountant) resolveAllocation(req *AllocationRequest, state *SocketState, socketID int) (*allocation.SocketAllocation, error) {
 	if req == nil {
 		return nil, nil
@@ -440,7 +432,7 @@ func (a *RDTAccountant) resolveAllocation(req *AllocationRequest, state *SocketS
 
 	// Priority: Bitmask > Ways > Bytes > Percentage
 	if req.L3Bitmask != "" {
-		// Direct bitmask - validate it doesn't overlap
+		// Direct bitmask; validate it doesn't overlap.
 		bitmask := parseBitmask(req.L3Bitmask)
 		if state.AllocatedBitmask&bitmask != 0 {
 			return nil, fmt.Errorf("L3 bitmask %s overlaps with existing allocations on socket %d", req.L3Bitmask, socketID)
@@ -500,14 +492,13 @@ func (a *RDTAccountant) resolveAllocation(req *AllocationRequest, state *SocketS
 	return alloc, nil
 }
 
-// findBestFitBitmask finds the best contiguous bitmask for a percentage allocation
-// Uses ceil rounding to ensure the allocation meets or exceeds the requested percentage
+// Finds the best contiguous bitmask for a percentage allocation.
 func (a *RDTAccountant) findBestFitBitmask(percent float64, state *SocketState) (string, error) {
 	if percent < 0 || percent > 100 {
 		return "", fmt.Errorf("invalid percentage: %.2f", percent)
 	}
 
-	// Use ceil to always round up - requesting 30% of 12 ways = ceil(3.6) = 4 ways
+	// Use ceil to always round up (e.g., 30% of 12 ways becomes 4 ways).
 	targetWays := int(math.Ceil((float64(state.TotalWays) * percent) / 100.0))
 	if targetWays == 0 {
 		targetWays = 1
@@ -561,7 +552,7 @@ func (a *RDTAccountant) findBestFitBitmaskForWays(targetWays int, state *SocketS
 	return fmt.Sprintf("0x%x", mask), nil
 }
 
-// restoreSocketState restores socket states after a failed update
+// Restores socket state after a failed update.
 func (a *RDTAccountant) restoreSocketState(classAlloc *ClassAllocation) {
 	if classAlloc.Socket0 != nil && classAlloc.Socket0.L3Bitmask != "" {
 		bitmask := parseBitmask(classAlloc.Socket0.L3Bitmask)
@@ -575,7 +566,7 @@ func (a *RDTAccountant) restoreSocketState(classAlloc *ClassAllocation) {
 	}
 }
 
-// Helper functions
+// Helpers.
 
 func readL3Ways() (int, error) {
 	cbmMaskPath := "/sys/fs/resctrl/info/L3/cbm_mask"
@@ -638,7 +629,7 @@ func removeInt(slice []int, val int) []int {
 	return result
 }
 
-// GetTotalWays returns the total number of cache ways for a socket
+// Returns the total number of cache ways for a socket.
 func (a *RDTAccountant) GetTotalWays(socketID int) int {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
