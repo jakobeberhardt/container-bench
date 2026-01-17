@@ -653,9 +653,6 @@ func runBenchmark(configFile string, schedulerOverride string) error {
 	case "dynamic":
 		logger.Info("Using dynamic scheduler")
 		bench.scheduler = scheduler.NewDynamicScheduler()
-	case "dynamic-v2", "dynamic_v2":
-		logger.Info("Using dynamic scheduler (v2 alias -> v3)")
-		bench.scheduler = scheduler.NewDynamicSchedulerV3()
 	case "dynamic-v3", "dynamic_v3":
 		logger.Info("Using dynamic scheduler v3")
 		bench.scheduler = scheduler.NewDynamicSchedulerV3()
