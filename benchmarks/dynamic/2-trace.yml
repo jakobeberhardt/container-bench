@@ -55,7 +55,7 @@ benchmark:
 
 
 arrival:
-  seed: 1
+  seed: 2
   mean: 5
   sigma: 2
   length:
