@@ -17,9 +17,9 @@ import (
 type Allocator interface {
 	// EnsureAssigned ensures containerIndex has a CPU assignment based on cfg.
 	// Rules:
-	// - If cfg.CPUCores is already set, it is treated as the existing assignment.
-	// - Else if cfg.Core is non-empty, it is parsed and reserved (explicit request).
-	// - Else cfg.GetRequestedNumCores() physical cores are allocated.
+	// If cfg.CPUCores is already set, it is treated as the existing assignment.
+	// Else if cfg.Core is non empty, it is parsed and reserved as an explicit request.
+	// Else cfg.GetRequestedNumCores() physical cores are allocated.
 	// The allocator updates cfg.CPUCores and cfg.Core (canonical formatted cpuset).
 	EnsureAssigned(containerIndex int, cfg *config.ContainerConfig) ([]int, error)
 
@@ -33,10 +33,10 @@ type Allocator interface {
 	// Release frees any CPUs reserved for containerIndex.
 	Release(containerIndex int)
 
-	// Get returns the CPUs reserved for containerIndex
+	// Returns the CPUs reserved for containerIndex.
 	Get(containerIndex int) ([]int, bool)
 
-	// Snapshot returns a copy of all current assignments
+	// Returns a copy of all current assignments.
 	Snapshot() map[int][]int
 
 	// Move reassigns the container's current CPU allocation to physical cores on targetSocket.
@@ -49,8 +49,7 @@ type Allocator interface {
 	Swap(aIndex int, aContainerID string, bIndex int, bContainerID string) error
 }
 
-// CpusetApplier applies a cpuset to a running container
-// Implementations are expected to update the container CPU set
+// Applies a cpuset to a running container.
 type CpusetApplier interface {
 	UpdateCpuset(ctx context.Context, containerID string, cpuset string) error
 }
