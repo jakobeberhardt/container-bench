@@ -19,8 +19,7 @@ import (
 	"github.com/zcalusic/sysinfo"
 )
 
-// HostConfig contains comprehensive host system configuration information.
-// This is the single source of truth for all host-related information.
+// Contains comprehensive host system configuration information.
 type HostConfig struct {
 	// CPU Information
 	CPUVendor string
@@ -61,11 +60,8 @@ type CoreInfo struct {
 	Siblings   []int // Hyperthread sibling logical CPU IDs
 }
 
-// PhysicalCPUsInOrder returns a deterministic list of logical CPU IDs representing
-// one thread per physical core, ordered by socket (physical package) then core ID.
-//
-// It selects the smallest logical CPU ID among each core's sibling set, ensuring
-// we avoid hyperthread siblings.
+// Returns a deterministic list of logical CPU IDs representing one thread per physical
+// core, ordered by socket then core ID.
 func (hc *HostConfig) PhysicalCPUsInOrder() ([]int, error) {
 	if hc == nil {
 		return nil, fmt.Errorf("host config is nil")
@@ -106,8 +102,8 @@ func (hc *HostConfig) PhysicalCPUsInOrder() ([]int, error) {
 	return result, nil
 }
 
-// IsPhysicalCPU returns true if the given logical CPU ID is the selected representative
-// for its physical core (i.e., not a hyperthread sibling).
+// Returns true if the given logical CPU ID is the selected representative for its
+// physical core.
 func (hc *HostConfig) IsPhysicalCPU(cpuID int) bool {
 	if hc == nil {
 		return false
@@ -542,7 +538,7 @@ func (hc *HostConfig) initRDTInfo() error {
 	return nil
 }
 
-// calculates L3 cache utilization percentage
+// Calculates L3 cache utilization percentage.
 func (hc *HostConfig) GetL3CacheUtilizationPercent(occupancyBytes uint64) float64 {
 	if hc.L3Cache.SizeBytes == 0 {
 		return 0.0
@@ -550,15 +546,15 @@ func (hc *HostConfig) GetL3CacheUtilizationPercent(occupancyBytes uint64) float6
 	return float64(occupancyBytes) / float64(hc.L3Cache.SizeBytes) * 100.0
 }
 
-// calculates memory bandwidth utilization percentage
-// NYI: Memory bandwidth calculation not implemented - no reliable source for max bandwidth
+// Calculates memory bandwidth utilization percentage.
+// NYI: Memory bandwidth calculation not implemented. No reliable source for max bandwidth.
 func (hc *HostConfig) GetMemoryBandwidthUtilizationPercent(bandwidthMBps float64) float64 {
 	// NYI: No reliable source for maximum memory bandwidth
 	// Would require platform-specific detection or manual configuration
 	return 0.0
 }
 
-// GetFairL3Allocation calculates fair L3 cache allocation for a given number of containers
+// Calculates fair L3 cache allocation for a given number of containers.
 func (hc *HostConfig) GetFairL3Allocation(totalContainers int) (waysPerContainer int, bitmaskPerContainer uint64) {
 	if totalContainers == 0 || hc.L3Cache.WaysPerCache == 0 {
 		return 0, 0
