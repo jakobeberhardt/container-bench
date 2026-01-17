@@ -15,8 +15,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// DefaultRDTAllocator implements the RDTAllocator interface using goresctrl
-// Uses RDT system, no internal PID tracking
+// Implements the RDTAllocator interface using goresctrl.
+// Uses the RDT system and does not track PIDs internally.
 type DefaultRDTAllocator struct {
 	logger         *logrus.Logger
 	initialized    bool
@@ -28,7 +28,7 @@ type DefaultRDTAllocator struct {
 	mu sync.Mutex
 }
 
-// NewDefaultRDTAllocator creates a new RDT allocator instance
+// Creates a new RDT allocator instance.
 func NewDefaultRDTAllocator() *DefaultRDTAllocator {
 	return &DefaultRDTAllocator{
 		logger:         logging.GetAccountantLogger(),
@@ -128,7 +128,7 @@ func (a *DefaultRDTAllocator) UpdateRDTClass(className string, socket0, socket1 
 	return nil
 }
 
-// CreateAllRDTClasses creates all RDT classes at once in a single configuration update
+// Creates all RDT classes at once in a single configuration update.
 func (a *DefaultRDTAllocator) CreateAllRDTClasses(classes map[string]struct {
 	Socket0 *SocketAllocation
 	Socket1 *SocketAllocation
@@ -169,10 +169,6 @@ func (a *DefaultRDTAllocator) CreateAllRDTClasses(classes map[string]struct {
 
 	a.logger.WithField("classes_created", len(classes)).Debug("All RDT classes created successfully")
 	return nil
-	/*
-		NOTE: This method historically applied the provided classes directly.
-		It now replaces the allocator's managed class set to avoid partial SetConfig updates.
-	*/
 }
 
 func (a *DefaultRDTAllocator) applyManagedConfigLocked(force bool) error {

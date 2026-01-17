@@ -26,11 +26,8 @@ type traceChecksumPayload struct {
 	Containers []traceChecksumEntry `json:"containers"`
 }
 
-// TraceChecksum returns a short, stable checksum that identifies the effective trace
-// (the concrete container schedule that was executed), independent of scheduler choice.
-//
-// It computes MD5 over a canonical JSON representation and returns the first 6 hex
-// characters (equivalent to `md5sum | cut -c1-6`).
+// Returns a short, stable checksum that identifies the effective trace.
+// Computes MD5 over a canonical JSON representation and returns the first 6 hex characters.
 func TraceChecksum(cfg *BenchmarkConfig) (string, error) {
 	if cfg == nil {
 		return "", nil

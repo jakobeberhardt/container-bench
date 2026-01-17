@@ -73,8 +73,8 @@ func (cc *ContainerCollector) setFrequencyLocked(freq time.Duration) {
 	}
 }
 
-// OverrideFrequency temporarily overrides the collector sampling frequency.
-// It returns a restore function that resets the previous frequency.
+// Temporarily overrides the collector sampling frequency.
+// Returns a restore function that resets the previous frequency.
 func (cc *ContainerCollector) OverrideFrequency(freq time.Duration) (restore func(), err error) {
 	if freq <= 0 {
 		return nil, fmt.Errorf("frequency must be > 0")
@@ -209,7 +209,6 @@ func (cc *ContainerCollector) Stop() error {
 	return nil
 }
 
-// SyncRDTPIDs syncs PIDs from the container's cgroup to the RDT monitoring group
 // This should be called after docker exec commands to ensure new processes are monitored
 func (cc *ContainerCollector) SyncRDTPIDs() error {
 	if cc.rdtCollector != nil {

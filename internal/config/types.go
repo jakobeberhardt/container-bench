@@ -111,23 +111,15 @@ type SchedulerConfig struct {
 	RDT            bool   `yaml:"rdt"`
 	LogLevel       string `yaml:"log_level,omitempty"`
 
-	// dynamic-v3: when admitting priority containers, allow best-effort force-moves (CPU moves)
-	// of non-priority containers to free cores on the preferred socket.
-	// - nil (omitted): enabled (default)
-	// - false: disabled
-	// - true: enabled
+	// For dynamic v3 admission, allow best effort CPU moves of non priority containers to free
+	// cores on the preferred socket. Nil means enabled by default.
 	ForceMoveForPriorityAdmission *bool `yaml:"force_move_for_priority_admission,omitempty"`
 
 	// Backward-compat alias (deprecated): prefer force_move_for_priority_admission.
 	EvictForPriorityAdmission *bool `yaml:"evict_for_priority_admission,omitempty"`
 
-	// Socket rebalancing (used by implementation: "dynamic")
-	// - rebalance: enables/disables the feature (default: disabled)
-	// - rebalance_batch: when rebalancing is enabled, controls whether we move multiple
-	//   containers per tick (true) or at most one (false).
-	//
-	// Backward-compatibility: if rebalance is omitted, rebalance_batch=true enables
-	// rebalancing in batch mode; rebalance_batch=false keeps it disabled.
+	// Socket rebalancing for the dynamic scheduler. Nil means disabled by default.
+	// If rebalance is omitted, rebalance_batch controls whether batch mode is enabled.
 	Rebalance      *bool `yaml:"rebalance,omitempty"`
 	RebalanceBatch *bool `yaml:"rebalance_batch,omitempty"`
 
@@ -136,8 +128,8 @@ type SchedulerConfig struct {
 	MaxMem                     float64  `yaml:"max_mem,omitempty"`                       // max memory bandwidth percentage to probe/allocate
 	ProbingT                   float64  `yaml:"probing_t,omitempty"`                     // total probing time budget (seconds)
 	BreakCondition             float64  `yaml:"break_condition,omitempty"`               // stop probing when avg IPCE (Perf.IPCEfficancy) >= this
-	BreakCPULoad               *float64 `yaml:"break_cpu_load,omitempty"`                // stop probing when avg Docker CPU usage percent <= this (-1 or nil disables)
-	BreakLLCOccupancy          *float64 `yaml:"break_llc_occupancy,omitempty"`           // stop probing when avg LLC utilization percent <= this (-1 or nil disables)
+	BreakCPULoad               *float64 `yaml:"break_cpu_load,omitempty"`                // stop probing when avg Docker CPU usage percent <= this (negative one or nil disables)
+	BreakLLCOccupancy          *float64 `yaml:"break_llc_occupancy,omitempty"`           // stop probing when avg LLC utilization percent <= this (negative one or nil disables)
 	BreakImprovement           float64  `yaml:"break_improvement,omitempty"`             // stop when relative improvement below this
 	GreedyAllocation           bool     `yaml:"greedy_allocation,omitempty"`             // if true, stop probe early on diminishing returns; if false, classify diminishing returns post-mortem
 	Reallocate                 bool     `yaml:"reallocate,omitempty"`                    // opportunistic reallocation when jobs finish
@@ -474,7 +466,7 @@ func (cc *CollectorConfig) GetPerfConfig() *PerfConfig {
 		}
 	}
 
-	// Handle map case - parse from interface{}
+	// Handle map case; parse from interface{}.
 	if perfMap, ok := cc.Perf.(map[string]interface{}); ok {
 		config := &PerfConfig{Enabled: true}
 

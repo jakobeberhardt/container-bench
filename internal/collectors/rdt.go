@@ -657,7 +657,7 @@ func (rc *RDTCollector) detectAndHandleClassMigration() error {
 			} else {
 				rc.logger.WithError(err).WithFields(fields).Warn("Failed to delete old monitoring group during migration")
 			}
-			// Continue anyway - we'll create the new one
+			// Continue anyway; create the new one.
 		} else {
 			rc.logger.WithFields(logrus.Fields{
 				"pid":       rc.pid,
@@ -737,7 +737,7 @@ func (rc *RDTCollector) Collect() *dataframe.RDTMetrics {
 	// This handles the case where the class was updated externally (e.g., during allocation probe)
 	if err := rc.detectAndHandleClassMigration(); err != nil {
 		rc.logger.WithError(err).WithField("pid", rc.pid).Debug("Failed to handle RDT class migration during collect")
-		// Don't return - try to collect anyway with current monitoring group
+		// Don't return; try to collect anyway with current monitoring group.
 	}
 
 	// Thread-safe read of state after migration check
