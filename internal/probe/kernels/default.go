@@ -84,8 +84,8 @@ func (dpk *DefaultProbeKernel) ExecuteProbe(
 	}
 
 	dpk.logger.WithFields(logrus.Fields{
-		"baseline_ipc": baselineIPC,
-		"baseline_scp": baselineSCP,
+		"baseline_ipc":  baselineIPC,
+		"baseline_scp":  baselineSCP,
 		"baseline_ipce": baselineIPCE,
 	}).Info("Baseline metrics established")
 

@@ -36,13 +36,13 @@ func TraceChecksum(cfg *BenchmarkConfig) (string, error) {
 	entries := make([]traceChecksumEntry, 0, len(cfg.Containers))
 	for key, c := range cfg.Containers {
 		entries = append(entries, traceChecksumEntry{
-			Key:      key,
-			Index:    c.Index,
-			Image:    c.Image,
-			Command:  c.Command,
-			NumCores: c.GetRequestedNumCores(),
-			StartS:   c.GetStartSeconds(),
-			StopS:    c.GetStopSeconds(cfg.Benchmark.MaxT),
+			Key:           key,
+			Index:         c.Index,
+			Image:         c.Image,
+			Command:       c.Command,
+			NumCores:      c.GetRequestedNumCores(),
+			StartS:        c.GetStartSeconds(),
+			StopS:         c.GetStopSeconds(cfg.Benchmark.MaxT),
 			Critical:      c.Critical,
 			Priority:      c.Priority,
 			IPC:           c.IPC,

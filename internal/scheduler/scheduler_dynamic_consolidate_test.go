@@ -45,12 +45,16 @@ func (m *mockRDTAllocatorForScheduler) CreateAllRDTClasses(classes map[string]st
 	return nil
 }
 
-func (m *mockRDTAllocatorForScheduler) AssignContainerToClass(pid int, className string) error { return nil }
-func (m *mockRDTAllocatorForScheduler) RemoveContainerFromClass(pid int) error            { return nil }
-func (m *mockRDTAllocatorForScheduler) GetContainerClass(pid int) (string, error)        { return "", fmt.Errorf("not implemented") }
-func (m *mockRDTAllocatorForScheduler) ListAvailableClasses() []string                   { return nil }
-func (m *mockRDTAllocatorForScheduler) DeleteRDTClass(className string) error            { return nil }
-func (m *mockRDTAllocatorForScheduler) Cleanup() error                                   { return nil }
+func (m *mockRDTAllocatorForScheduler) AssignContainerToClass(pid int, className string) error {
+	return nil
+}
+func (m *mockRDTAllocatorForScheduler) RemoveContainerFromClass(pid int) error { return nil }
+func (m *mockRDTAllocatorForScheduler) GetContainerClass(pid int) (string, error) {
+	return "", fmt.Errorf("not implemented")
+}
+func (m *mockRDTAllocatorForScheduler) ListAvailableClasses() []string        { return nil }
+func (m *mockRDTAllocatorForScheduler) DeleteRDTClass(className string) error { return nil }
+func (m *mockRDTAllocatorForScheduler) Cleanup() error                        { return nil }
 
 func TestDynamicScheduler_IsSingleContiguousRunOfOnes(t *testing.T) {
 	// 0xe0f = 1110 0000 1111 (two blocks of ones) => invalid for goresctrl.
@@ -127,28 +131,28 @@ func TestDynamicScheduler_ConsolidateRDTPartitionsLocked_DefragmentsBenchmark(t 
 	s.profiles = make(map[int]*dynamicContainerProfile)
 	// Two active critical containers, 2 ways each.
 	s.profiles[1] = &dynamicContainerProfile{
-		index:       1,
-		pid:         111,
-		containerID: "c1",
+		index:        1,
+		pid:          111,
+		containerID:  "c1",
 		containerKey: "p1",
-		startedAt:   now.Add(-10 * time.Second),
-		critical:    true,
-		socket:      0,
-		className:   "dyn-p1",
-		ways:        2,
-		mem:         20,
+		startedAt:    now.Add(-10 * time.Second),
+		critical:     true,
+		socket:       0,
+		className:    "dyn-p1",
+		ways:         2,
+		mem:          20,
 	}
 	s.profiles[2] = &dynamicContainerProfile{
-		index:       2,
-		pid:         222,
-		containerID: "c2",
+		index:        2,
+		pid:          222,
+		containerID:  "c2",
 		containerKey: "p2",
-		startedAt:   now.Add(-5 * time.Second),
-		critical:    true,
-		socket:      0,
-		className:   "dyn-p2",
-		ways:        2,
-		mem:         10,
+		startedAt:    now.Add(-5 * time.Second),
+		critical:     true,
+		socket:       0,
+		className:    "dyn-p2",
+		ways:         2,
+		mem:          10,
 	}
 
 	if err := s.consolidateRDTPartitionsLocked(); err != nil {

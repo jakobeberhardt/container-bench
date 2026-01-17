@@ -6,10 +6,10 @@ func TestHexBitmaskToBinaryString(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		in      string
-		want    string
-		wantOK  bool
+		name   string
+		in     string
+		want   string
+		wantOK bool
 	}{
 		{
 			name:   "preserves leading zeros by hex width",

@@ -135,18 +135,18 @@ func BuildSpoolArtifact(
 	}
 
 	return &SpoolArtifact{
-		Version:                1,
-		CreatedAt:              time.Now(),
-		BenchmarkID:            benchmarkID,
-		BenchmarkName:          name,
-		TraceChecksum:          checksum,
-		StartTime:              startTime,
-		EndTime:                endTime,
-		ConfigContent:          configContent,
-		Metrics:                metrics,
-		Metadata:               metadata,
+		Version:                 1,
+		CreatedAt:               time.Now(),
+		BenchmarkID:             benchmarkID,
+		BenchmarkName:           name,
+		TraceChecksum:           checksum,
+		StartTime:               startTime,
+		EndTime:                 endTime,
+		ConfigContent:           configContent,
+		Metrics:                 metrics,
+		Metadata:                metadata,
 		ContainerTimingMetadata: containerMeta,
-		ProbeResults:           probeResults,
-		AllocationProbeResults: allocProbeResults,
+		ProbeResults:            probeResults,
+		AllocationProbeResults:  allocProbeResults,
 	}
 }

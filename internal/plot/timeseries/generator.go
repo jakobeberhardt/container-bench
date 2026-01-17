@@ -189,53 +189,53 @@ func (g *TimeseriesPlotGenerator) preparePlotData(
 	yMinStr, yMaxStr := g.determineAxisLimits(yMapping, opts.MinOverride, opts.MaxOverride, yMin, yMax)
 
 	plotData := &plotTemplate.PlotData{
-		GeneratedDate:            time.Now().Format("2006-01-02 15:04:05"),
-		BenchmarkID:              meta.BenchmarkID,
-		BenchmarkName:            meta.BenchmarkName,
-		Description:              meta.Description,
-		BenchmarkStarted:         meta.BenchmarkStarted,
-		BenchmarkFinished:        meta.BenchmarkFinished,
-		DurationSeconds:          meta.DurationSeconds,
-		MaxDurationSeconds:       meta.MaxDurationSeconds,
-		SamplingFrequencyMs:      meta.SamplingFrequencyMs,
-		TotalContainers:          meta.TotalContainers,
-		TotalSamplingSteps:       meta.TotalSamplingSteps,
-		TotalMeasurements:        meta.TotalMeasurements,
-		UsedScheduler:            meta.UsedScheduler,
-		SchedulerVersion:         meta.SchedulerVersion,
-		DriverVersion:            meta.DriverVersion,
-		Hostname:                 meta.Hostname,
-		ExecutionHost:            meta.ExecutionHost,
-		CPUVendor:                meta.CPUVendor,
-		CPUModel:                 meta.CPUModel,
-		TotalCPUCores:            meta.TotalCPUCores,
-		CPUSockets:               meta.CPUSockets,
-		CPUThreads:               meta.CPUThreads,
-		L1CacheSizeKB:            meta.L1CacheSizeKB,
-		L2CacheSizeKB:            meta.L2CacheSizeKB,
-		L3CacheSizeMB:            meta.L3CacheSizeMB,
-		L3CacheWays:              meta.L3CacheWays,
-		MaxMemoryBandwidthMbps:   meta.MaxMemoryBandwidthMbps,
-		KernelVersion:            meta.KernelVersion,
-		OSInfo:                   meta.OSInfo,
-		PerfEnabled:              meta.PerfEnabled,
-		DockerStatsEnabled:       meta.DockerStatsEnabled,
-		RDTEnabled:               meta.RDTEnabled,
-		RDTSupported:             meta.RDTSupported,
-		RDTAllocationSupported:   meta.RDTAllocationSupported,
-		RDTMonitoringSupported:   meta.RDTMonitoringSupported,
-		ProberEnabled:            meta.ProberEnabled,
-		ProberImplementation:     meta.ProberImplementation,
-		ProberIsolated:           meta.ProberIsolated,
-		Title:                    yMapping.Label,
-		XLabel:                   xMapping.Label,
-		YLabel:                   yMapping.Label,
-		Fieldname:                opts.YField,
-		XMin:                     xMinStr,
-		XMax:                     xMaxStr,
-		YMin:                     yMinStr,
-		YMax:                     yMaxStr,
-		Plots:                    plotSeries,
+		GeneratedDate:          time.Now().Format("2006-01-02 15:04:05"),
+		BenchmarkID:            meta.BenchmarkID,
+		BenchmarkName:          meta.BenchmarkName,
+		Description:            meta.Description,
+		BenchmarkStarted:       meta.BenchmarkStarted,
+		BenchmarkFinished:      meta.BenchmarkFinished,
+		DurationSeconds:        meta.DurationSeconds,
+		MaxDurationSeconds:     meta.MaxDurationSeconds,
+		SamplingFrequencyMs:    meta.SamplingFrequencyMs,
+		TotalContainers:        meta.TotalContainers,
+		TotalSamplingSteps:     meta.TotalSamplingSteps,
+		TotalMeasurements:      meta.TotalMeasurements,
+		UsedScheduler:          meta.UsedScheduler,
+		SchedulerVersion:       meta.SchedulerVersion,
+		DriverVersion:          meta.DriverVersion,
+		Hostname:               meta.Hostname,
+		ExecutionHost:          meta.ExecutionHost,
+		CPUVendor:              meta.CPUVendor,
+		CPUModel:               meta.CPUModel,
+		TotalCPUCores:          meta.TotalCPUCores,
+		CPUSockets:             meta.CPUSockets,
+		CPUThreads:             meta.CPUThreads,
+		L1CacheSizeKB:          meta.L1CacheSizeKB,
+		L2CacheSizeKB:          meta.L2CacheSizeKB,
+		L3CacheSizeMB:          meta.L3CacheSizeMB,
+		L3CacheWays:            meta.L3CacheWays,
+		MaxMemoryBandwidthMbps: meta.MaxMemoryBandwidthMbps,
+		KernelVersion:          meta.KernelVersion,
+		OSInfo:                 meta.OSInfo,
+		PerfEnabled:            meta.PerfEnabled,
+		DockerStatsEnabled:     meta.DockerStatsEnabled,
+		RDTEnabled:             meta.RDTEnabled,
+		RDTSupported:           meta.RDTSupported,
+		RDTAllocationSupported: meta.RDTAllocationSupported,
+		RDTMonitoringSupported: meta.RDTMonitoringSupported,
+		ProberEnabled:          meta.ProberEnabled,
+		ProberImplementation:   meta.ProberImplementation,
+		ProberIsolated:         meta.ProberIsolated,
+		Title:                  yMapping.Label,
+		XLabel:                 xMapping.Label,
+		YLabel:                 yMapping.Label,
+		Fieldname:              opts.YField,
+		XMin:                   xMinStr,
+		XMax:                   xMaxStr,
+		YMin:                   yMinStr,
+		YMax:                   yMaxStr,
+		Plots:                  plotSeries,
 	}
 
 	return plotData, nil
@@ -255,7 +255,7 @@ func (g *TimeseriesPlotGenerator) aggregateData(
 	}
 
 	intervalNs := int64(opts.Interval * 1e9)
-	
+
 	// Bucket the data
 	buckets := make(map[int64][]database.MetricsDataPoint)
 
@@ -265,7 +265,7 @@ func (g *TimeseriesPlotGenerator) aggregateData(
 	}
 
 	var aggregated []database.MetricsDataPoint
-	
+
 	// Get all bucket keys and sort them
 	var bucketKeys []int64
 	for bucket := range buckets {
@@ -274,18 +274,18 @@ func (g *TimeseriesPlotGenerator) aggregateData(
 	sort.Slice(bucketKeys, func(i, j int) bool {
 		return bucketKeys[i] < bucketKeys[j]
 	})
-	
+
 	if len(bucketKeys) == 0 {
 		return aggregated
 	}
-	
+
 	// Fill in missing buckets between first and last with NullValue
 	firstBucket := bucketKeys[0]
 	lastBucket := bucketKeys[len(bucketKeys)-1]
-	
+
 	for bucket := firstBucket; bucket <= lastBucket; bucket++ {
 		points := buckets[bucket]
-		
+
 		// Create a template point for this bucket
 		var avgPoint database.MetricsDataPoint
 		if len(points) > 0 {
@@ -295,7 +295,7 @@ func (g *TimeseriesPlotGenerator) aggregateData(
 			avgPoint = dataPoints[0]
 			avgPoint.Fields = make(map[string]interface{})
 		}
-		
+
 		// Determine the time for this bucket
 		isFirstBucket := (bucket == firstBucket)
 		if isFirstBucket && len(points) > 0 {
@@ -303,7 +303,7 @@ func (g *TimeseriesPlotGenerator) aggregateData(
 			sort.Slice(points, func(a, b int) bool {
 				return points[a].RelativeTime < points[b].RelativeTime
 			})
-			
+
 			// Find the first point with valid Y data
 			firstValidTime := points[0].RelativeTime
 			for _, p := range points {
@@ -328,7 +328,7 @@ func (g *TimeseriesPlotGenerator) aggregateData(
 				}
 			}
 		}
-		
+
 		if count > 0 {
 			avgPoint.Fields[opts.YField] = sum / float64(count)
 		} else {

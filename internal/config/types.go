@@ -69,10 +69,10 @@ type WorkloadConfig struct {
 	NumCores int    `yaml:"num_cores,omitempty"`
 
 	// Semantic scheduling hints (optional): copied into generated ContainerConfig entries.
-	Critical       bool     `yaml:"critical,omitempty"`
-	Priority       bool     `yaml:"priority,omitempty"`
-	IPC            *float64 `yaml:"ipc,omitempty"`
-	IPCEfficiency  *float64 `yaml:"ipce,omitempty"` // optimal IPC efficiency (0..1) target/label
+	Critical      bool     `yaml:"critical,omitempty"`
+	Priority      bool     `yaml:"priority,omitempty"`
+	IPC           *float64 `yaml:"ipc,omitempty"`
+	IPCEfficiency *float64 `yaml:"ipce,omitempty"` // optimal IPC efficiency (0..1) target/label
 
 	// Used only for generation-time selection (never passed to scheduler as semantic labels).
 	Kind        string `yaml:"kind,omitempty"`        // single-thread|multi-thread|multi-programmed|iobound
@@ -226,18 +226,18 @@ type DatabaseConfig struct {
 }
 
 type ContainerConfig struct {
-	Index       int               `yaml:"index"`
-	Name        string            `yaml:"name,omitempty"`
-	KeyName     string            `yaml:"-"`
-	Image       string            `yaml:"image"`
-	Port        string            `yaml:"port,omitempty"`
-	Core        string            `yaml:"core,omitempty"`
-	NumCores    int               `yaml:"num_cores,omitempty"`
-	CPUCores    []int             `yaml:"-"`
-	StartT      *int              `yaml:"start_t,omitempty"`
-	StopT       *int              `yaml:"stop_t,omitempty"`
-	ExpectedT   *int              `yaml:"expected_t,omitempty"`
-	Command     string            `yaml:"command,omitempty"`
+	Index     int    `yaml:"index"`
+	Name      string `yaml:"name,omitempty"`
+	KeyName   string `yaml:"-"`
+	Image     string `yaml:"image"`
+	Port      string `yaml:"port,omitempty"`
+	Core      string `yaml:"core,omitempty"`
+	NumCores  int    `yaml:"num_cores,omitempty"`
+	CPUCores  []int  `yaml:"-"`
+	StartT    *int   `yaml:"start_t,omitempty"`
+	StopT     *int   `yaml:"stop_t,omitempty"`
+	ExpectedT *int   `yaml:"expected_t,omitempty"`
+	Command   string `yaml:"command,omitempty"`
 
 	// Semantic scheduling hints (optional).
 	Critical      bool     `yaml:"critical,omitempty"`

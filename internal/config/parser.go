@@ -614,18 +614,18 @@ func expandGeneratedTrace(cfg *BenchmarkConfig) (map[string]ContainerConfig, []s
 		sp := stopSec
 		ex := expectedSec
 		c := ContainerConfig{
-			Name:      key,
-			Image:     w.Image,
-			Command:   w.Command,
-			NumCores:  cores,
-			Critical:  w.Critical,
-			Priority:  w.Priority,
-			IPC:       w.IPC,
+			Name:          key,
+			Image:         w.Image,
+			Command:       w.Command,
+			NumCores:      cores,
+			Critical:      w.Critical,
+			Priority:      w.Priority,
+			IPC:           w.IPC,
 			IPCEfficiency: w.IPCEfficiency,
-			StartT:    &st,
-			StopT:     &sp,
-			ExpectedT: &ex,
-			Data:      *cfg.Data,
+			StartT:        &st,
+			StopT:         &sp,
+			ExpectedT:     &ex,
+			Data:          *cfg.Data,
 		}
 		containers[key] = c
 		order = append(order, key)

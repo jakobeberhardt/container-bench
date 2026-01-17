@@ -315,7 +315,7 @@ func (pc *PerfCollector) Collect() *dataframe.PerfMetrics {
 	}
 
 	if metrics.InstructionsPerCycle != nil && metrics.TheoreticalIPC != nil && *metrics.TheoreticalIPC > 0 {
-		ipcEfficancy := (float64(*metrics.InstructionsPerCycle) / float64(*metrics.TheoreticalIPC)) * 100 
+		ipcEfficancy := (float64(*metrics.InstructionsPerCycle) / float64(*metrics.TheoreticalIPC)) * 100
 		metrics.IPCEfficancy = &ipcEfficancy
 	}
 

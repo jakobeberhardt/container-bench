@@ -33,42 +33,42 @@ type DatabaseClient interface {
 
 // contains all metadata about a benchmark run
 type BenchmarkMetadata struct {
-	BenchmarkID            int     `json:"benchmark_id"`
-	BenchmarkName          string  `json:"benchmark_name"`
-	Description            string  `json:"description"`
-	TraceChecksum          string  `json:"trace_checksum"`
-	DurationSeconds        int64   `json:"duration_seconds"`
+	BenchmarkID            int      `json:"benchmark_id"`
+	BenchmarkName          string   `json:"benchmark_name"`
+	Description            string   `json:"description"`
+	TraceChecksum          string   `json:"trace_checksum"`
+	DurationSeconds        int64    `json:"duration_seconds"`
 	MakespanSeconds        *float64 `json:"makespan_seconds,omitempty"`
-	BenchmarkStarted       string  `json:"benchmark_started"`
-	BenchmarkFinished      string  `json:"benchmark_finished"`
-	TotalContainers        int     `json:"total_containers"`
-	DriverVersion          string  `json:"driver_version"`
-	UsedScheduler          string  `json:"used_scheduler"`
-	SchedulerVersion       string  `json:"scheduler_version"`
-	Hostname               string  `json:"hostname"`
-	ExecutionHost          string  `json:"execution_host"`
-	OSInfo                 string  `json:"os_info"`
-	KernelVersion          string  `json:"kernel_version"`
-	CPUVendor              string  `json:"cpu_vendor"`
-	CPUModel               string  `json:"cpu_model"`
-	TotalCPUCores          int     `json:"total_cpu_cores"`
-	CPUThreads             int     `json:"cpu_threads"`
-	CPUSockets             int     `json:"cpu_sockets"`
-	L1CacheSizeKB          float64 `json:"l1_cache_size_kb"`
-	L2CacheSizeKB          float64 `json:"l2_cache_size_kb"`
-	L3CacheSizeBytes       int64   `json:"l3_cache_size_bytes"`
-	L3CacheSizeMB          float64 `json:"l3_cache_size_mb"`
-	L3CacheWays            int     `json:"l3_cache_ways"`
-	RDTSupported           bool    `json:"rdt_supported"`
-	RDTMonitoringSupported bool    `json:"rdt_monitoring_supported"`
-	RDTAllocationSupported bool    `json:"rdt_allocation_supported"`
-	MaxMemoryBandwidthMBps int64   `json:"max_memory_bandwidth_mbps"`
-	MaxDurationSeconds     int     `json:"max_duration_seconds"`
-	SamplingFrequencyMS    int     `json:"sampling_frequency_ms"`
-	TotalSamplingSteps     int     `json:"total_sampling_steps"`
-	TotalMeasurements      int     `json:"total_measurements"`
-	TotalDataSizeBytes     int64   `json:"total_data_size_bytes"`
-	ConfigFile             string  `json:"config_file"`
+	BenchmarkStarted       string   `json:"benchmark_started"`
+	BenchmarkFinished      string   `json:"benchmark_finished"`
+	TotalContainers        int      `json:"total_containers"`
+	DriverVersion          string   `json:"driver_version"`
+	UsedScheduler          string   `json:"used_scheduler"`
+	SchedulerVersion       string   `json:"scheduler_version"`
+	Hostname               string   `json:"hostname"`
+	ExecutionHost          string   `json:"execution_host"`
+	OSInfo                 string   `json:"os_info"`
+	KernelVersion          string   `json:"kernel_version"`
+	CPUVendor              string   `json:"cpu_vendor"`
+	CPUModel               string   `json:"cpu_model"`
+	TotalCPUCores          int      `json:"total_cpu_cores"`
+	CPUThreads             int      `json:"cpu_threads"`
+	CPUSockets             int      `json:"cpu_sockets"`
+	L1CacheSizeKB          float64  `json:"l1_cache_size_kb"`
+	L2CacheSizeKB          float64  `json:"l2_cache_size_kb"`
+	L3CacheSizeBytes       int64    `json:"l3_cache_size_bytes"`
+	L3CacheSizeMB          float64  `json:"l3_cache_size_mb"`
+	L3CacheWays            int      `json:"l3_cache_ways"`
+	RDTSupported           bool     `json:"rdt_supported"`
+	RDTMonitoringSupported bool     `json:"rdt_monitoring_supported"`
+	RDTAllocationSupported bool     `json:"rdt_allocation_supported"`
+	MaxMemoryBandwidthMBps int64    `json:"max_memory_bandwidth_mbps"`
+	MaxDurationSeconds     int      `json:"max_duration_seconds"`
+	SamplingFrequencyMS    int      `json:"sampling_frequency_ms"`
+	TotalSamplingSteps     int      `json:"total_sampling_steps"`
+	TotalMeasurements      int      `json:"total_measurements"`
+	TotalDataSizeBytes     int64    `json:"total_data_size_bytes"`
+	ConfigFile             string   `json:"config_file"`
 
 	// Probe configuration
 	ProberEnabled        bool   `json:"prober_enabled"`

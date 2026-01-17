@@ -50,8 +50,10 @@ func (f *fakeAllocatorForDynamicV3) Reserve(containerIndex int, cpuIDs []int) er
 	return nil
 }
 
-func (f *fakeAllocatorForDynamicV3) Allocate(containerIndex int, num int) ([]int, error) { return nil, nil }
-func (f *fakeAllocatorForDynamicV3) Release(containerIndex int)                          { delete(f.assigned, containerIndex) }
+func (f *fakeAllocatorForDynamicV3) Allocate(containerIndex int, num int) ([]int, error) {
+	return nil, nil
+}
+func (f *fakeAllocatorForDynamicV3) Release(containerIndex int) { delete(f.assigned, containerIndex) }
 func (f *fakeAllocatorForDynamicV3) Get(containerIndex int) ([]int, bool) {
 	cpus, ok := f.assigned[containerIndex]
 	return append([]int(nil), cpus...), ok

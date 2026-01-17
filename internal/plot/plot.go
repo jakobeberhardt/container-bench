@@ -23,11 +23,11 @@ const (
 )
 
 type PlotManager struct {
-	dbClient             *database.PlotDBClient
-	timeseriesGenerator  *timeseries.TimeseriesPlotGenerator
-	polarGenerator       *polar.PolarPlotGenerator
-	allocationGenerator  *allocation.AllocationPlotGenerator
-	logger               *logrus.Logger
+	dbClient            *database.PlotDBClient
+	timeseriesGenerator *timeseries.TimeseriesPlotGenerator
+	polarGenerator      *polar.PolarPlotGenerator
+	allocationGenerator *allocation.AllocationPlotGenerator
+	logger              *logrus.Logger
 }
 
 func NewPlotManager() (*PlotManager, error) {

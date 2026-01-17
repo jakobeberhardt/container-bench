@@ -30,11 +30,11 @@ import (
 // and async stepping.
 
 type dynamicContainerProfile struct {
-	index       int
-	pid         int
-	containerID string
+	index        int
+	pid          int
+	containerID  string
 	containerKey string
-	startedAt   time.Time
+	startedAt    time.Time
 
 	critical bool
 	socket   int
@@ -69,17 +69,17 @@ type dynamicActiveProbe struct {
 	// start from min allocation and increase it until IPCE reaches the guarantee;
 	// then keep that first (>= guarantee) allocation.
 	ascGuarantee bool
-	guarantee     float64
+	guarantee    float64
 
-	hasFallback bool
+	hasFallback  bool
 	fallbackWays int
 	fallbackMem  float64
 
-	hasLastAbove bool
+	hasLastAbove  bool
 	lastAboveWays int
 	lastAboveMem  float64
 
-	hasFirstAbove bool
+	hasFirstAbove  bool
 	firstAboveWays int
 	firstAboveMem  float64
 
@@ -120,8 +120,8 @@ type DynamicScheduler struct {
 	totalWays      int
 	sockets        int
 
-	probing       *dynamicActiveProbe
-	lastProbeDone time.Time
+	probing         *dynamicActiveProbe
+	lastProbeDone   time.Time
 	lastRebalanceAt time.Time
 
 	lastProbeDelayLogAt  time.Time
@@ -458,7 +458,7 @@ func (s *DynamicScheduler) ProcessDataFrames(dfs *dataframe.DataFrames) error {
 				remaining = 0
 			}
 			s.logProbeDelayLocked("cooldown", idx, logrus.Fields{
-				"cooldown_s":          cooldownSeconds,
+				"cooldown_s":           cooldownSeconds,
 				"cooldown_remaining_s": int(remaining.Round(time.Second).Seconds()),
 			})
 			return nil
@@ -553,9 +553,9 @@ func (s *DynamicScheduler) maybeStartNextProbeLocked(trigger string) error {
 				remaining = 0
 			}
 			s.logProbeDelayLocked("warmup", idx, logrus.Fields{
-				"trigger":             trigger,
-				"warmup_s":            warmupSeconds,
-				"warmup_remaining_s":  int(remaining.Round(time.Second).Seconds()),
+				"trigger":            trigger,
+				"warmup_s":           warmupSeconds,
+				"warmup_remaining_s": int(remaining.Round(time.Second).Seconds()),
 			})
 			return nil
 		}
@@ -786,15 +786,15 @@ func (s *DynamicScheduler) maybeRebalanceNonCriticalLocked(trigger string) {
 		s.lastRebalanceAt = time.Now()
 
 		s.schedulerLogger.WithFields(logrus.Fields{
-			"trigger":             trigger,
-			"container":           c.idx,
-			"stalls_l3_miss_pct":  fmt.Sprintf("%.2f", c.stalls),
-			"src_sock":            maxSock,
-			"dst_sock":            minSock,
-			"diff_before":         fmt.Sprintf("%.2f", beforeDiff),
-			"diff_after":          fmt.Sprintf("%.2f", currentDiff),
-			"assigned_cpus":       assigned,
-			"batch":               batch,
+			"trigger":              trigger,
+			"container":            c.idx,
+			"stalls_l3_miss_pct":   fmt.Sprintf("%.2f", c.stalls),
+			"src_sock":             maxSock,
+			"dst_sock":             minSock,
+			"diff_before":          fmt.Sprintf("%.2f", beforeDiff),
+			"diff_after":           fmt.Sprintf("%.2f", currentDiff),
+			"assigned_cpus":        assigned,
+			"batch":                batch,
 			"remaining_candidates": len(candidates) - moves,
 		}).Info("Rebalanced non-critical container based on StallsL3MissPercent")
 
@@ -1142,12 +1142,12 @@ func (s *DynamicScheduler) startProbeLocked(dfs *dataframe.DataFrames, container
 	availMaxWays := maxContiguousWaysAvailableForCritical(s.benchmarkMask[sock], s.totalWays, systemDefaultReserveWays)
 	if availMaxWays < minL3 {
 		s.schedulerLogger.WithFields(logrus.Fields{
-			"container":  containerIndex,
-			"socket":     sock,
-			"min_l3":     minL3,
-			"avail_l3":   availMaxWays,
-			"order":      order,
-			"queue_len":  len(s.probeQueue),
+			"container": containerIndex,
+			"socket":    sock,
+			"min_l3":    minL3,
+			"avail_l3":  availMaxWays,
+			"order":     order,
+			"queue_len": len(s.probeQueue),
 		}).Info("Insufficient cache-way headroom for critical probing; will retry when resources are reclaimed")
 		return false, nil
 	}
@@ -1161,12 +1161,12 @@ func (s *DynamicScheduler) startProbeLocked(dfs *dataframe.DataFrames, container
 	}
 	if availMaxMem+1e-9 < minMem {
 		s.schedulerLogger.WithFields(logrus.Fields{
-			"container":  containerIndex,
-			"socket":     sock,
-			"min_mem":    minMem,
-			"avail_mem":  fmt.Sprintf("%.2f", availMaxMem),
-			"order":      order,
-			"queue_len":  len(s.probeQueue),
+			"container": containerIndex,
+			"socket":    sock,
+			"min_mem":   minMem,
+			"avail_mem": fmt.Sprintf("%.2f", availMaxMem),
+			"order":     order,
+			"queue_len": len(s.probeQueue),
 		}).Info("Insufficient memory-bandwidth headroom for critical probing; will retry when resources are reclaimed")
 		return false, nil
 	}
@@ -1175,15 +1175,15 @@ func (s *DynamicScheduler) startProbeLocked(dfs *dataframe.DataFrames, container
 	}
 
 	probeRange := proberesources.AllocationRange{
-		MinL3Ways:        minL3,
-		MaxL3Ways:        maxL3,
-		StepL3Ways:       stepL3,
-		MinMemBandwidth:  minMem,
-		MaxMemBandwidth:  maxMem,
-		StepMemBandwidth: stepMem,
-		Order:            order,
-		SocketID:         sock,
-		IsolateOthers:    false,
+		MinL3Ways:         minL3,
+		MaxL3Ways:         maxL3,
+		StepL3Ways:        stepL3,
+		MinMemBandwidth:   minMem,
+		MaxMemBandwidth:   maxMem,
+		StepMemBandwidth:  stepMem,
+		Order:             order,
+		SocketID:          sock,
+		IsolateOthers:     false,
 		ForceReallocation: false,
 	}
 
@@ -1209,12 +1209,12 @@ func (s *DynamicScheduler) startProbeLocked(dfs *dataframe.DataFrames, container
 	}
 
 	opts := proberesources.AllocationProbeOptions{
-		GreedyAllocation:  greedy,
-		ProbingFrequency:  probingFrequency,
-		OutlierDrop:       outlierDrop,
+		GreedyAllocation: greedy,
+		ProbingFrequency: probingFrequency,
+		OutlierDrop:      outlierDrop,
 		// Critical workloads must always probe real allocations (skip baseline) so the
 		// resulting decision is robust to future interference.
-		BaselineFirst:     false,
+		BaselineFirst: false,
 	}
 
 	target := proberesources.AllocationProbeTarget{
@@ -1278,15 +1278,15 @@ func (s *DynamicScheduler) startProbeLocked(dfs *dataframe.DataFrames, container
 	s.startProbeStepperLocked(dfs, ap)
 
 	s.schedulerLogger.WithFields(logrus.Fields{
-		"container":  containerIndex,
-		"socket":     sock,
-		"candidates": runner.NumCandidates(),
-		"min_l3":     minL3,
-		"max_l3":     maxL3,
-		"min_mem":    minMem,
-		"max_mem":    maxMem,
-		"order":      order,
-		"asc_guarantee": ascGuarantee,
+		"container":      containerIndex,
+		"socket":         sock,
+		"candidates":     runner.NumCandidates(),
+		"min_l3":         minL3,
+		"max_l3":         maxL3,
+		"min_mem":        minMem,
+		"max_mem":        maxMem,
+		"order":          order,
+		"asc_guarantee":  ascGuarantee,
 		"desc_guarantee": descGuarantee,
 	}).Info("Started dynamic allocation probing for critical container")
 
@@ -1526,15 +1526,15 @@ func (s *DynamicScheduler) finalizeProbeLocked() error {
 	}
 
 	s.schedulerLogger.WithFields(logrus.Fields{
-		"container": idx,
-		"socket":    ap.socket,
-		"ways":      appliedWays,
-		"mem":       appliedMem,
-		"best_eff":  ap.runner.BestEff(),
-		"reason":    ap.runner.StopReason(),
-		"desc_guarantee": ap.descGuarantee,
-		"asc_guarantee":  ap.ascGuarantee,
-		"buffer_ways":    bufWays,
+		"container":        idx,
+		"socket":           ap.socket,
+		"ways":             appliedWays,
+		"mem":              appliedMem,
+		"best_eff":         ap.runner.BestEff(),
+		"reason":           ap.runner.StopReason(),
+		"desc_guarantee":   ap.descGuarantee,
+		"asc_guarantee":    ap.ascGuarantee,
+		"buffer_ways":      bufWays,
 		"buffer_mem_steps": bufMemSteps,
 	}).Info("Finished dynamic allocation probing")
 

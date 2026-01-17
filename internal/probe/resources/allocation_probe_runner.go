@@ -105,8 +105,8 @@ type AllocationProbeRunner struct {
 	bestMem     float64
 	prevBestEff float64
 
-	stopReason string
-	unbound    bool
+	stopReason   string
+	unbound      bool
 	startedAlloc bool
 
 	restoreCollectorFrequency func()

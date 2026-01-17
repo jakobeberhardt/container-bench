@@ -126,7 +126,7 @@ func (ls *LeastLoadedScheduler) AssignCPUCores(containerIndex int) ([]int, error
 			ls.queuedSet[containerIndex] = true
 			ls.schedulerLogger.WithFields(containerLogFields(ls.containers, containerIndex, cfg)).WithFields(logrus.Fields{
 				"requested_num_cores": requested,
-				"reason":             err.Error(),
+				"reason":              err.Error(),
 			}).Debug("Admission deferred (insufficient CPU capacity)")
 		}
 		ls.mu.Unlock()

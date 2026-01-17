@@ -192,12 +192,12 @@ func TestExpandGeneratedTrace_PrioritySplitRelaxesKindBeforePriority(t *testing.
 			Data: DataConfig{DB: DatabaseConfig{Host: "h", Name: "n", User: "u", Password: "p", Org: "o"}},
 		},
 		Arrival: &ArrivalConfig{
-			Seed:  1,
-			Mean:  10,
-			Sigma: 0,
+			Seed:   1,
+			Mean:   10,
+			Sigma:  0,
 			Length: &NormalDistConfig{Mean: 20, Sigma: 0, Min: 10},
 			// Always pick single-thread kind.
-			Split: WeightedSet{Random: false, Weights: map[string]float64{"single-thread": 1}},
+			Split:         WeightedSet{Random: false, Weights: map[string]float64{"single-thread": 1}},
 			Sensitivities: WeightedSet{Random: true},
 			// Always request nonpriority.
 			PrioritySplit: WeightedSet{Random: false, Weights: map[string]float64{"priority": 0, "nonpriority": 1}},

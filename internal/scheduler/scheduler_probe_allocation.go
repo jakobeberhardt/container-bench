@@ -458,14 +458,14 @@ func (as *ProbeAllocationScheduler) commitBestAllocationLocked(result *probereso
 	}
 
 	as.schedulerLogger.WithFields(logrus.Fields{
-		"class":            as.committedClass,
-		"target_index":     target.Index,
-		"target_pid":       target.PID,
-		"socket":           targetSocket,
-		"best_idx":         bestIdx,
-		"l3_ways":          best.L3Ways,
-		"mem_bw_percent":   best.MemBandwidth,
-		"ipc_efficiency":   best.IPCEfficiency,
+		"class":             as.committedClass,
+		"target_index":      target.Index,
+		"target_pid":        target.PID,
+		"socket":            targetSocket,
+		"best_idx":          bestIdx,
+		"l3_ways":           best.L3Ways,
+		"mem_bw_percent":    best.MemBandwidth,
+		"ipc_efficiency":    best.IPCEfficiency,
 		"allocations_tried": len(result.Allocations),
 	}).Info("Committed best allocation after probe")
 

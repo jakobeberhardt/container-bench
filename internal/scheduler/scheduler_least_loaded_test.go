@@ -19,10 +19,10 @@ func (f *fakeCPUAllocatorLeastLoaded) EnsureAssigned(_ int, cfg *config.Containe
 	return append([]int(nil), cfg.CPUCores...), nil
 }
 
-func (f *fakeCPUAllocatorLeastLoaded) Reserve(_ int, _ []int) error { return nil }
+func (f *fakeCPUAllocatorLeastLoaded) Reserve(_ int, _ []int) error         { return nil }
 func (f *fakeCPUAllocatorLeastLoaded) Allocate(_ int, _ int) ([]int, error) { return nil, nil }
-func (f *fakeCPUAllocatorLeastLoaded) Release(_ int) {}
-func (f *fakeCPUAllocatorLeastLoaded) Get(_ int) ([]int, bool) { return nil, false }
+func (f *fakeCPUAllocatorLeastLoaded) Release(_ int)                        {}
+func (f *fakeCPUAllocatorLeastLoaded) Get(_ int) ([]int, bool)              { return nil, false }
 func (f *fakeCPUAllocatorLeastLoaded) Snapshot() map[int][]int {
 	out := make(map[int][]int, len(f.snapshot))
 	for k, v := range f.snapshot {
@@ -30,7 +30,7 @@ func (f *fakeCPUAllocatorLeastLoaded) Snapshot() map[int][]int {
 	}
 	return out
 }
-func (f *fakeCPUAllocatorLeastLoaded) Move(_ int, _ string, _ int) ([]int, error) { return nil, nil }
+func (f *fakeCPUAllocatorLeastLoaded) Move(_ int, _ string, _ int) ([]int, error)  { return nil, nil }
 func (f *fakeCPUAllocatorLeastLoaded) Swap(_ int, _ string, _ int, _ string) error { return nil }
 
 func TestLeastLoadedScheduler_AssignCPUCores_NonBlockingOnInsufficientCapacity(t *testing.T) {
