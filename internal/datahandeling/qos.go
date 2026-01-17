@@ -23,14 +23,12 @@ type QoSResult struct {
 	Samples        int
 }
 
-// ComputePriorityQoSMetFractions derives, for each priority container with a configured
-// QoS guarantee, the fraction of time its measured performance stayed above the guarantee.
+// Derives, for each priority container with a configured QoS guarantee, the fraction of
+// time its measured performance stayed above the guarantee.
 //
-// Guarantees are interpreted as:
-// - if `ipce` is set: compare against processed `PerfIPCEfficancy`
-// - else if `ipc` is set: compare against processed `PerfInstructionsPerCycle`
-//
-// The fraction is computed time-weighted based on sampling timestamps when possible.
+// Guarantees are interpreted as: if `ipce` is set, compare against processed
+// `PerfIPCEfficancy`; otherwise, if `ipc` is set, compare against processed
+// `PerfInstructionsPerCycle`.
 func ComputePriorityQoSMetFractions(benchmarkCfg *config.BenchmarkConfig, metrics *BenchmarkMetrics) map[int]QoSResult {
 	results := make(map[int]QoSResult)
 	if benchmarkCfg == nil || metrics == nil {
