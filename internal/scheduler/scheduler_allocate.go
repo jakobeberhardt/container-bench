@@ -158,7 +158,7 @@ func (as *AllocationScheduler) ProcessDataFrames(dataframes *dataframe.DataFrame
 		return nil
 	}
 
-	// Duration complete - advance to next allocation
+	// Duration complete; advance to next allocation.
 	as.schedulerLogger.WithFields(logrus.Fields{
 		"completed_l3_ways": as.currentL3Ways,
 		"completed_mem_bw":  as.currentMemBW,

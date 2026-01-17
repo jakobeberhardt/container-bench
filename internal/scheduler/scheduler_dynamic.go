@@ -19,17 +19,15 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// DynamicScheduler gives critical containers dedicated RDT resources.
-// Non-critical containers remain in a shared benchmark pool class.
+// Gives critical containers dedicated RDT resources.
+// Non critical containers remain in a shared benchmark pool class.
+// When a critical container starts, run an allocation probe (usually with min==max) and
+// keep the resulting allocation.
+// Multiple critical containers are handled sequentially to keep accounting simple.
+// Never reduce an already assigned critical container allocation.
 //
-// First step implementation:
-// - When a critical container starts, run an allocation probe (usually with min==max)
-//   and keep the resulting allocation.
-// - Multiple critical containers are handled sequentially (queue) to keep accounting simple.
-// - Never reduce an already-assigned critical container allocation.
-//
-// NOTE: This intentionally reuses the allocation-prober runner to leverage
-// collector-frequency overrides and async stepping.
+// NOTE: This reuses the allocation prober runner to leverage collector frequency overrides
+// and async stepping.
 
 type dynamicContainerProfile struct {
 	index       int

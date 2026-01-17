@@ -1186,9 +1186,8 @@ func (s *InterferenceAwareScheduler) finalizeProbeLocked() error {
 	_ = s.resetContainerToBenchmarkLocked(containerIndex)
 	_ = s.moveContainerCgroupLocked(containerIndex, s.benchmarkClass)
 
-	// Allocation retention policy:
-	// - default: skip allocation after probing
-	// - if allocate_unbound: keep allocations for unbound containers (still requiring headroom)
+	// Allocation retention policy: default skips allocation after probing. If allocate_unbound
+	// is enabled, keep allocations for unbound containers when probe headroom remains.
 	keep := false
 	if p.unbound && (!skipAlloc || allocateUnbound) {
 		keep = s.wouldLeaveProbeHeadroomLocked(bestSocket, p.demandWays, p.demandMem, maxL3, maxMem)

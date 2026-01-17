@@ -352,12 +352,12 @@ func (as *ProbeAllocationScheduler) ProcessDataFrames(dataframes *dataframe.Data
 		}
 		as.schedulerLogger.WithField("threshold", threshold).Info("Break condition enabled for IPC efficiency")
 	} else {
-		// No break condition - test all allocations
+		// No break condition; test all allocations.
 		breakCondition = nil
 		as.schedulerLogger.Info("Break condition disabled - will test all allocations")
 	}
 
-	// Run the probe - note the parameter order matches the function signature
+	// Run the probe; note the parameter order matches the function signature.
 	result, err := proberesources.ProbeAllocation(
 		targetContainer,
 		otherContainers,
